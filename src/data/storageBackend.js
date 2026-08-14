@@ -1,10 +1,10 @@
 // Generic key-value storage backend used by every *Store.js module
 // (progressStore, historyStore, lastPositionStore, theme preference, etc.).
 //
-// The contract is intentionally tiny (get/set a JSON-serializable value at a
-// string key) so any key-value or document store can implement it. To
+// The contract is intentionally tiny (get/set/remove a JSON-serializable value
+// at a string key) so any key-value or document store can implement it. To
 // migrate from on-device storage to Firebase (or anything else) later, write
-// a new backend object below with the same two methods and change the
+// a new backend object below with the same three methods and change the
 // `backend` export at the bottom - nothing that imports `backend` needs to
 // change.
 
@@ -18,6 +18,9 @@ export const localStorageBackend = {
   async setItem(key, value) {
     await AsyncStorage.setItem(key, JSON.stringify(value));
   },
+  async removeItem(key) {
+    await AsyncStorage.removeItem(key);
+  },
 };
 
 // --- Future migration sketch ---
@@ -28,6 +31,9 @@ export const localStorageBackend = {
 //   },
 //   async setItem(key, value) {
 //     await setDoc(doc(db, "userData", key), value);
+//   },
+//   async removeItem(key) {
+//     await deleteDoc(doc(db, "userData", key));
 //   },
 // };
 

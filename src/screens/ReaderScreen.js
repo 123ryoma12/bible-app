@@ -10,7 +10,7 @@ import {
 } from "react-native";
 import ChapterView from "../components/ChapterView";
 import { getChapter } from "../data/bibleData";
-import { getProgress, incrementReadCount } from "../data/progressStore";
+import { getProgress, incrementReadCount, readCountFromDates } from "../data/progressStore";
 import { addToHistory } from "../data/historyStore";
 import { useTheme } from "../theme/ThemeContext";
 
@@ -33,7 +33,7 @@ export default function ReaderScreen({
   useEffect(() => {
     let cancelled = false;
     getProgress(book.id, chapterNumber).then((progress) => {
-      if (!cancelled) setReadCount(progress.readCount);
+      if (!cancelled) setReadCount(readCountFromDates(progress));
     });
     return () => {
       cancelled = true;
@@ -48,7 +48,7 @@ export default function ReaderScreen({
     } else {
       // Last chapter of the last book - nothing further to advance to, just
       // reflect the new count on this screen.
-      setReadCount(updated.readCount);
+      setReadCount(readCountFromDates(updated));
     }
   }, [book.id, chapterNumber, hasNext, onNext]);
 

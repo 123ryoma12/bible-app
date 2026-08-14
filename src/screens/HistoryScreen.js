@@ -1,7 +1,15 @@
-import React, { useEffect, useState } from "react";
-import { View, Text, FlatList, TouchableOpacity, StyleSheet, SafeAreaView } from "react-native";
+import React, { useCallback, useEffect, useRef, useState } from "react";
+import {
+  View,
+  Text,
+  FlatList,
+  TouchableOpacity,
+  StyleSheet,
+  SafeAreaView,
+  ActivityIndicator,
+} from "react-native";
 import { BOOKS } from "../data/books";
-import { getHistory } from "../data/historyStore";
+import { getHistoryPage, PAGE_SIZE } from "../data/historyStore";
 import { useTheme } from "../theme/ThemeContext";
 
 function formatRelativeTime(isoString) {
@@ -19,17 +27,60 @@ function formatRelativeTime(isoString) {
 
 export default function HistoryScreen({ onSelectEntry, onBack }) {
   const { colors } = useTheme();
-  const [history, setHistory] = useState(null); // null = still loading
+  const [entries, setEntries] = useState([]);
+  const [initialLoading, setInitialLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+
+  // Refs so the paged loader always sees the latest cursor/flags without
+  // being re-created (which would re-fire onEndReached).
+  const cursorRef = useRef(null);
+  const hasMoreRef = useRef(true);
+  const loadingRef = useRef(false);
+
+  const loadMore = useCallback(async () => {
+    // Guard against overlapping loads (onEndReached can fire repeatedly) and
+    // against loading past the end.
+    if (loadingRef.current || !hasMoreRef.current) return;
+    loadingRef.current = true;
+    setLoadingMore(true);
+
+    try {
+      const { entries: page, nextCursor, hasMore } = await getHistoryPage(
+        PAGE_SIZE,
+        cursorRef.current
+      );
+      cursorRef.current = nextCursor;
+      hasMoreRef.current = hasMore;
+      setEntries((prev) => [...prev, ...page]);
+    } finally {
+      loadingRef.current = false;
+      setLoadingMore(false);
+    }
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
-    getHistory().then((h) => {
-      if (!cancelled) setHistory(h);
-    });
+    (async () => {
+      const { entries: page, nextCursor, hasMore } = await getHistoryPage();
+      if (cancelled) return;
+      cursorRef.current = nextCursor;
+      hasMoreRef.current = hasMore;
+      setEntries(page);
+      setInitialLoading(false);
+    })();
     return () => {
       cancelled = true;
     };
   }, []);
+
+  const renderFooter = () => {
+    if (!loadingMore) return null;
+    return (
+      <View style={styles.footer}>
+        <ActivityIndicator color={colors.accent} />
+      </View>
+    );
+  };
 
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: colors.background }]}>
@@ -41,7 +92,7 @@ export default function HistoryScreen({ onSelectEntry, onBack }) {
         <View style={{ width: 60 }} />
       </View>
 
-      {history !== null && history.length === 0 && (
+      {!initialLoading && entries.length === 0 && (
         <View style={styles.empty}>
           <Text style={[styles.emptyText, { color: colors.secondaryText }]}>
             Chapters you mark "Read" will show up here, most recent first.
@@ -50,9 +101,12 @@ export default function HistoryScreen({ onSelectEntry, onBack }) {
       )}
 
       <FlatList
-        data={history || []}
-        keyExtractor={(item, i) => `${item.bookId}-${item.chapterNumber}-${i}`}
+        data={entries}
+        keyExtractor={(item) => `${item.bookId}-${item.chapterNumber}`}
         contentContainerStyle={{ paddingBottom: 24 }}
+        onEndReached={loadMore}
+        onEndReachedThreshold={0.5}
+        ListFooterComponent={renderFooter}
         renderItem={({ item }) => {
           const book = BOOKS.find((b) => b.id === item.bookId);
           if (!book) return null;
@@ -107,4 +161,5 @@ const styles = StyleSheet.create({
   },
   rowText: { fontSize: 17 },
   rowMeta: { fontSize: 13 },
+  footer: { paddingVertical: 20 },
 });

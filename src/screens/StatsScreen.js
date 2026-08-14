@@ -7,10 +7,21 @@ import {
   StyleSheet,
   SafeAreaView,
   ActivityIndicator,
+  Modal,
+  Platform,
 } from "react-native";
+import DateTimePicker from "@react-native-community/datetimepicker";
 import { BOOKS } from "../data/books";
 import { ALL_CHAPTERS } from "../data/chapterIndex";
 import { getAllBooksProgress } from "../data/progressStore";
+import {
+  RANGE_MODES,
+  getRangeSetting,
+  setRangeSetting,
+  resolveBounds,
+  makeDateInRange,
+  describeRange,
+} from "../data/statsSettingsStore";
 import { useTheme } from "../theme/ThemeContext";
 
 // Every row (i.e. every chapter's bar) is the same fixed height, so bars
@@ -51,6 +62,8 @@ export default function StatsScreen({ onOpenChapter }) {
   // { bookId, chapterNumber, bookName, count } | null - the bar whose info
   // popup is currently showing (revealed by tapping/clicking that bar).
   const [selected, setSelected] = useState(null);
+  const [rangeSetting, setRangeSettingState] = useState(null); // null = loading
+  const [rangeModalOpen, setRangeModalOpen] = useState(false);
 
   const reload = useCallback(() => {
     getAllBooksProgress(BOOKS.map((b) => b.id)).then(setProgressByBook);
@@ -58,19 +71,31 @@ export default function StatsScreen({ onOpenChapter }) {
 
   useEffect(() => {
     reload();
+    getRangeSetting().then(setRangeSettingState);
   }, [reload]);
 
+  // Persist and apply a new date-range setting.
+  const applyRangeSetting = useCallback((next) => {
+    setRangeSettingState(next);
+    setRangeSetting(next);
+  }, []);
+
+  // Count only the reads whose date falls inside the selected range. This is
+  // what makes the range filter affect both the headline numbers and the bars.
   const countsByKey = useMemo(() => {
     const map = {};
-    if (!progressByBook) return map;
+    if (!progressByBook || !rangeSetting) return map;
+    const inRange = makeDateInRange(resolveBounds(rangeSetting));
     for (const book of BOOKS) {
       const chapters = progressByBook[book.id] || {};
       for (const [chNum, rec] of Object.entries(chapters)) {
-        map[`${book.id}:${chNum}`] = rec.readCount || 0;
+        const dates = (rec && rec.dates) || [];
+        const count = dates.reduce((n, d) => (inRange(d) ? n + 1 : n), 0);
+        if (count > 0) map[`${book.id}:${chNum}`] = count;
       }
     }
     return map;
-  }, [progressByBook]);
+  }, [progressByBook, rangeSetting]);
 
   const maxCount = useMemo(() => Math.max(1, ...Object.values(countsByKey)), [countsByKey]);
 
@@ -152,7 +177,7 @@ export default function StatsScreen({ onOpenChapter }) {
     [countsByKey, maxCount, colors, onOpenChapter, selected]
   );
 
-  if (progressByBook === null) {
+  if (progressByBook === null || rangeSetting === null) {
     return (
       <SafeAreaView style={[styles.safe, { backgroundColor: colors.background }]}>
         <View style={styles.loading}>
@@ -184,6 +209,20 @@ export default function StatsScreen({ onOpenChapter }) {
         <Text style={[styles.summarySubtext, { color: colors.mutedText }]}>
           {totalReads.toLocaleString()} total reads · currently viewing {visibleBookName}
         </Text>
+
+        <TouchableOpacity
+          style={[styles.rangeRow, { borderColor: colors.border, backgroundColor: colors.surface }]}
+          onPress={() => setRangeModalOpen(true)}
+          activeOpacity={0.7}
+        >
+          <View style={styles.rangeRowText}>
+            <Text style={[styles.rangeLabel, { color: colors.mutedText }]}>Date Range</Text>
+            <Text style={[styles.rangeValue, { color: colors.text }]} numberOfLines={1}>
+              {describeRange(rangeSetting)}
+            </Text>
+          </View>
+          <Text style={[styles.rangeChevron, { color: colors.accent }]}>Change ›</Text>
+        </TouchableOpacity>
       </View>
 
       {selected ? (
@@ -238,7 +277,179 @@ export default function StatsScreen({ onOpenChapter }) {
         viewabilityConfig={viewabilityConfig}
         style={{ flex: 1 }}
       />
+
+      <DateRangeModal
+        visible={rangeModalOpen}
+        setting={rangeSetting}
+        onClose={() => setRangeModalOpen(false)}
+        onApply={(next) => {
+          applyRangeSetting(next);
+          setRangeModalOpen(false);
+        }}
+      />
     </SafeAreaView>
+  );
+}
+
+// Parses a "YYYY-MM-DD" string into a local Date (noon, to avoid TZ edge
+// cases), or returns a fallback Date when the string is missing/invalid.
+function parseDate(dateStr, fallback = new Date()) {
+  if (!dateStr) return fallback;
+  const [y, m, d] = dateStr.split("-").map(Number);
+  if (!y || !m || !d) return fallback;
+  return new Date(y, m - 1, d, 12, 0, 0, 0);
+}
+
+function toDateString(d) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+const MODE_OPTIONS = [
+  { key: RANGE_MODES.YEAR, label: "This year (since Jan 1)" },
+  { key: RANGE_MODES.SINCE, label: "Since a date" },
+  { key: RANGE_MODES.BETWEEN, label: "Between two dates" },
+  { key: RANGE_MODES.ALL, label: "All time" },
+];
+
+// The picker is date-only (mode="date"), so time is never shown or stored -
+// every selection is immediately reduced to a "YYYY-MM-DD" string. We only
+// need a stable "no future dates" ceiling, so cap at the end of today.
+function endOfToday() {
+  const d = new Date();
+  d.setHours(23, 59, 59, 999);
+  return d;
+}
+
+function DateRangeModal({ visible, setting, onClose, onApply }) {
+  const { colors } = useTheme();
+  // Local draft so edits only persist when the user taps Apply.
+  const [draft, setDraft] = useState(setting);
+  const maximumDate = useMemo(() => endOfToday(), [visible]);
+  // Which native picker is open (Android shows it as a transient dialog):
+  // null | "since" | "start" | "end".
+  const [picking, setPicking] = useState(null);
+
+  // Re-sync the draft whenever the modal is (re)opened with a setting.
+  useEffect(() => {
+    if (visible) {
+      setDraft(setting);
+      setPicking(null);
+    }
+  }, [visible, setting]);
+
+  if (!draft) return null;
+
+  const setMode = (mode) => setDraft((d) => ({ ...d, mode }));
+
+  const onPickerChange = (field) => (event, selectedDate) => {
+    // On Android the dialog closes itself; reflect that. On iOS the inline
+    // picker stays until the user taps Done.
+    if (Platform.OS !== "ios") setPicking(null);
+    if (event?.type === "dismissed" || !selectedDate) return;
+    setDraft((d) => ({ ...d, [field]: toDateString(selectedDate) }));
+  };
+
+  const DateField = ({ label, field, value }) => (
+    <View style={styles.fieldRow}>
+      <Text style={[styles.fieldLabel, { color: colors.mutedText }]}>{label}</Text>
+      <TouchableOpacity
+        style={[styles.fieldBtn, { borderColor: colors.border, backgroundColor: colors.background }]}
+        onPress={() => setPicking(field)}
+      >
+        <Text style={[styles.fieldValue, { color: value ? colors.text : colors.mutedText }]}>
+          {value || "Select date"}
+        </Text>
+      </TouchableOpacity>
+      {picking === field && (
+        <DateTimePicker
+          mode="date"
+          value={parseDate(value)}
+          onChange={onPickerChange(field)}
+          maximumDate={maximumDate}
+          display={Platform.OS === "ios" ? "inline" : "default"}
+        />
+      )}
+    </View>
+  );
+
+  const canApply =
+    draft.mode === RANGE_MODES.YEAR ||
+    draft.mode === RANGE_MODES.ALL ||
+    (draft.mode === RANGE_MODES.SINCE && !!draft.since) ||
+    (draft.mode === RANGE_MODES.BETWEEN &&
+      !!draft.start &&
+      !!draft.end &&
+      draft.start <= draft.end);
+
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <View style={styles.modalBackdrop}>
+        <View style={[styles.modalCard, { backgroundColor: colors.surface }]}>
+          <Text style={[styles.modalTitle, { color: colors.text }]}>Date Range</Text>
+
+          {MODE_OPTIONS.map((opt) => {
+            const active = draft.mode === opt.key;
+            return (
+              <TouchableOpacity
+                key={opt.key}
+                style={styles.modeRow}
+                onPress={() => setMode(opt.key)}
+                activeOpacity={0.7}
+              >
+                <View
+                  style={[
+                    styles.radioOuter,
+                    { borderColor: active ? colors.accent : colors.border },
+                  ]}
+                >
+                  {active && <View style={[styles.radioInner, { backgroundColor: colors.accent }]} />}
+                </View>
+                <Text style={[styles.modeLabel, { color: colors.text }]}>{opt.label}</Text>
+              </TouchableOpacity>
+            );
+          })}
+
+          {draft.mode === RANGE_MODES.SINCE && (
+            <DateField label="From" field="since" value={draft.since} />
+          )}
+          {draft.mode === RANGE_MODES.BETWEEN && (
+            <>
+              <DateField label="Start" field="start" value={draft.start} />
+              <DateField label="End" field="end" value={draft.end} />
+              {draft.start && draft.end && draft.start > draft.end && (
+                <Text style={[styles.errorText, { color: colors.accent }]}>
+                  Start date must be on or before end date.
+                </Text>
+              )}
+            </>
+          )}
+
+          <View style={styles.modalActions}>
+            <TouchableOpacity onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <Text style={[styles.modalCancel, { color: colors.mutedText }]}>Cancel</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => canApply && onApply(draft)}
+              disabled={!canApply}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              style={{ marginLeft: 20 }}
+            >
+              <Text
+                style={[
+                  styles.modalApply,
+                  { color: canApply ? colors.accent : colors.mutedText },
+                ]}
+              >
+                Apply
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
   );
 }
 
@@ -315,4 +526,74 @@ const styles = StyleSheet.create({
     height: BAR_HEIGHT,
     borderRadius: 2,
   },
+  rangeRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginTop: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 8,
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  rangeRowText: { flexShrink: 1, paddingRight: 12 },
+  rangeLabel: {
+    fontSize: 11,
+    fontWeight: "700",
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+    marginBottom: 2,
+  },
+  rangeValue: { fontSize: 14, fontWeight: "600" },
+  rangeChevron: { fontSize: 13, fontWeight: "700" },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.45)",
+    justifyContent: "center",
+    paddingHorizontal: 24,
+  },
+  modalCard: {
+    borderRadius: 12,
+    padding: 20,
+  },
+  modalTitle: { fontSize: 18, fontWeight: "700", marginBottom: 12 },
+  modeRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 10,
+  },
+  modeLabel: { fontSize: 15, marginLeft: 12 },
+  radioOuter: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    borderWidth: 2,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  radioInner: { width: 10, height: 10, borderRadius: 5 },
+  fieldRow: { marginTop: 8 },
+  fieldLabel: {
+    fontSize: 11,
+    fontWeight: "700",
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+    marginBottom: 4,
+  },
+  fieldBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 8,
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  fieldValue: { fontSize: 15 },
+  errorText: { fontSize: 12, marginTop: 8 },
+  modalActions: {
+    flexDirection: "row",
+    justifyContent: "flex-end",
+    alignItems: "center",
+    marginTop: 20,
+  },
+  modalCancel: { fontSize: 15 },
+  modalApply: { fontSize: 15, fontWeight: "700" },
 });
