@@ -5,10 +5,11 @@ import {
   SectionList,
   TouchableOpacity,
   StyleSheet,
-  SafeAreaView,
   Alert,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { useTheme } from "../theme/ThemeContext";
+import { useScreenBackHandler } from "../navigation/BackHandlerRegistry";
 import {
   STATUS,
   getMemoryList,
@@ -71,6 +72,23 @@ export default function MemoryScreen() {
     return out;
   }, [entries]);
 
+  // Android back inside the Memory tab: if we're in a sub-view (add / drill),
+  // return to the list first instead of letting the app-level handler switch
+  // tabs or exit.
+  useScreenBackHandler(() => {
+    if (view === "add") {
+      setView("list");
+      return true;
+    }
+    if (view === "drill") {
+      setDrillList([]);
+      setView("list");
+      refresh();
+      return true;
+    }
+    return false;
+  }, [view, refresh]);
+
   function confirmDelete(entry) {
     Alert.alert(
       "Delete memory verse",
@@ -116,7 +134,10 @@ export default function MemoryScreen() {
   }
 
   return (
-    <SafeAreaView style={[styles.safe, { backgroundColor: colors.background }]}>
+    <SafeAreaView
+      style={[styles.safe, { backgroundColor: colors.background }]}
+      edges={["top", "left", "right"]}
+    >
       <View style={styles.headerRow}>
         <Text style={[styles.title, { color: colors.text }]}>Memory</Text>
         <TouchableOpacity onPress={() => setView("add")} hitSlop={hit}>

@@ -39,6 +39,17 @@ export function getChapterCount(bookId) {
   return book ? book.chapterCount : 0;
 }
 
+// Highest verse number present in a given chapter (0 if unknown/empty). Derived
+// from the bundled text so pickers only ever offer verses that actually exist.
+export function getVerseCount(bookId, chapterNumber) {
+  const verses = getChapterVerses(bookId, chapterNumber);
+  let max = 0;
+  for (const v of verses) {
+    if (v.verse > max) max = v.verse;
+  }
+  return max;
+}
+
 // Human-readable book name (falls back to the id).
 export function getBookName(bookId) {
   const book = BOOKS.find((b) => b.id === bookId);

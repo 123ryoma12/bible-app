@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { StatusBar } from "expo-status-bar";
-import { View, ActivityIndicator, StyleSheet } from "react-native";
+import { View, ActivityIndicator, StyleSheet, BackHandler, Platform } from "react-native";
+import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import { BOOKS } from "./src/data/books";
 import BookListScreen from "./src/screens/BookListScreen";
 import ChapterListScreen from "./src/screens/ChapterListScreen";
@@ -13,17 +14,26 @@ import SettingsScreen from "./src/screens/SettingsScreen";
 import BottomTabBar from "./src/components/BottomTabBar";
 import { getLastPosition, setLastPosition } from "./src/data/lastPositionStore";
 import { ThemeProvider, useTheme } from "./src/theme/ThemeContext";
+import {
+  BackHandlerProvider,
+  useBackHandlerRegistry,
+} from "./src/navigation/BackHandlerRegistry";
 
 export default function App() {
   return (
-    <ThemeProvider>
-      <AppContent />
-    </ThemeProvider>
+    <SafeAreaProvider>
+      <ThemeProvider>
+        <BackHandlerProvider>
+          <AppContent />
+        </BackHandlerProvider>
+      </ThemeProvider>
+    </SafeAreaProvider>
   );
 }
 
 function AppContent() {
   const { mode, colors } = useTheme();
+  const backRegistry = useBackHandlerRegistry();
 
   // activeTab: "bible" | "stats" | "settings"
   const [activeTab, setActiveTab] = useState("bible");
@@ -114,12 +124,49 @@ function AppContent() {
     }
   }
 
+  // Android hardware/gesture back. Priority:
+  //   1. Any screen that registered its own handler (e.g. Memory's add/drill
+  //      sub-views) gets first refusal.
+  //   2. Bible tab internal navigation: reader -> chapters, chapters/history
+  //      -> books.
+  //   3. Non-Bible tabs return to the Bible tab.
+  //   4. At the Bible/books root, return false so Android exits the app.
+  useEffect(() => {
+    if (Platform.OS !== "android") return undefined;
+
+    function onBackPress() {
+      // 1. Let deeper screens handle their own internal back first.
+      if (backRegistry.runBack()) return true;
+
+      // 2. Bible tab internal screens.
+      if (activeTab === "bible") {
+        if (screen === "reader") {
+          setScreen("chapters");
+          return true;
+        }
+        if (screen === "chapters" || screen === "history") {
+          setScreen("books");
+          return true;
+        }
+        // At books root - allow default (exit app).
+        return false;
+      }
+
+      // 3. Any other tab returns to the Bible tab.
+      setActiveTab("bible");
+      return true;
+    }
+
+    const subscription = BackHandler.addEventListener("hardwareBackPress", onBackPress);
+    return () => subscription.remove();
+  }, [activeTab, screen, backRegistry]);
+
   if (isRestoring) {
     return (
-      <View style={[styles.container, styles.center, { backgroundColor: colors.background }]}>
+      <SafeAreaView style={[styles.container, styles.center, { backgroundColor: colors.background }]}>
         <StatusBar style={mode === "dark" ? "light" : "dark"} />
         <ActivityIndicator size="large" color={colors.accent} />
-      </View>
+      </SafeAreaView>
     );
   }
 

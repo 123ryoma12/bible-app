@@ -5,9 +5,9 @@ import {
   FlatList,
   TouchableOpacity,
   StyleSheet,
-  SafeAreaView,
   useWindowDimensions,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { useTheme } from "../theme/ThemeContext";
 
 const NUM_COLUMNS = 5;
@@ -26,13 +26,23 @@ export default function ChapterListScreen({ book, onSelectChapter, onBack }) {
     (windowWidth - GRID_H_PADDING * 2 - CELL_MARGIN * 2 * NUM_COLUMNS) / NUM_COLUMNS;
 
   return (
-    <SafeAreaView style={[styles.safe, { backgroundColor: colors.background }]}>
+    <SafeAreaView
+      style={[styles.safe, { backgroundColor: colors.background }]}
+      edges={["top", "left", "right"]}
+    >
       <View style={[styles.header, { borderBottomColor: colors.border }]}>
         <TouchableOpacity onPress={onBack} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
           <Text style={[styles.back, { color: colors.accent }]}>{"‹ Books"}</Text>
         </TouchableOpacity>
-        <Text style={[styles.title, { color: colors.text }]}>{book.name}</Text>
-        <View style={{ width: 60 }} />
+        <Text
+          style={[styles.title, { color: colors.text }]}
+          numberOfLines={1}
+          adjustsFontSizeToFit
+          minimumFontScale={0.7}
+        >
+          {book.name}
+        </Text>
+        <View style={{ width: 70 }} />
       </View>
       <FlatList
         data={chapters}
@@ -68,7 +78,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
   back: { fontSize: 16, width: 70 },
-  title: { fontSize: 20, fontWeight: "700" },
+  title: { flex: 1, fontSize: 20, fontWeight: "700", textAlign: "center" },
   grid: { paddingHorizontal: GRID_H_PADDING, paddingBottom: 24 },
   cell: {
     margin: CELL_MARGIN,

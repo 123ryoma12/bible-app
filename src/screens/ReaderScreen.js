@@ -5,9 +5,9 @@ import {
   ScrollView,
   TouchableOpacity,
   StyleSheet,
-  SafeAreaView,
   PanResponder,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import ChapterView from "../components/ChapterView";
 import { getChapter } from "../data/bibleData";
 import { getProgress, incrementReadCount, readCountFromDates } from "../data/progressStore";
@@ -64,15 +64,29 @@ export default function ReaderScreen({
   ).current;
 
   return (
-    <SafeAreaView style={[styles.safe, { backgroundColor: colors.background }]}>
+    <SafeAreaView
+      style={[styles.safe, { backgroundColor: colors.background }]}
+      edges={["top", "left", "right"]}
+    >
       <View style={[styles.header, { borderBottomColor: colors.border }]}>
-        <TouchableOpacity onPress={onBack} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-          <Text style={[styles.back, { color: colors.accent }]}>{"‹ Chapters"}</Text>
+        <TouchableOpacity
+          style={styles.backBtn}
+          onPress={onBack}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+        >
+          <Text style={[styles.back, { color: colors.accent }]} numberOfLines={1}>
+            {"‹ Chapters"}
+          </Text>
         </TouchableOpacity>
-        <Text style={[styles.title, { color: colors.text }]}>
+        <Text
+          style={[styles.title, { color: colors.text }]}
+          numberOfLines={1}
+          adjustsFontSizeToFit
+          minimumFontScale={0.7}
+        >
           {book.name} {chapterNumber}
         </Text>
-        <View style={{ width: 70 }} />
+        <View style={styles.headerSpacer} />
       </View>
 
       <ScrollView
@@ -153,8 +167,10 @@ const styles = StyleSheet.create({
     paddingBottom: 8,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
-  back: { fontSize: 16, width: 80 },
-  title: { fontSize: 18, fontWeight: "700" },
+  backBtn: { width: 92 },
+  headerSpacer: { width: 92 },
+  back: { fontSize: 16 },
+  title: { flex: 1, fontSize: 18, fontWeight: "700", textAlign: "center" },
   navBar: {
     flexDirection: "row",
     borderTopWidth: StyleSheet.hairlineWidth,

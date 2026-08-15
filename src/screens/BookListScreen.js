@@ -1,5 +1,6 @@
 import React from "react";
-import { View, Text, SectionList, TouchableOpacity, StyleSheet, SafeAreaView } from "react-native";
+import { View, Text, SectionList, TouchableOpacity, StyleSheet } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { BOOKS } from "../data/books";
 import { useTheme } from "../theme/ThemeContext";
 
@@ -12,7 +13,10 @@ export default function BookListScreen({ onSelectBook, onOpenHistory }) {
   const { colors } = useTheme();
 
   return (
-    <SafeAreaView style={[styles.safe, { backgroundColor: colors.background }]}>
+    <SafeAreaView
+      style={[styles.safe, { backgroundColor: colors.background }]}
+      edges={["top", "left", "right"]}
+    >
       <View style={styles.headerRow}>
         <Text style={[styles.title, { color: colors.text }]}>Bible</Text>
         <TouchableOpacity
@@ -40,7 +44,13 @@ export default function BookListScreen({ onSelectBook, onOpenHistory }) {
             style={[styles.row, { borderBottomColor: colors.border }]}
             onPress={() => onSelectBook(item)}
           >
-            <Text style={[styles.rowText, { color: colors.text }]}>{item.name}</Text>
+            <Text
+              style={[styles.rowText, { color: colors.text }]}
+              numberOfLines={1}
+              ellipsizeMode="tail"
+            >
+              {item.name}
+            </Text>
             <Text style={[styles.rowMeta, { color: colors.mutedText }]}>
               {item.chapterCount} ch
             </Text>
@@ -88,6 +98,6 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
-  rowText: { fontSize: 17 },
-  rowMeta: { fontSize: 13 },
+  rowText: { flex: 1, fontSize: 17, marginRight: 12 },
+  rowMeta: { fontSize: 13, flexShrink: 0 },
 });

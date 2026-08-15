@@ -1,5 +1,6 @@
 import React from "react";
-import { View, Text, StyleSheet, SafeAreaView } from "react-native";
+import { View, Text, StyleSheet } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { useTheme } from "../theme/ThemeContext";
 
 // Placeholder screen - Devotional (e.g. daily reading plans/reflections) is
@@ -9,7 +10,10 @@ export default function DevotionalScreen() {
   const { colors } = useTheme();
 
   return (
-    <SafeAreaView style={[styles.safe, { backgroundColor: colors.background }]}>
+    <SafeAreaView
+      style={[styles.safe, { backgroundColor: colors.background }]}
+      edges={["top", "left", "right"]}
+    >
       <Text style={[styles.title, { color: colors.text }]}>Devotional</Text>
       <View style={styles.body}>
         <Text style={[styles.heading, { color: colors.text }]}>Coming soon</Text>

@@ -5,11 +5,11 @@ import {
   FlatList,
   TouchableOpacity,
   StyleSheet,
-  SafeAreaView,
   ActivityIndicator,
   Modal,
   Platform,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { BOOKS } from "../data/books";
 import { ALL_CHAPTERS } from "../data/chapterIndex";
@@ -179,7 +179,10 @@ export default function StatsScreen({ onOpenChapter }) {
 
   if (progressByBook === null || rangeSetting === null) {
     return (
-      <SafeAreaView style={[styles.safe, { backgroundColor: colors.background }]}>
+      <SafeAreaView
+        style={[styles.safe, { backgroundColor: colors.background }]}
+        edges={["top", "left", "right"]}
+      >
         <View style={styles.loading}>
           <ActivityIndicator size="large" color={colors.accent} />
         </View>
@@ -188,7 +191,10 @@ export default function StatsScreen({ onOpenChapter }) {
   }
 
   return (
-    <SafeAreaView style={[styles.safe, { backgroundColor: colors.background }]}>
+    <SafeAreaView
+      style={[styles.safe, { backgroundColor: colors.background }]}
+      edges={["top", "left", "right"]}
+    >
       <Text style={[styles.title, { color: colors.text }]}>Stats</Text>
 
       <View style={styles.summary}>

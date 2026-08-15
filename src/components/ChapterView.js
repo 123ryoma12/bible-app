@@ -5,7 +5,7 @@ import { useTheme } from "../theme/ThemeContext";
 // Renders the USFM-style "blocks" for a single chapter (paragraphs, headings,
 // poetry lines, etc.) with inline superscript verse numbers.
 export default function ChapterView({ chapter }) {
-  const { colors } = useTheme();
+  const { colors, fontScale } = useTheme();
 
   if (!chapter) {
     return (
@@ -27,13 +27,20 @@ export default function ChapterView({ chapter }) {
   return (
     <View style={styles.wrap}>
       {chapter.blocks.map((block, i) => (
-        <Block key={i} block={block} seen={seen} colors={colors} />
+        <Block key={i} block={block} seen={seen} colors={colors} fontScale={fontScale} />
       ))}
     </View>
   );
 }
 
-function Block({ block, seen, colors }) {
+// Applies the user's reading font scale to a base font size / line height pair.
+function scaled(base, fontScale, lineHeight) {
+  const out = { fontSize: base * fontScale };
+  if (lineHeight != null) out.lineHeight = lineHeight * fontScale;
+  return out;
+}
+
+function Block({ block, seen, colors, fontScale }) {
   const style = block.style || "p";
 
   // Blank line / paragraph break.
@@ -44,20 +51,30 @@ function Block({ block, seen, colors }) {
   // Section headings (s1, s2, ...).
   if (style.startsWith("s")) {
     if (!block.text) return null;
-    return <Text style={[styles.heading, { color: colors.headingText }]}>{block.text}</Text>;
+    return (
+      <Text style={[styles.heading, { color: colors.headingText }, scaled(19, fontScale)]}>
+        {block.text}
+      </Text>
+    );
   }
 
   // Chapter label (e.g. "Psalm 23") - subtle, we already show chapter # in header.
   if (style === "cl") {
     if (!block.text) return null;
-    return <Text style={[styles.chapterLabel, { color: colors.accent }]}>{block.text}</Text>;
+    return (
+      <Text style={[styles.chapterLabel, { color: colors.accent }, scaled(13, fontScale)]}>
+        {block.text}
+      </Text>
+    );
   }
 
   // Descriptive title (e.g. "A psalm of David.").
   if (style === "d") {
     if (!block.text) return null;
     return (
-      <Text style={[styles.descriptive, { color: colors.secondaryText }]}>{block.text}</Text>
+      <Text style={[styles.descriptive, { color: colors.secondaryText }, scaled(14, fontScale)]}>
+        {block.text}
+      </Text>
     );
   }
 
@@ -65,8 +82,14 @@ function Block({ block, seen, colors }) {
   if (style.startsWith("q")) {
     const level = parseInt(style.replace("q", ""), 10) || 1;
     return (
-      <Text style={[styles.poetry, { color: colors.text, paddingLeft: 12 * level }]}>
-        <Verses verses={block.verses} seen={seen} colors={colors} />
+      <Text
+        style={[
+          styles.poetry,
+          { color: colors.text, paddingLeft: 12 * level },
+          scaled(17, fontScale, 27),
+        ]}
+      >
+        <Verses verses={block.verses} seen={seen} colors={colors} fontScale={fontScale} />
       </Text>
     );
   }
@@ -74,28 +97,34 @@ function Block({ block, seen, colors }) {
   // Default: normal paragraph of verses.
   if (block.verses && block.verses.length > 0) {
     return (
-      <Text style={[styles.paragraph, { color: colors.text }]}>
-        <Verses verses={block.verses} seen={seen} colors={colors} />
+      <Text style={[styles.paragraph, { color: colors.text }, scaled(17, fontScale, 27)]}>
+        <Verses verses={block.verses} seen={seen} colors={colors} fontScale={fontScale} />
       </Text>
     );
   }
 
   // Fallback for any other block with plain text (e.g. references).
   if (block.text) {
-    return <Text style={[styles.paragraph, { color: colors.text }]}>{block.text}</Text>;
+    return (
+      <Text style={[styles.paragraph, { color: colors.text }, scaled(17, fontScale, 27)]}>
+        {block.text}
+      </Text>
+    );
   }
 
   return null;
 }
 
-function Verses({ verses, seen, colors }) {
+function Verses({ verses, seen, colors, fontScale }) {
   return verses.map((v, i) => {
     const isNewVerse = v.verse !== seen.last;
     if (isNewVerse) seen.last = v.verse;
     return (
       <Text key={i}>
         {isNewVerse && (
-          <Text style={[styles.verseNum, { color: colors.accent }]}>{v.verse} </Text>
+          <Text style={[styles.verseNum, { color: colors.accent }, scaled(11, fontScale)]}>
+            {v.verse}{" "}
+          </Text>
         )}
         {v.text}
       </Text>

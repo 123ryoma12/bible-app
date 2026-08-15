@@ -5,9 +5,9 @@ import {
   FlatList,
   TouchableOpacity,
   StyleSheet,
-  SafeAreaView,
   ActivityIndicator,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { BOOKS } from "../data/books";
 import { getHistoryPage, PAGE_SIZE } from "../data/historyStore";
 import { useTheme } from "../theme/ThemeContext";
@@ -83,7 +83,10 @@ export default function HistoryScreen({ onSelectEntry, onBack }) {
   };
 
   return (
-    <SafeAreaView style={[styles.safe, { backgroundColor: colors.background }]}>
+    <SafeAreaView
+      style={[styles.safe, { backgroundColor: colors.background }]}
+      edges={["top", "left", "right"]}
+    >
       <View style={[styles.header, { borderBottomColor: colors.border }]}>
         <TouchableOpacity onPress={onBack} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
           <Text style={[styles.back, { color: colors.accent }]}>{"‹ Books"}</Text>

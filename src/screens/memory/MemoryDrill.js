@@ -5,9 +5,9 @@ import {
   TextInput,
   TouchableOpacity,
   StyleSheet,
-  SafeAreaView,
   ScrollView,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { useTheme } from "../../theme/ThemeContext";
 import {
   buildDrill,
@@ -247,7 +247,10 @@ export default function MemoryDrill({ list, startIndex = 0, onExit }) {
     : `Stage ${stage} of ${MAX_STAGE}`;
 
   return (
-    <SafeAreaView style={[styles.safe, { backgroundColor: colors.background }]}>
+    <SafeAreaView
+      style={[styles.safe, { backgroundColor: colors.background }]}
+      edges={["top", "left", "right"]}
+    >
       <View style={[styles.header, { borderBottomColor: colors.border }]}>
         <TouchableOpacity onPress={() => onExit()} hitSlop={hit}>
           <Text style={[styles.back, { color: colors.accent }]}>{"‹ Memory"}</Text>
