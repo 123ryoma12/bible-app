@@ -2,6 +2,7 @@ import React from "react";
 import { View, Text, TouchableOpacity, StyleSheet, ScrollView } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useTheme, FONT_SCALES } from "../theme/ThemeContext";
+import { uiFont, FONT_FAMILIES } from "../theme/fonts";
 
 const APPEARANCE_OPTIONS = [
   { key: "light", label: "Light Mode" },
@@ -89,11 +90,18 @@ export default function SettingsScreen() {
           <Text
             style={{
               color: colors.surfaceText,
+              fontFamily: FONT_FAMILIES.serifRegular,
               fontSize: PREVIEW_BASE_SIZE * fontScale,
               lineHeight: PREVIEW_BASE_SIZE * fontScale * 1.55,
             }}
           >
-            <Text style={{ color: colors.accent, fontWeight: "700", fontSize: 11 * fontScale }}>
+            <Text
+              style={{
+                color: colors.accent,
+                fontFamily: FONT_FAMILIES.serifSemiBold,
+                fontSize: 11 * fontScale,
+              }}
+            >
               {"1 "}
             </Text>
             In the beginning God created the heavens and the earth.
@@ -108,14 +116,14 @@ const styles = StyleSheet.create({
   safe: { flex: 1 },
   title: {
     fontSize: 28,
-    fontWeight: "700",
+    fontFamily: uiFont(700),
     paddingHorizontal: 20,
     paddingTop: 12,
     paddingBottom: 8,
   },
   sectionLabel: {
     fontSize: 13,
-    fontWeight: "700",
+    fontFamily: uiFont(700),
     textTransform: "uppercase",
     letterSpacing: 0.5,
     paddingHorizontal: 20,
@@ -130,7 +138,7 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
-  rowText: { fontSize: 17 },
+  rowText: { fontSize: 17, fontFamily: uiFont(400) },
   radioOuter: {
     width: 22,
     height: 22,
@@ -142,6 +150,7 @@ const styles = StyleSheet.create({
   radioInner: { width: 12, height: 12, borderRadius: 6 },
   settingName: {
     fontSize: 17,
+    fontFamily: uiFont(400),
     paddingHorizontal: 20,
     paddingTop: 6,
     paddingBottom: 4,
@@ -160,7 +169,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  segmentText: { fontSize: 13, fontWeight: "600", textAlign: "center" },
+  segmentText: { fontSize: 13, fontFamily: uiFont(600), textAlign: "center" },
   previewCard: {
     marginHorizontal: 20,
     marginTop: 16,
@@ -169,7 +178,7 @@ const styles = StyleSheet.create({
   },
   previewLabel: {
     fontSize: 11,
-    fontWeight: "700",
+    fontFamily: uiFont(700),
     textTransform: "uppercase",
     letterSpacing: 0.5,
     marginBottom: 8,

@@ -15,6 +15,7 @@ export const lightColors = {
   border: "#e5e5e5",
   disabledBg: "#f7f7f7",
   disabledText: "#cccccc",
+  danger: "#c62f2f",
 };
 
 export const darkColors = {
@@ -31,4 +32,5 @@ export const darkColors = {
   border: "#333333",
   disabledBg: "#1c1c1c",
   disabledText: "#555555",
+  danger: "#ff6b6b",
 };

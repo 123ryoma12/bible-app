@@ -77,12 +77,57 @@ export function computeVisibility(tokens, { stage, memorised, seed = 0 }) {
   }
 }
 
+// QWERTY physical-neighbour map (lowercase). Each letter lists the keys that
+// directly surround it on a standard US QWERTY layout (horizontal, vertical, and
+// the diagonals that actually touch). Used to forgive "fat finger" taps so a
+// press landing on an adjacent key to the expected initial letter still passes.
+// Rows are offset (staggered), so diagonals follow the real physical staggering.
+const QWERTY_NEIGHBOURS = {
+  q: ["w", "a", "s"],
+  w: ["q", "e", "a", "s", "d"],
+  e: ["w", "r", "s", "d", "f"],
+  r: ["e", "t", "d", "f", "g"],
+  t: ["r", "y", "f", "g", "h"],
+  y: ["t", "u", "g", "h", "j"],
+  u: ["y", "i", "h", "j", "k"],
+  i: ["u", "o", "j", "k", "l"],
+  o: ["i", "p", "k", "l"],
+  p: ["o", "l"],
+  a: ["q", "w", "s", "z"],
+  s: ["q", "w", "e", "a", "d", "z", "x"],
+  d: ["w", "e", "r", "s", "f", "x", "c"],
+  f: ["e", "r", "t", "d", "g", "c", "v"],
+  g: ["r", "t", "y", "f", "h", "v", "b"],
+  h: ["t", "y", "u", "g", "j", "b", "n"],
+  j: ["y", "u", "i", "h", "k", "n", "m"],
+  k: ["u", "i", "o", "j", "l", "m"],
+  l: ["i", "o", "p", "k"],
+  z: ["a", "s", "x"],
+  x: ["s", "d", "z", "c"],
+  c: ["d", "f", "x", "v"],
+  v: ["f", "g", "c", "b"],
+  b: ["g", "h", "v", "n"],
+  n: ["h", "j", "b", "m"],
+  m: ["j", "k", "n"],
+};
+
+// True when `got` is the same key as, or a physical QWERTY neighbour of,
+// `expected`. Both are single lowercase letters.
+export function isQwertyNear(got, expected) {
+  if (!got || !expected) return false;
+  if (got === expected) return true;
+  const neighbours = QWERTY_NEIGHBOURS[expected];
+  return !!neighbours && neighbours.includes(got);
+}
+
 // Checks a typed letter against a token. Returns { correct, expected }.
-// Non-typable tokens are always "correct" (they're skipped).
+// Non-typable tokens are always "correct" (they're skipped). To tolerate
+// fat-finger taps, a letter that is a direct QWERTY neighbour of the expected
+// initial letter is also accepted as correct.
 export function checkLetter(token, typed) {
   if (!isTypable(token)) return { correct: true, expected: null };
   const got = (typed || "").trim().slice(0, 1).toLowerCase();
-  return { correct: got === token.expected, expected: token.expected };
+  return { correct: isQwertyNear(got, token.expected), expected: token.expected };
 }
 
 // Advances from the current token index to the next TYPABLE token index (or

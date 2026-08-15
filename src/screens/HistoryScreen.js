@@ -11,6 +11,16 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { BOOKS } from "../data/books";
 import { getHistoryPage, PAGE_SIZE } from "../data/historyStore";
 import { useTheme } from "../theme/ThemeContext";
+import { uiFont } from "../theme/fonts";
+import { formatDisplayDate } from "../data/statsSettingsStore";
+
+// Formats a Date as the app-wide "1 Jan 2026" display style.
+function formatCalendarDate(d) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return formatDisplayDate(`${y}-${m}-${day}`);
+}
 
 function formatRelativeTime(isoString) {
   const diffMs = Date.now() - new Date(isoString).getTime();
@@ -22,7 +32,7 @@ function formatRelativeTime(isoString) {
   if (diffHr < 24) return `${diffHr}h ago`;
   const diffDay = Math.floor(diffHr / 24);
   if (diffDay < 7) return `${diffDay}d ago`;
-  return new Date(isoString).toLocaleDateString();
+  return formatCalendarDate(new Date(isoString));
 }
 
 export default function HistoryScreen({ onSelectEntry, onBack }) {
@@ -88,11 +98,17 @@ export default function HistoryScreen({ onSelectEntry, onBack }) {
       edges={["top", "left", "right"]}
     >
       <View style={[styles.header, { borderBottomColor: colors.border }]}>
-        <TouchableOpacity onPress={onBack} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-          <Text style={[styles.back, { color: colors.accent }]}>{"‹ Books"}</Text>
+        <TouchableOpacity
+          style={styles.backBtn}
+          onPress={onBack}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+        >
+          <Text style={[styles.back, { color: colors.accent }]} numberOfLines={1}>
+            {"‹ Books"}
+          </Text>
         </TouchableOpacity>
         <Text style={[styles.title, { color: colors.text }]}>History</Text>
-        <View style={{ width: 60 }} />
+        <View style={styles.headerSpacer} />
       </View>
 
       {!initialLoading && entries.length === 0 && (
@@ -118,7 +134,11 @@ export default function HistoryScreen({ onSelectEntry, onBack }) {
               style={[styles.row, { borderBottomColor: colors.border }]}
               onPress={() => onSelectEntry(item.bookId, item.chapterNumber)}
             >
-              <Text style={[styles.rowText, { color: colors.text }]}>
+              <Text
+                style={[styles.rowText, { color: colors.text }]}
+                numberOfLines={1}
+                ellipsizeMode="tail"
+              >
                 {book.name} {item.chapterNumber}
               </Text>
               <Text style={[styles.rowMeta, { color: colors.mutedText }]}>
@@ -143,14 +163,20 @@ const styles = StyleSheet.create({
     paddingBottom: 8,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
-  back: { fontSize: 16, width: 70 },
-  title: { fontSize: 20, fontWeight: "700" },
+  backBtn: { width: 70 },
+  headerSpacer: { width: 70 },
+  back: { fontSize: 16, fontFamily: uiFont(400) },
+  title: { flex: 1, fontSize: 20, fontFamily: uiFont(700), textAlign: "center" },
   empty: {
-    paddingHorizontal: 24,
-    paddingTop: 40,
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 32,
+    marginTop: -40,
   },
   emptyText: {
     fontSize: 15,
+    fontFamily: uiFont(400),
     textAlign: "center",
     lineHeight: 22,
   },
@@ -162,7 +188,7 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
-  rowText: { fontSize: 17 },
-  rowMeta: { fontSize: 13 },
+  rowText: { flex: 1, fontSize: 17, marginRight: 12, fontFamily: uiFont(400) },
+  rowMeta: { fontSize: 13, flexShrink: 0, fontFamily: uiFont(400) },
   footer: { paddingVertical: 20 },
 });

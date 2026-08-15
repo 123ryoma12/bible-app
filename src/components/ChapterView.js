@@ -1,6 +1,7 @@
 import React from "react";
 import { View, Text, StyleSheet } from "react-native";
 import { useTheme } from "../theme/ThemeContext";
+import { FONT_FAMILIES } from "../theme/fonts";
 
 // Renders the USFM-style "blocks" for a single chapter (paragraphs, headings,
 // poetry lines, etc.) with inline superscript verse numbers.
@@ -86,7 +87,7 @@ function Block({ block, seen, colors, fontScale }) {
         style={[
           styles.poetry,
           { color: colors.text, paddingLeft: 12 * level },
-          scaled(17, fontScale, 27),
+          scaled(17, fontScale, 29),
         ]}
       >
         <Verses verses={block.verses} seen={seen} colors={colors} fontScale={fontScale} />
@@ -97,7 +98,7 @@ function Block({ block, seen, colors, fontScale }) {
   // Default: normal paragraph of verses.
   if (block.verses && block.verses.length > 0) {
     return (
-      <Text style={[styles.paragraph, { color: colors.text }, scaled(17, fontScale, 27)]}>
+      <Text style={[styles.paragraph, { color: colors.text }, scaled(17, fontScale, 29)]}>
         <Verses verses={block.verses} seen={seen} colors={colors} fontScale={fontScale} />
       </Text>
     );
@@ -106,7 +107,7 @@ function Block({ block, seen, colors, fontScale }) {
   // Fallback for any other block with plain text (e.g. references).
   if (block.text) {
     return (
-      <Text style={[styles.paragraph, { color: colors.text }, scaled(17, fontScale, 27)]}>
+      <Text style={[styles.paragraph, { color: colors.text }, scaled(17, fontScale, 29)]}>
         {block.text}
       </Text>
     );
@@ -122,7 +123,7 @@ function Verses({ verses, seen, colors, fontScale }) {
     return (
       <Text key={i}>
         {isNewVerse && (
-          <Text style={[styles.verseNum, { color: colors.accent }, scaled(11, fontScale)]}>
+          <Text style={[styles.verseNum, { color: colors.mutedText }, scaled(11, fontScale)]}>
             {v.verse}{" "}
           </Text>
         )}
@@ -134,44 +135,48 @@ function Verses({ verses, seen, colors, fontScale }) {
 
 const styles = StyleSheet.create({
   wrap: {
-    paddingHorizontal: 20,
-    paddingBottom: 60,
+    paddingHorizontal: 24,
+    paddingTop: 20,
+    paddingBottom: 28,
   },
   missing: {
     fontSize: 16,
-    fontStyle: "italic",
+    fontFamily: FONT_FAMILIES.serifItalic,
     marginTop: 20,
   },
   heading: {
     fontSize: 19,
-    fontWeight: "700",
-    marginTop: 18,
-    marginBottom: 6,
+    fontFamily: FONT_FAMILIES.serifBold,
+    marginTop: 28,
+    marginBottom: 14,
   },
   chapterLabel: {
     fontSize: 13,
-    fontWeight: "600",
+    fontFamily: FONT_FAMILIES.serifSemiBold,
     marginTop: 8,
   },
   descriptive: {
     fontSize: 14,
-    fontStyle: "italic",
-    marginBottom: 6,
+    fontFamily: FONT_FAMILIES.serifItalic,
+    marginBottom: 10,
   },
   paragraph: {
     fontSize: 17,
-    lineHeight: 27,
-    marginBottom: 10,
+    lineHeight: 29,
+    marginBottom: 20,
+    fontFamily: FONT_FAMILIES.serifRegular,
   },
   poetry: {
     fontSize: 17,
-    lineHeight: 27,
+    lineHeight: 29,
+    marginBottom: 8,
+    fontFamily: FONT_FAMILIES.serifRegular,
   },
   verseNum: {
     fontSize: 11,
-    fontWeight: "700",
+    fontFamily: FONT_FAMILIES.serifSemiBold,
   },
   blank: {
-    height: 10,
+    height: 16,
   },
 });

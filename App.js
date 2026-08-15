@@ -12,6 +12,17 @@ import MemoryScreen from "./src/screens/MemoryScreen";
 import DevotionalScreen from "./src/screens/DevotionalScreen";
 import SettingsScreen from "./src/screens/SettingsScreen";
 import BottomTabBar from "./src/components/BottomTabBar";
+import * as SplashScreen from "expo-splash-screen";
+import { useFonts } from "@expo-google-fonts/lora/useFonts";
+import { Lora_400Regular } from "@expo-google-fonts/lora/400Regular";
+import { Lora_500Medium } from "@expo-google-fonts/lora/500Medium";
+import { Lora_600SemiBold } from "@expo-google-fonts/lora/600SemiBold";
+import { Lora_700Bold } from "@expo-google-fonts/lora/700Bold";
+import { Lora_400Regular_Italic } from "@expo-google-fonts/lora/400Regular_Italic";
+import { Inter_400Regular } from "@expo-google-fonts/inter/400Regular";
+import { Inter_500Medium } from "@expo-google-fonts/inter/500Medium";
+import { Inter_600SemiBold } from "@expo-google-fonts/inter/600SemiBold";
+import { Inter_700Bold } from "@expo-google-fonts/inter/700Bold";
 import { getLastPosition, setLastPosition } from "./src/data/lastPositionStore";
 import { ThemeProvider, useTheme } from "./src/theme/ThemeContext";
 import {
@@ -19,7 +30,35 @@ import {
   useBackHandlerRegistry,
 } from "./src/navigation/BackHandlerRegistry";
 
+// Keep the native splash visible until our custom fonts are ready, so text
+// never flashes in the system default font first.
+SplashScreen.preventAutoHideAsync();
+
 export default function App() {
+  const [fontsLoaded, fontError] = useFonts({
+    Lora_400Regular,
+    Lora_500Medium,
+    Lora_600SemiBold,
+    Lora_700Bold,
+    Lora_400Regular_Italic,
+    Inter_400Regular,
+    Inter_500Medium,
+    Inter_600SemiBold,
+    Inter_700Bold,
+  });
+
+  useEffect(() => {
+    if (fontsLoaded || fontError) {
+      SplashScreen.hideAsync();
+    }
+  }, [fontsLoaded, fontError]);
+
+  // Hold rendering until fonts are ready (or failed) so the UI paints once in
+  // the correct typeface. The native splash stays up during this window.
+  if (!fontsLoaded && !fontError) {
+    return null;
+  }
+
   return (
     <SafeAreaProvider>
       <ThemeProvider>
@@ -42,6 +81,17 @@ function AppContent() {
   const [screen, setScreen] = useState("books");
   const [bookIndex, setBookIndex] = useState(0);
   const [chapterNumber, setChapterNumber] = useState(1);
+
+  // Controls visibility of the bottom tab bar. The Reader hides it for an
+  // immersive reading experience while scrolling down; everything else keeps
+  // it visible.
+  const [chromeVisible, setChromeVisible] = useState(true);
+
+  // Whenever we leave the reader, switch tabs, or move to another chapter,
+  // force the chrome back on so it can never get "stuck" hidden.
+  useEffect(() => {
+    setChromeVisible(true);
+  }, [activeTab, screen, bookIndex, chapterNumber]);
   const [isRestoring, setIsRestoring] = useState(true);
 
   // On launch, resume wherever the user last left off.
@@ -195,12 +245,16 @@ function AppContent() {
             onPrev={goPrev}
             onNext={goNext}
             onBack={() => setScreen("chapters")}
+            onOpenBooks={() => setScreen("books")}
+            onChromeChange={setChromeVisible}
             hasPrev={hasPrev}
             hasNext={hasNext}
           />
         )}
 
-        {activeTab === "stats" && <StatsScreen onOpenChapter={openChapterDirect} />}
+        {activeTab === "stats" && (
+          <StatsScreen onOpenChapter={openChapterDirect} isActive={activeTab === "stats"} />
+        )}
 
         {activeTab === "memory" && <MemoryScreen />}
 
@@ -209,7 +263,7 @@ function AppContent() {
         {activeTab === "settings" && <SettingsScreen />}
       </View>
 
-      <BottomTabBar active={activeTab} onChange={setActiveTab} />
+      <BottomTabBar active={activeTab} onChange={setActiveTab} visible={chromeVisible} />
     </View>
   );
 }

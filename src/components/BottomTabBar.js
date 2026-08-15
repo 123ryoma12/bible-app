@@ -1,22 +1,53 @@
-import React from "react";
-import { View, Text, TouchableOpacity, StyleSheet } from "react-native";
+import React, { useEffect, useRef, useState } from "react";
+import { View, Text, TouchableOpacity, StyleSheet, Animated } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTheme } from "../theme/ThemeContext";
+import { uiFont } from "../theme/fonts";
 
+// Each tab has a filled icon (active) and an outline icon (inactive) for a
+// clear selected state alongside the accent color.
 const TABS = [
-  { key: "bible", label: "Bible" },
-  { key: "stats", label: "Stats" },
-  { key: "memory", label: "Memory" },
-  { key: "devotional", label: "Devotional" },
-  { key: "settings", label: "Settings" },
+  { key: "bible", label: "Bible", icon: "book", iconOutline: "book-outline" },
+  { key: "stats", label: "Stats", icon: "stats-chart", iconOutline: "stats-chart-outline" },
+  { key: "memory", label: "Memory", icon: "bulb", iconOutline: "bulb-outline" },
+  { key: "devotional", label: "Devotional", icon: "heart", iconOutline: "heart-outline" },
+  { key: "settings", label: "Settings", icon: "settings", iconOutline: "settings-outline" },
 ];
 
-export default function BottomTabBar({ active, onChange }) {
+export default function BottomTabBar({ active, onChange, visible = true }) {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
 
+  // Measured full height of the bar so we can slide it exactly off-screen.
+  const [barHeight, setBarHeight] = useState(0);
+  // 0 = fully shown, 1 = fully hidden.
+  const anim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    Animated.timing(anim, {
+      toValue: visible ? 0 : 1,
+      // Reveal quickly so the menu feels responsive; hide a touch slower.
+      duration: visible ? 120 : 160,
+      useNativeDriver: true, // sliding + fading only, keeps layout stable
+    }).start();
+  }, [visible, anim]);
+
+  // Slide the whole bar down by its own height (never resize the layout, so the
+  // screen above it doesn't jump when it hides/shows).
+  const translateY =
+    barHeight > 0
+      ? anim.interpolate({ inputRange: [0, 1], outputRange: [0, barHeight] })
+      : 0;
+  const opacity = anim.interpolate({ inputRange: [0, 1], outputRange: [1, 0] });
+
   return (
-    <View
+    <Animated.View
+      onLayout={(e) => {
+        const h = e.nativeEvent.layout.height;
+        if (h > 0 && Math.abs(h - barHeight) > 0.5) setBarHeight(h);
+      }}
+      pointerEvents={visible ? "auto" : "none"}
       style={[
         styles.bar,
         {
@@ -28,6 +59,8 @@ export default function BottomTabBar({ active, onChange }) {
           paddingBottom: Math.max(insets.bottom, 8),
           paddingLeft: insets.left,
           paddingRight: insets.right,
+          transform: [{ translateY }],
+          opacity,
         },
       ]}
     >
@@ -40,11 +73,11 @@ export default function BottomTabBar({ active, onChange }) {
             onPress={() => onChange(tab.key)}
             hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
           >
-            <View
-              style={[
-                styles.indicator,
-                { backgroundColor: isActive ? colors.accent : "transparent" },
-              ]}
+            <Ionicons
+              name={isActive ? tab.icon : tab.iconOutline}
+              size={22}
+              color={isActive ? colors.accent : colors.secondaryText}
+              style={styles.icon}
             />
             <Text
               numberOfLines={1}
@@ -54,7 +87,7 @@ export default function BottomTabBar({ active, onChange }) {
                 styles.label,
                 {
                   color: isActive ? colors.accent : colors.secondaryText,
-                  fontWeight: isActive ? "700" : "500",
+                  fontFamily: isActive ? uiFont(700) : uiFont(500),
                 },
               ]}
             >
@@ -63,7 +96,7 @@ export default function BottomTabBar({ active, onChange }) {
           </TouchableOpacity>
         );
       })}
-    </View>
+    </Animated.View>
   );
 }
 
@@ -81,11 +114,8 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     paddingHorizontal: 2,
   },
-  indicator: {
-    width: 16,
-    height: 3,
-    borderRadius: 2,
-    marginBottom: 5,
+  icon: {
+    marginBottom: 3,
   },
-  label: { fontSize: 12 },
+  label: { fontSize: 12, fontFamily: uiFont(400) },
 });

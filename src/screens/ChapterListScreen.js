@@ -9,6 +9,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useTheme } from "../theme/ThemeContext";
+import { uiFont } from "../theme/fonts";
 
 const NUM_COLUMNS = 5;
 const GRID_H_PADDING = 12;
@@ -31,8 +32,14 @@ export default function ChapterListScreen({ book, onSelectChapter, onBack }) {
       edges={["top", "left", "right"]}
     >
       <View style={[styles.header, { borderBottomColor: colors.border }]}>
-        <TouchableOpacity onPress={onBack} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-          <Text style={[styles.back, { color: colors.accent }]}>{"‹ Books"}</Text>
+        <TouchableOpacity
+          style={styles.backBtn}
+          onPress={onBack}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+        >
+          <Text style={[styles.back, { color: colors.accent }]} numberOfLines={1}>
+            {"‹ Books"}
+          </Text>
         </TouchableOpacity>
         <Text
           style={[styles.title, { color: colors.text }]}
@@ -42,7 +49,7 @@ export default function ChapterListScreen({ book, onSelectChapter, onBack }) {
         >
           {book.name}
         </Text>
-        <View style={{ width: 70 }} />
+        <View style={styles.headerSpacer} />
       </View>
       <FlatList
         data={chapters}
@@ -57,6 +64,7 @@ export default function ChapterListScreen({ book, onSelectChapter, onBack }) {
               { width: cellSize, height: cellSize, backgroundColor: colors.surface },
             ]}
             onPress={() => onSelectChapter(item)}
+            activeOpacity={0.6}
           >
             <Text style={[styles.cellText, { color: colors.surfaceText }]}>{item}</Text>
           </TouchableOpacity>
@@ -77,8 +85,10 @@ const styles = StyleSheet.create({
     paddingBottom: 8,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
-  back: { fontSize: 16, width: 70 },
-  title: { flex: 1, fontSize: 20, fontWeight: "700", textAlign: "center" },
+  backBtn: { width: 70 },
+  headerSpacer: { width: 70 },
+  back: { fontSize: 16, fontFamily: uiFont(400) },
+  title: { flex: 1, fontSize: 20, fontFamily: uiFont(700), textAlign: "center" },
   grid: { paddingHorizontal: GRID_H_PADDING, paddingBottom: 24 },
   cell: {
     margin: CELL_MARGIN,
@@ -86,5 +96,5 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  cellText: { fontSize: 17, fontWeight: "600" },
+  cellText: { fontSize: 17, fontFamily: uiFont(600) },
 });

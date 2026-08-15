@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   View,
   Text,
@@ -9,6 +9,7 @@ import {
   Modal,
   Platform,
 } from "react-native";
+import { uiFont } from "../theme/fonts";
 import { SafeAreaView } from "react-native-safe-area-context";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { BOOKS } from "../data/books";
@@ -21,6 +22,7 @@ import {
   resolveBounds,
   makeDateInRange,
   describeRange,
+  formatDisplayDate,
 } from "../data/statsSettingsStore";
 import { useTheme } from "../theme/ThemeContext";
 
@@ -55,10 +57,9 @@ const LABELED_BOOK_IDS = (() => {
   return shown;
 })();
 
-export default function StatsScreen({ onOpenChapter }) {
+export default function StatsScreen({ onOpenChapter, isActive = true }) {
   const { colors } = useTheme();
   const [progressByBook, setProgressByBook] = useState(null); // null = loading
-  const [visibleBookName, setVisibleBookName] = useState(BOOKS[0].name);
   // { bookId, chapterNumber, bookName, count } | null - the bar whose info
   // popup is currently showing (revealed by tapping/clicking that bar).
   const [selected, setSelected] = useState(null);
@@ -74,10 +75,18 @@ export default function StatsScreen({ onOpenChapter }) {
     getRangeSetting().then(setRangeSettingState);
   }, [reload]);
 
-  // Persist and apply a new date-range setting.
+  // Re-fetch progress whenever the Stats tab becomes active, so chapters read
+  // elsewhere in the app show up without needing to restart.
+  useEffect(() => {
+    if (isActive) reload();
+  }, [isActive, reload]);
+
+  // Persist and apply a new date-range setting. Clear any open bar tooltip so
+  // it can't keep showing a read count from the previous range.
   const applyRangeSetting = useCallback((next) => {
     setRangeSettingState(next);
     setRangeSetting(next);
+    setSelected(null);
   }, []);
 
   // Count only the reads whose date falls inside the selected range. This is
@@ -110,14 +119,6 @@ export default function StatsScreen({ onOpenChapter }) {
   );
 
   const percent = Math.round((readChapterCount / TOTAL_CHAPTERS) * 100);
-
-  const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 20 }).current;
-  const onViewableItemsChanged = useRef(({ viewableItems }) => {
-    if (viewableItems.length > 0) {
-      const top = viewableItems[0];
-      if (top?.item?.bookName) setVisibleBookName(top.item.bookName);
-    }
-  }).current;
 
   const renderItem = useCallback(
     ({ item }) => {
@@ -213,7 +214,9 @@ export default function StatsScreen({ onOpenChapter }) {
           />
         </View>
         <Text style={[styles.summarySubtext, { color: colors.mutedText }]}>
-          {totalReads.toLocaleString()} total reads · currently viewing {visibleBookName}
+          {readChapterCount === 0
+            ? "No chapters read in this range yet"
+            : `${totalReads.toLocaleString()} total read${totalReads === 1 ? "" : "s"} in this range`}
         </Text>
 
         <TouchableOpacity
@@ -261,14 +264,7 @@ export default function StatsScreen({ onOpenChapter }) {
             </TouchableOpacity>
           </View>
         </View>
-      ) : (
-        <View style={[styles.axisHeader, { marginLeft: SCREEN_PADDING + LABEL_COL_WIDTH }]}>
-          <Text style={[styles.axisLabel, { color: colors.mutedText }]}>0</Text>
-          <Text style={[styles.axisLabel, { color: colors.mutedText }]}>
-            read count → {maxCount}
-          </Text>
-        </View>
-      )}
+      ) : null}
 
       <FlatList
         data={ALL_CHAPTERS}
@@ -279,8 +275,6 @@ export default function StatsScreen({ onOpenChapter }) {
         maxToRenderPerBatch={200}
         windowSize={9}
         removeClippedSubviews
-        onViewableItemsChanged={onViewableItemsChanged}
-        viewabilityConfig={viewabilityConfig}
         style={{ flex: 1 }}
       />
 
@@ -366,7 +360,7 @@ function DateRangeModal({ visible, setting, onClose, onApply }) {
         onPress={() => setPicking(field)}
       >
         <Text style={[styles.fieldValue, { color: value ? colors.text : colors.mutedText }]}>
-          {value || "Select date"}
+          {value ? formatDisplayDate(value) : "Select date"}
         </Text>
       </TouchableOpacity>
       {picking === field && (
@@ -434,14 +428,18 @@ function DateRangeModal({ visible, setting, onClose, onApply }) {
           )}
 
           <View style={styles.modalActions}>
-            <TouchableOpacity onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <TouchableOpacity
+              onPress={onClose}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              style={styles.modalActionBtn}
+            >
               <Text style={[styles.modalCancel, { color: colors.mutedText }]}>Cancel</Text>
             </TouchableOpacity>
             <TouchableOpacity
               onPress={() => canApply && onApply(draft)}
               disabled={!canApply}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-              style={{ marginLeft: 20 }}
+              style={[styles.modalActionBtn, styles.modalApplyBtn]}
             >
               <Text
                 style={[
@@ -464,7 +462,7 @@ const styles = StyleSheet.create({
   loading: { flex: 1, alignItems: "center", justifyContent: "center" },
   title: {
     fontSize: 28,
-    fontWeight: "700",
+    fontFamily: uiFont(700),
     paddingHorizontal: 20,
     paddingTop: 12,
     paddingBottom: 8,
@@ -476,8 +474,8 @@ const styles = StyleSheet.create({
     alignItems: "baseline",
     marginBottom: 8,
   },
-  summaryHeadline: { fontSize: 16, fontWeight: "600" },
-  summaryPercent: { fontSize: 16, fontWeight: "700" },
+  summaryHeadline: { fontSize: 16, fontFamily: uiFont(600) },
+  summaryPercent: { fontSize: 16, fontFamily: uiFont(700) },
   progressTrack: {
     width: "100%",
     height: 10,
@@ -488,14 +486,7 @@ const styles = StyleSheet.create({
     height: "100%",
     borderRadius: 5,
   },
-  summarySubtext: { fontSize: 13, marginTop: 8 },
-  axisHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    paddingRight: 20,
-    marginBottom: 4,
-  },
-  axisLabel: { fontSize: 10 },
+  summarySubtext: { fontSize: 13, fontFamily: uiFont(400), marginTop: 8 },
   tooltip: {
     flexDirection: "row",
     alignItems: "center",
@@ -507,10 +498,10 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     borderWidth: StyleSheet.hairlineWidth,
   },
-  tooltipText: { fontSize: 13, fontWeight: "600", flexShrink: 1 },
+  tooltipText: { fontSize: 13, fontFamily: uiFont(600), flexShrink: 1 },
   tooltipActions: { flexDirection: "row", alignItems: "center" },
-  tooltipOpen: { fontSize: 13, fontWeight: "700" },
-  tooltipClose: { fontSize: 13 },
+  tooltipOpen: { fontSize: 13, fontFamily: uiFont(700) },
+  tooltipClose: { fontSize: 13, fontFamily: uiFont(400) },
   row: {
     height: ROW_HEIGHT,
     flexDirection: "row",
@@ -522,7 +513,7 @@ const styles = StyleSheet.create({
   },
   bookLabel: {
     fontSize: 10,
-    fontWeight: "700",
+    fontFamily: uiFont(700),
   },
   barArea: {
     flex: 1,
@@ -545,13 +536,13 @@ const styles = StyleSheet.create({
   rangeRowText: { flexShrink: 1, paddingRight: 12 },
   rangeLabel: {
     fontSize: 11,
-    fontWeight: "700",
+    fontFamily: uiFont(700),
     textTransform: "uppercase",
     letterSpacing: 0.5,
     marginBottom: 2,
   },
-  rangeValue: { fontSize: 14, fontWeight: "600" },
-  rangeChevron: { fontSize: 13, fontWeight: "700" },
+  rangeValue: { fontSize: 14, fontFamily: uiFont(600) },
+  rangeChevron: { fontSize: 13, fontFamily: uiFont(700) },
   modalBackdrop: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.45)",
@@ -562,13 +553,13 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     padding: 20,
   },
-  modalTitle: { fontSize: 18, fontWeight: "700", marginBottom: 12 },
+  modalTitle: { fontSize: 18, fontFamily: uiFont(700), marginBottom: 12 },
   modeRow: {
     flexDirection: "row",
     alignItems: "center",
     paddingVertical: 10,
   },
-  modeLabel: { fontSize: 15, marginLeft: 12 },
+  modeLabel: { fontSize: 15, fontFamily: uiFont(400), marginLeft: 12 },
   radioOuter: {
     width: 20,
     height: 20,
@@ -581,7 +572,7 @@ const styles = StyleSheet.create({
   fieldRow: { marginTop: 8 },
   fieldLabel: {
     fontSize: 11,
-    fontWeight: "700",
+    fontFamily: uiFont(700),
     textTransform: "uppercase",
     letterSpacing: 0.5,
     marginBottom: 4,
@@ -592,14 +583,20 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     borderWidth: StyleSheet.hairlineWidth,
   },
-  fieldValue: { fontSize: 15 },
-  errorText: { fontSize: 12, marginTop: 8 },
+  fieldValue: { fontSize: 15, fontFamily: uiFont(400) },
+  errorText: { fontSize: 12, fontFamily: uiFont(400), marginTop: 8 },
   modalActions: {
     flexDirection: "row",
     justifyContent: "flex-end",
     alignItems: "center",
     marginTop: 20,
   },
-  modalCancel: { fontSize: 15 },
-  modalApply: { fontSize: 15, fontWeight: "700" },
+  modalActionBtn: {
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    borderRadius: 8,
+  },
+  modalApplyBtn: { marginLeft: 8 },
+  modalCancel: { fontSize: 15, fontFamily: uiFont(400) },
+  modalApply: { fontSize: 15, fontFamily: uiFont(700) },
 });

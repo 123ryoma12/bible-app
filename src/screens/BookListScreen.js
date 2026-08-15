@@ -3,6 +3,7 @@ import { View, Text, SectionList, TouchableOpacity, StyleSheet } from "react-nat
 import { SafeAreaView } from "react-native-safe-area-context";
 import { BOOKS } from "../data/books";
 import { useTheme } from "../theme/ThemeContext";
+import { uiFont } from "../theme/fonts";
 
 const SECTIONS = [
   { title: "Old Testament", data: BOOKS.filter((b) => b.testament === "OT") },
@@ -75,15 +76,15 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: 28,
-    fontWeight: "700",
+    fontFamily: uiFont(700),
   },
   historyLink: {
     fontSize: 15,
-    fontWeight: "600",
+    fontFamily: uiFont(600),
   },
   sectionHeader: {
     fontSize: 13,
-    fontWeight: "700",
+    fontFamily: uiFont(700),
     textTransform: "uppercase",
     letterSpacing: 0.5,
     paddingHorizontal: 20,
@@ -98,6 +99,6 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
-  rowText: { flex: 1, fontSize: 17, marginRight: 12 },
-  rowMeta: { fontSize: 13, flexShrink: 0 },
+  rowText: { flex: 1, fontSize: 17, marginRight: 12, fontFamily: uiFont(400) },
+  rowMeta: { fontSize: 13, flexShrink: 0, fontFamily: uiFont(400) },
 });

@@ -18,16 +18,30 @@ export function getChapterVerses(bookId, chapterNumber) {
   );
   if (!chapter || !Array.isArray(chapter.blocks)) return [];
 
+  // Some source data splits a single verse across multiple presentation blocks
+  // (e.g. a verse that continues after a poetry line, or a salutation broken
+  // into two lines). Those arrive as separate fragments carrying the same verse
+  // number. We merge consecutive fragments of the same verse into one entry so
+  // callers get exactly one { chapter, verse, text } per verse (full text
+  // joined), which also keeps React keys unique downstream.
   const out = [];
   for (const block of chapter.blocks) {
     if (!Array.isArray(block.verses)) continue;
     for (const v of block.verses) {
       if (v == null || v.verse == null) continue;
-      out.push({
-        chapter: Number(chapterNumber),
-        verse: Number(v.verse),
-        text: (v.text || "").trim(),
-      });
+      const verseNum = Number(v.verse);
+      const text = (v.text || "").trim();
+      const last = out[out.length - 1];
+      if (last && last.verse === verseNum) {
+        // Same verse continued - append the fragment's text.
+        last.text = last.text ? `${last.text} ${text}`.trim() : text;
+      } else {
+        out.push({
+          chapter: Number(chapterNumber),
+          verse: verseNum,
+          text,
+        });
+      }
     }
   }
   return out;

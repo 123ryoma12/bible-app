@@ -332,6 +332,7 @@ export async function addMemory({
     verseEnd: Number(verseEnd),
     verses,
     status: STATUS.NOT_MEMORISED,
+    stage: 1,      // learning stage reached (1..MAX_STAGE); resumed next session
     attempts: 0,   // total memorised attempts (successes + failures)
     successes: 0,  // perfect (100%) memorised attempts
     failures: 0,   // memorised attempts with any mistake
@@ -355,10 +356,30 @@ export async function removeMemory(id) {
 }
 
 /**
+ * Persist the learning stage reached for a not-yet-memorised set, so the drill
+ * can resume from it next session instead of restarting at stage 1. Clamped to
+ * [1, MAX_STAGE]. No-op for memorised sets (stage is irrelevant once memorised)
+ * or when the stage hasn't changed. Returns the updated entry.
+ */
+export async function saveStage(id, stage) {
+  const entry = await getEntry(id);
+  if (!entry || entry.status !== STATUS.NOT_MEMORISED) return entry;
+
+  const clamped = Math.min(MAX_STAGE, Math.max(1, Number(stage) || 1));
+  if (entry.stage === clamped) return entry;
+
+  const updated = { ...entry, stage: clamped };
+  const byId = await loadAllEntries();
+  byId[id] = updated;
+  await backend.setItem(entryKey(id), updated);
+  await reindex(byId);
+  return updated;
+}
+
+/**
  * Promote a set to "memorised". Called when the user completes the final
- * learning stage (stage 3) in-session. Stage progression itself is NOT
- * persisted (see the note at the top of this file) - only this end result is.
- * No-op if the set is already memorised. Returns the updated entry.
+ * learning stage (stage 3) in-session. No-op if the set is already memorised.
+ * Returns the updated entry.
  */
 export async function markMemorised(id) {
   const entry = await getEntry(id);

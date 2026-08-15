@@ -8,7 +8,9 @@ import {
   Alert,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { Ionicons } from "@expo/vector-icons";
 import { useTheme } from "../theme/ThemeContext";
+import { uiFont } from "../theme/fonts";
 import { useScreenBackHandler } from "../navigation/BackHandlerRegistry";
 import {
   STATUS,
@@ -177,6 +179,7 @@ export default function MemoryScreen() {
                 setView("drill");
               }}
               onLongPress={() => confirmDelete(item.entry)}
+              onDelete={() => confirmDelete(item.entry)}
             />
           )}
         />
@@ -195,7 +198,7 @@ function SectionHeader({ title, colors }) {
   );
 }
 
-function MemoryRow({ entry, colors, onPress, onLongPress }) {
+function MemoryRow({ entry, colors, onPress, onLongPress, onDelete }) {
   const memorised = entry.status === STATUS.MEMORISED;
   const rate = successRate(entry);
   const wins = successCount(entry);
@@ -222,6 +225,15 @@ function MemoryRow({ entry, colors, onPress, onLongPress }) {
         </Text>
       </View>
       <StatusBadge memorised={memorised} colors={colors} />
+      <TouchableOpacity
+        onPress={onDelete}
+        hitSlop={hit}
+        style={styles.deleteBtn}
+        accessibilityRole="button"
+        accessibilityLabel={`Delete ${referenceLabel(entry)}`}
+      >
+        <Ionicons name="trash-outline" size={20} color={colors.mutedText} />
+      </TouchableOpacity>
     </TouchableOpacity>
   );
 }
@@ -262,8 +274,8 @@ const styles = StyleSheet.create({
     paddingTop: 12,
     paddingBottom: 8,
   },
-  title: { fontSize: 28, fontWeight: "700" },
-  addLink: { fontSize: 16, fontWeight: "600" },
+  title: { fontSize: 28, fontFamily: uiFont(700) },
+  addLink: { fontSize: 16, fontFamily: uiFont(600) },
   empty: {
     flex: 1,
     alignItems: "center",
@@ -271,8 +283,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 32,
     marginTop: -40,
   },
-  emptyHeading: { fontSize: 20, fontWeight: "700", marginBottom: 6 },
-  emptySub: { fontSize: 15, textAlign: "center", lineHeight: 22 },
+  emptyHeading: { fontSize: 20, fontFamily: uiFont(700), marginBottom: 6 },
+  emptySub: { fontSize: 15, textAlign: "center", lineHeight: 22, fontFamily: uiFont() },
   sectionHeader: {
     paddingHorizontal: 20,
     paddingTop: 18,
@@ -280,7 +292,7 @@ const styles = StyleSheet.create({
   },
   sectionHeaderText: {
     fontSize: 13,
-    fontWeight: "700",
+    fontFamily: uiFont(700),
     textTransform: "uppercase",
     letterSpacing: 0.5,
   },
@@ -292,8 +304,8 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
-  rowRef: { fontSize: 17, fontWeight: "600" },
-  rowMeta: { fontSize: 13, marginTop: 3 },
+  rowRef: { fontSize: 17, fontFamily: uiFont(600) },
+  rowMeta: { fontSize: 13, marginTop: 3, fontFamily: uiFont() },
   badge: {
     borderWidth: StyleSheet.hairlineWidth,
     borderRadius: 12,
@@ -301,5 +313,9 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     marginLeft: 12,
   },
-  badgeText: { fontSize: 12, fontWeight: "700" },
+  badgeText: { fontSize: 12, fontFamily: uiFont(700) },
+  deleteBtn: {
+    marginLeft: 12,
+    padding: 4,
+  },
 });

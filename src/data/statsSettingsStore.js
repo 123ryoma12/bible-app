@@ -71,20 +71,32 @@ export function makeDateInRange(bounds) {
   };
 }
 
+const MONTHS = [
+  "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+];
+
+// Formats a "YYYY-MM-DD" string as "1 Jan 2026". Returns "" for missing/invalid.
+export function formatDisplayDate(dateStr) {
+  if (!dateStr) return "";
+  const [y, m, d] = dateStr.split("-").map(Number);
+  if (!y || !m || !d) return "";
+  return `${d} ${MONTHS[m - 1]} ${y}`;
+}
+
 // Human-readable label for the current setting, for the control row.
 export function describeRange(setting) {
-  const bounds = resolveBounds(setting);
   switch (setting.mode) {
     case RANGE_MODES.SINCE:
-      return setting.since ? `Since ${setting.since}` : "Since …";
+      return setting.since ? `Since ${formatDisplayDate(setting.since)}` : "Since …";
     case RANGE_MODES.BETWEEN:
       return setting.start && setting.end
-        ? `${setting.start} → ${setting.end}`
+        ? `${formatDisplayDate(setting.start)} → ${formatDisplayDate(setting.end)}`
         : "Between …";
     case RANGE_MODES.ALL:
       return "All time";
     case RANGE_MODES.YEAR:
     default:
-      return `This year (since ${bounds.from})`;
+      return "This year";
   }
 }

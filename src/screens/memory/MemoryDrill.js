@@ -6,8 +6,11 @@ import {
   TouchableOpacity,
   StyleSheet,
   ScrollView,
+  Pressable,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { Ionicons } from "@expo/vector-icons";
+import { uiFont, FONT_FAMILIES } from "../../theme/fonts";
 import { useTheme } from "../../theme/ThemeContext";
 import {
   buildDrill,
@@ -27,7 +30,16 @@ import {
   failureCount,
   markMemorised,
   recordAttempt,
+  saveStage,
 } from "../../data/memoryStore";
+
+// The learning stage saved on a set (falls back to 1 for older entries / any
+// out-of-range value). Memorised sets ignore stage entirely.
+function readStage(entry) {
+  const s = Number(entry && entry.stage);
+  if (!s || s < 1) return 1;
+  return Math.min(MAX_STAGE, s);
+}
 
 // Interactive typing drill that walks through an ORDERED list of memory sets.
 // The user types the initial letter of each word; correct letters reveal the
@@ -59,9 +71,10 @@ export default function MemoryDrill({ list, startIndex = 0, onExit }) {
   const entry = list[position];
 
   const startedMemorised = entry.status === STATUS.MEMORISED;
-  // In-session learning stage for not-yet-memorised sets. Resets to 1 whenever
-  // we move to a new set (see the position effect below).
-  const [stage, setStage] = useState(1);
+  // Learning stage for not-yet-memorised sets. Resumes from the set's saved
+  // stage (so leaving mid-way no longer restarts at stage 1); re-synced to the
+  // new set's saved stage whenever we move sets (see the position effect below).
+  const [stage, setStage] = useState(() => readStage(entry));
   // Whether we're currently drilling in "memorised" (no-words) mode. Becomes
   // true either because the set was already memorised, or because the user just
   // cleared stage 3 this session.
@@ -99,6 +112,12 @@ export default function MemoryDrill({ list, startIndex = 0, onExit }) {
   function resetForVerse(verse) {
     setWordPos(nextTypableIndex(verse.tokens, 0));
     setWordState({});
+  }
+
+  // Re-focus the hidden input to bring the keyboard back (e.g. after the user
+  // taps the verse text, which would otherwise dismiss it).
+  function focusInput() {
+    inputRef.current && inputRef.current.focus();
   }
 
   // Handle one typed character against the current word, then advance.
@@ -179,7 +198,9 @@ export default function MemoryDrill({ list, startIndex = 0, onExit }) {
     switch (action.type) {
       case "advanceStage":
         // Passed a non-final stage: bump stage, continue same set immediately.
+        // Persist the reached stage so leaving now resumes here next session.
         setStage(action.nextStage);
+        saveStage(entry.id, action.nextStage);
         startFreshRun();
         return;
       case "next":
@@ -227,16 +248,17 @@ export default function MemoryDrill({ list, startIndex = 0, onExit }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [seed, runOrder]);
 
-  // Moving to a new set in the list: reset all per-set state. Stage restarts at
-  // 1, memorised mode follows the new set's saved status, and a fresh run of all
-  // verses begins. Skipped on the very first mount (handled by initial state).
+  // Moving to a new set in the list: reset all per-set state. Stage resumes from
+  // the new set's saved stage, memorised mode follows the new set's saved
+  // status, and a fresh run of all verses begins. Skipped on the very first
+  // mount (handled by initial state).
   const didMountRef = useRef(false);
   useEffect(() => {
     if (!didMountRef.current) {
       didMountRef.current = true;
       return;
     }
-    setStage(1);
+    setStage(readStage(list[position]));
     setMemorised(list[position].status === STATUS.MEMORISED);
     startFreshRun();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -252,50 +274,80 @@ export default function MemoryDrill({ list, startIndex = 0, onExit }) {
       edges={["top", "left", "right"]}
     >
       <View style={[styles.header, { borderBottomColor: colors.border }]}>
-        <TouchableOpacity onPress={() => onExit()} hitSlop={hit}>
-          <Text style={[styles.back, { color: colors.accent }]}>{"‹ Memory"}</Text>
+        <TouchableOpacity style={styles.backBtn} onPress={() => onExit()} hitSlop={hit}>
+          <Text style={[styles.back, { color: colors.accent }]} numberOfLines={1}>
+            {"‹ Memory"}
+          </Text>
         </TouchableOpacity>
-        <View style={{ flex: 1, alignItems: "center" }}>
+        <View style={styles.headerCenter}>
           <Text numberOfLines={1} style={[styles.title, { color: colors.text }]}>
             {referenceLabel(entry)}
           </Text>
-          <Text style={[styles.subtitle, { color: colors.secondaryText }]}>
+          <Text style={[styles.subtitle, { color: colors.secondaryText }]} numberOfLines={1}>
             {stageLabel}
           </Text>
         </View>
-        <View style={{ width: 80 }} />
+        {phase === "typing" ? (
+          <TouchableOpacity
+            style={styles.resetBtn}
+            onPress={retryAll}
+            hitSlop={hit}
+            accessibilityRole="button"
+            accessibilityLabel="Restart this attempt"
+          >
+            <Ionicons name="refresh" size={22} color={colors.accent} />
+          </TouchableOpacity>
+        ) : (
+          <View style={styles.headerSpacer} />
+        )}
       </View>
 
       {phase === "typing" ? (
         <>
-          <ScrollView contentContainerStyle={styles.versesWrap}>
-            {drill.order.map((vIdx, i) => {
-              const verse = drill.verses[vIdx];
-              const isCurrent = i === orderPos;
-              const done = i < orderPos;
-              return (
-                <View key={vIdx} style={styles.verseBlock}>
-                  <Text style={[styles.verseNum, { color: colors.accent }]}>
-                    {verse.reference.chapter}:{verse.reference.verse}
-                  </Text>
-                  <Text style={styles.verseLine}>
-                    {verse.tokens.map((tok, ti) => (
-                      <WordSlot
-                        key={ti}
-                        token={tok}
-                        shown={verse.visibility[ti]}
-                        state={isCurrent ? wordState[ti] : done ? true : undefined}
-                        isActive={isCurrent && ti === wordPos}
-                        colors={colors}
-                      />
-                    ))}
-                  </Text>
-                </View>
-              );
-            })}
+          <ScrollView
+            contentContainerStyle={styles.versesWrap}
+            keyboardShouldPersistTaps="handled"
+          >
+            {/* Tapping anywhere on the verses brings the keyboard back (tapping
+                the text would otherwise blur the hidden input). Verses flow as
+                one continuous paragraph (like the chapter reader) with inline
+                superscript verse numbers, rather than one block per verse. */}
+            <Pressable onPress={focusInput}>
+              <View style={styles.verseLineWrap}>
+                {drill.order.map((vIdx, i) => {
+                  const verse = drill.verses[vIdx];
+                  const isCurrent = i === orderPos;
+                  const done = i < orderPos;
+                  return (
+                    <React.Fragment key={vIdx}>
+                      <View style={styles.verseNumWrap}>
+                        <Text style={[styles.verseNumInline, { color: colors.mutedText }]}>
+                          {verse.reference.verse}
+                          <Text> </Text>
+                        </Text>
+                      </View>
+                      {verse.tokens.map((tok, ti) => (
+                        <WordSlot
+                          key={`${vIdx}-${ti}`}
+                          token={tok}
+                          shown={verse.visibility[ti]}
+                          state={isCurrent ? wordState[ti] : done ? true : undefined}
+                          isActive={isCurrent && ti === wordPos}
+                          colors={colors}
+                        />
+                      ))}
+                    </React.Fragment>
+                  );
+                })}
+              </View>
+            </Pressable>
           </ScrollView>
 
-          <Text style={[styles.hint, { color: colors.mutedText }]}>
+          <Text
+            style={[styles.hint, { color: colors.mutedText }]}
+            onPress={focusInput}
+            suppressHighlighting
+          >
             Type the first letter of each word.
           </Text>
 
@@ -331,35 +383,62 @@ export default function MemoryDrill({ list, startIndex = 0, onExit }) {
   );
 }
 
-// A single word rendered inline. Visibility (hint) and correctness colour it.
+// A single word. To keep the line from reflowing when a word is revealed, the
+// real word text is ALWAYS laid out (identical glyph metrics). When the word is
+// hidden we cover its glyphs with an opaque overlay (filled with the screen
+// background colour) topped by an underline - so the letters are genuinely not
+// visible (independent of text-colour quirks) yet occupy the exact same space.
+// Revealing just removes the overlay -> zero shift.
+//   hidden + untyped -> real text covered by background overlay + underline
+//   correct          -> normal text colour (active = accent)
+//   wrong            -> red
 function WordSlot({ token, shown, state, isActive, colors }) {
   if (!isTypable(token)) {
     // Punctuation-only token: always render as-is, non-interactive.
-    return <Text style={{ color: colors.secondaryText }}>{token.text} </Text>;
+    return (
+      <View style={styles.wordWrap}>
+        <Text style={[styles.verseLine, { color: colors.secondaryText }]}>
+          {token.text}
+          <Text> </Text>
+        </Text>
+      </View>
+    );
   }
 
-  let color = colors.disabledText; // hidden + untyped -> faint
-  if (state === true) color = colors.text; // correct -> normal
-  else if (state === false) color = "#d64545"; // wrong -> red
-  else if (shown) color = colors.secondaryText; // hint shown, not yet typed
+  const typed = state === true || state === false;
+  const isBlank = !shown && !typed; // covered placeholder
+  const showUnderline = isBlank || isActive;
 
-  const display = shown || state === true ? token.text : maskWord(token.text);
+  let color;
+  if (state === true) color = isActive ? colors.accent : colors.text; // correct
+  else if (state === false) color = colors.danger; // wrong
+  else if (shown) color = colors.secondaryText; // hint shown, not yet typed
+  else color = colors.text; // blank: real colour, but hidden by the overlay
 
   return (
-    <Text
-      style={[
-        { color },
-        isActive && { textDecorationLine: "underline", color: colors.accent },
-      ]}
-    >
-      {display}{" "}
-    </Text>
+    <View style={styles.wordWrap}>
+      <Text style={[styles.verseLine, { color }]}>
+        {token.text}
+        <Text> </Text>
+      </Text>
+      {isBlank && (
+        // Opaque cover over just the word's glyphs (not the trailing space).
+        <View
+          pointerEvents="none"
+          style={[styles.wordCover, { backgroundColor: colors.background }]}
+        />
+      )}
+      {showUnderline && (
+        <View
+          pointerEvents="none"
+          style={[
+            styles.wordUnderline,
+            { backgroundColor: isActive ? colors.accent : colors.mutedText },
+          ]}
+        />
+      )}
+    </View>
   );
-}
-
-// Replaces letters with underscores but keeps punctuation, so word shape shows.
-function maskWord(word) {
-  return word.replace(/[A-Za-z]/g, "_");
 }
 
 // Shown only after a FAILED attempt (successes auto-advance without a screen).
@@ -385,7 +464,7 @@ function DoneView({
 
   return (
     <ScrollView contentContainerStyle={styles.doneWrap}>
-      <Text style={[styles.doneTitle, { color: "#d64545" }]}>Not quite</Text>
+      <Text style={[styles.doneTitle, { color: colors.danger }]}>Not quite</Text>
 
       <Text style={[styles.doneBody, { color: colors.text }]}>
         You missed {failedCount} verse{failedCount === 1 ? "" : "s"}.
@@ -454,14 +533,48 @@ const styles = StyleSheet.create({
     paddingBottom: 8,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
-  back: { fontSize: 16, width: 80 },
-  title: { fontSize: 17, fontWeight: "700" },
-  subtitle: { fontSize: 12, marginTop: 2 },
+  backBtn: { width: 84 },
+  headerSpacer: { width: 84 },
+  resetBtn: { width: 84, alignItems: "flex-end" },
+  headerCenter: { flex: 1, alignItems: "center", paddingHorizontal: 4 },
+  back: { fontSize: 16, fontFamily: uiFont() },
+  title: { fontSize: 17, fontFamily: uiFont(700) },
+  subtitle: { fontSize: 12, marginTop: 2, fontFamily: uiFont() },
   versesWrap: { padding: 20 },
-  verseBlock: { marginBottom: 18 },
-  verseNum: { fontSize: 13, fontWeight: "700", marginBottom: 4 },
-  verseLine: { fontSize: 20, lineHeight: 32 },
-  hint: { textAlign: "center", fontSize: 13, paddingBottom: 8 },
+  verseLine: { fontSize: 20, lineHeight: 32, fontFamily: FONT_FAMILIES.serifRegular },
+  // Words are laid out as wrapping inline-block "chips" so a hidden word can be
+  // covered by an absolutely-positioned overlay without disturbing the line.
+  verseLineWrap: { flexDirection: "row", flexWrap: "wrap", alignItems: "flex-end" },
+  wordWrap: { position: "relative" },
+  // Inline superscript verse number at the start of each verse (matches the
+  // subtle muted number used in the chapter reader).
+  verseNumWrap: { alignSelf: "flex-start" },
+  verseNumInline: {
+    fontSize: 12,
+    lineHeight: 20,
+    fontFamily: FONT_FAMILIES.serifSemiBold,
+  },
+  // Opaque cover over a hidden word's glyphs. Spans the FULL chip height so
+  // letter descenders (g, y, p, q, j) are hidden too. Leaves a small right gap
+  // for the word's trailing space.
+  wordCover: {
+    position: "absolute",
+    left: 0,
+    right: 5,
+    top: 0,
+    bottom: 0,
+  },
+  // The blank/active underline. Rendered AFTER the cover so it sits on top of
+  // it; pinned just below the visual baseline (well above the line-box bottom).
+  wordUnderline: {
+    position: "absolute",
+    left: 0,
+    right: 5,
+    bottom: 7,
+    height: 2,
+    borderRadius: 1,
+  },
+  hint: { textAlign: "center", fontSize: 13, paddingBottom: 8, fontFamily: uiFont() },
   hiddenInput: {
     position: "absolute",
     height: 1,
@@ -470,8 +583,8 @@ const styles = StyleSheet.create({
     bottom: 0,
   },
   doneWrap: { padding: 24, alignItems: "center" },
-  doneTitle: { fontSize: 26, fontWeight: "800", marginTop: 12, marginBottom: 12 },
-  doneBody: { fontSize: 16, lineHeight: 24, textAlign: "center" },
+  doneTitle: { fontSize: 26, fontFamily: uiFont(700), marginTop: 12, marginBottom: 12 },
+  doneBody: { fontSize: 16, lineHeight: 24, textAlign: "center", fontFamily: uiFont() },
   btn: {
     borderWidth: 1,
     borderRadius: 10,
@@ -490,5 +603,5 @@ const styles = StyleSheet.create({
     alignSelf: "stretch",
     marginBottom: 12,
   },
-  btnText: { fontSize: 16, fontWeight: "700" },
+  btnText: { fontSize: 16, fontFamily: uiFont(700) },
 });

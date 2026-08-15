@@ -2,6 +2,7 @@ import React from "react";
 import { View, Text, StyleSheet } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useTheme } from "../theme/ThemeContext";
+import { uiFont } from "../theme/fonts";
 
 // Placeholder screen - Devotional (e.g. daily reading plans/reflections) is
 // TBD and not implemented yet. Swap this out for the real feature when it's
@@ -29,7 +30,7 @@ const styles = StyleSheet.create({
   safe: { flex: 1 },
   title: {
     fontSize: 28,
-    fontWeight: "700",
+    fontFamily: uiFont(700),
     paddingHorizontal: 20,
     paddingTop: 12,
     paddingBottom: 8,
@@ -41,6 +42,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 32,
     marginTop: -40,
   },
-  heading: { fontSize: 20, fontWeight: "700", marginBottom: 6 },
-  subtext: { fontSize: 15, textAlign: "center", lineHeight: 22 },
+  heading: { fontSize: 20, fontFamily: uiFont(700), marginBottom: 6 },
+  subtext: { fontSize: 15, fontFamily: uiFont(400), textAlign: "center", lineHeight: 22 },
 });

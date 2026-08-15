@@ -6,6 +6,7 @@ import {
   StyleSheet,
   SectionList,
   FlatList,
+  ScrollView,
   Modal,
   Alert,
 } from "react-native";
@@ -19,6 +20,7 @@ import {
 } from "../../data/verses";
 import { addMemory } from "../../data/memoryStore";
 import { useTheme } from "../../theme/ThemeContext";
+import { FONT_FAMILIES, uiFont } from "../../theme/fonts";
 
 const SECTIONS = [
   { title: "Old Testament", data: BOOKS.filter((b) => b.testament === "OT") },
@@ -62,6 +64,9 @@ export default function MemoryAdd({ onDone, onCancel }) {
     rangeComplete && getVersesInRange(book.id, cs, vs, ce, ve).length > 0;
 
   const previewLabel = rangeValid ? formatReference(book.id, cs, vs, ce, ve) : null;
+  // The actual verse text for the chosen range, so the user can confirm the
+  // passage before adding it.
+  const previewVerses = rangeValid ? getVersesInRange(book.id, cs, vs, ce, ve) : [];
 
   // ---- Cascade setters: setting an earlier field invalidates the later ones.
   function chooseFromChapter(n) {
@@ -128,11 +133,13 @@ export default function MemoryAdd({ onDone, onCancel }) {
         edges={["top", "left", "right"]}
       >
         <View style={[styles.header, { borderBottomColor: colors.border }]}>
-          <TouchableOpacity onPress={onCancel} hitSlop={hit}>
-            <Text style={[styles.back, { color: colors.accent }]}>{"‹ Cancel"}</Text>
+          <TouchableOpacity style={styles.backBtn} onPress={onCancel} hitSlop={hit}>
+            <Text style={[styles.back, { color: colors.accent }]} numberOfLines={1}>
+              {"‹ Cancel"}
+            </Text>
           </TouchableOpacity>
           <Text style={[styles.title, { color: colors.text }]}>Pick a book</Text>
-          <View style={{ width: 70 }} />
+          <View style={styles.headerSpacer} />
         </View>
         <SectionList
           sections={SECTIONS}
@@ -241,6 +248,25 @@ export default function MemoryAdd({ onDone, onCancel }) {
         <Text style={[styles.preview, { color: colors.mutedText }]}>
           {previewLabel ? `Adding: ${previewLabel}` : "Select a start and end verse"}
         </Text>
+
+        {previewVerses.length > 0 && (
+          <ScrollView
+            style={[styles.previewCard, { backgroundColor: colors.surface }]}
+            contentContainerStyle={styles.previewCardContent}
+          >
+            {previewVerses.map((v, i) => (
+              <Text
+                key={`${v.chapter}:${v.verse}:${i}`}
+                style={[styles.previewVerse, { color: colors.surfaceText }]}
+              >
+                <Text style={[styles.previewVerseNum, { color: colors.accent }]}>
+                  {v.chapter}:{v.verse}{" "}
+                </Text>
+                {v.text}
+              </Text>
+            ))}
+          </ScrollView>
+        )}
 
         <TouchableOpacity
           disabled={!rangeValid || saving}
@@ -427,11 +453,11 @@ const styles = StyleSheet.create({
   },
   backBtn: { width: 84 },
   headerSpacer: { width: 84 },
-  back: { fontSize: 16 },
-  title: { flex: 1, fontSize: 20, fontWeight: "700", textAlign: "center" },
+  back: { fontSize: 16, fontFamily: uiFont(500) },
+  title: { flex: 1, fontSize: 20, fontFamily: uiFont(700), textAlign: "center" },
   sectionHeader: {
     fontSize: 13,
-    fontWeight: "700",
+    fontFamily: uiFont(700),
     textTransform: "uppercase",
     letterSpacing: 0.5,
     paddingHorizontal: 20,
@@ -446,13 +472,13 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
-  rowText: { flex: 1, fontSize: 17, marginRight: 12 },
-  rowMeta: { fontSize: 13, flexShrink: 0 },
+  rowText: { flex: 1, fontSize: 17, marginRight: 12, fontFamily: uiFont(400) },
+  rowMeta: { fontSize: 13, flexShrink: 0, fontFamily: uiFont(400) },
   form: { paddingHorizontal: 20, paddingTop: 16 },
-  help: { fontSize: 14, lineHeight: 20, marginBottom: 20 },
-  fieldLabel: { fontSize: 15, fontWeight: "700", marginBottom: 8, marginTop: 8 },
+  help: { fontSize: 14, lineHeight: 20, marginBottom: 20, fontFamily: uiFont(400) },
+  fieldLabel: { fontSize: 15, fontFamily: uiFont(700), marginBottom: 8, marginTop: 8 },
   rangeRow: { flexDirection: "row", gap: 12 },
-  numLabel: { fontSize: 12, marginBottom: 4 },
+  numLabel: { fontSize: 12, marginBottom: 4, fontFamily: uiFont(500) },
   selectField: { flex: 1 },
   selectBox: {
     borderWidth: 1.5,
@@ -462,8 +488,26 @@ const styles = StyleSheet.create({
     minHeight: 46,
     justifyContent: "center",
   },
-  selectValue: { fontSize: 18, fontWeight: "600" },
-  preview: { fontSize: 14, marginTop: 20, marginBottom: 12 },
+  selectValue: { fontSize: 18, fontFamily: uiFont(600) },
+  preview: { fontSize: 14, marginTop: 20, marginBottom: 8, fontFamily: uiFont(400) },
+  previewCard: {
+    borderRadius: 10,
+    maxHeight: 220,
+    marginBottom: 12,
+  },
+  previewCardContent: {
+    padding: 14,
+  },
+  previewVerse: {
+    fontSize: 15,
+    lineHeight: 23,
+    marginBottom: 6,
+    fontFamily: FONT_FAMILIES.serifRegular,
+  },
+  previewVerseNum: {
+    fontSize: 11,
+    fontFamily: FONT_FAMILIES.serifSemiBold,
+  },
   saveBtn: {
     borderWidth: 1,
     borderRadius: 10,
@@ -471,7 +515,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginTop: 4,
   },
-  saveText: { fontSize: 16, fontWeight: "700" },
+  saveText: { fontSize: 16, fontFamily: uiFont(700) },
 
   // ---- Number picker modal
   backdrop: {
@@ -493,8 +537,8 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
-  sheetTitle: { flex: 1, fontSize: 17, fontWeight: "700", marginRight: 12 },
-  sheetClose: { fontSize: 16, fontWeight: "600" },
+  sheetTitle: { flex: 1, fontSize: 17, fontFamily: uiFont(700), marginRight: 12 },
+  sheetClose: { fontSize: 16, fontFamily: uiFont(600) },
   pickerGrid: { padding: 12 },
   pickerCell: {
     flex: 1,
@@ -506,5 +550,5 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  pickerCellText: { fontSize: 16, fontWeight: "600" },
+  pickerCellText: { fontSize: 16, fontFamily: uiFont(600) },
 });
