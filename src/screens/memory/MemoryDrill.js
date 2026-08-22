@@ -92,6 +92,18 @@ export default function MemoryDrill({ list, startIndex = 0, onExit }) {
   // Position within the current run.
   const [orderPos, setOrderPos] = useState(0); // index into drill.order
   const [wordPos, setWordPos] = useState(() => nextTypableIndex(drill.verses[drill.order[0]].tokens, 0));
+  // Mirror of wordPos that updates synchronously. When the user types fast,
+  // several characters can arrive in a single onChangeText (or in back-to-back
+  // events before React re-renders); relying on the `wordPos` state alone would
+  // re-check the same word and silently drop keystrokes. The ref lets us walk
+  // forward within one event / across rapid events without waiting for a render.
+  const wordPosRef = useRef(wordPos);
+  // The hidden input is UNCONTROLLED (no value="" reset). Forcing the native
+  // value back to "" after every keystroke fights the native text buffer and
+  // drops characters under fast typing (RN docs warn about this). Instead we
+  // let the field accumulate and remember how many characters we've already
+  // consumed, processing only the newly-appended tail on each change event.
+  const consumedRef = useRef(0);
   // Per-word correctness for the CURRENT verse: index -> true|false|undefined.
   const [wordState, setWordState] = useState({});
   // Accumulated pass/fail per verseIndex for this run.
@@ -110,8 +122,11 @@ export default function MemoryDrill({ list, startIndex = 0, onExit }) {
   }, [orderPos, phase]);
 
   function resetForVerse(verse) {
-    setWordPos(nextTypableIndex(verse.tokens, 0));
+    const first = nextTypableIndex(verse.tokens, 0);
+    wordPosRef.current = first;
+    setWordPos(first);
     setWordState({});
+    clearInputBuffer();
   }
 
   // Re-focus the hidden input to bring the keyboard back (e.g. after the user
@@ -120,21 +135,56 @@ export default function MemoryDrill({ list, startIndex = 0, onExit }) {
     inputRef.current && inputRef.current.focus();
   }
 
-  // Handle one typed character against the current word, then advance.
-  function handleType(char) {
+  // Handle typed input against the current verse, one word per character.
+  //
+  // The input is uncontrolled, so `fullText` is the ENTIRE accumulated field
+  // contents. We only process the tail we haven't seen yet (`consumedRef`),
+  // which lets fast typing accumulate freely in the native buffer without the
+  // value="" reset that was dropping keystrokes. Each new character maps to the
+  // next typable word; we advance via the synchronous `wordPosRef` and keep a
+  // local correctness accumulator so finishVerse sees every letter immediately.
+  function handleType(fullText) {
     if (phase !== "typing" || !currentVerse) return;
-    const token = currentVerse.tokens[wordPos];
-    if (!token) return;
+    const all = Array.from(fullText || "");
+    const fresh = all.slice(consumedRef.current);
+    consumedRef.current = all.length;
+    if (fresh.length === 0) return;
 
-    const { correct } = checkLetter(token, char);
-    setWordState((prev) => ({ ...prev, [wordPos]: correct }));
+    const tokens = currentVerse.tokens;
+    let pos = wordPosRef.current;
+    const updates = {};
+    let finished = false;
 
-    const next = nextTypableIndex(currentVerse.tokens, wordPos + 1);
-    if (next < currentVerse.tokens.length) {
-      setWordPos(next);
-    } else {
-      finishVerse({ ...wordState, [wordPos]: correct });
+    for (const ch of fresh) {
+      const token = tokens[pos];
+      if (!token) break; // verse already fully consumed
+
+      const { correct } = checkLetter(token, ch);
+      updates[pos] = correct;
+
+      const next = nextTypableIndex(tokens, pos + 1);
+      if (next < tokens.length) {
+        pos = next;
+      } else {
+        finished = true;
+        break;
+      }
     }
+
+    wordPosRef.current = pos;
+    setWordPos(pos);
+    setWordState((prev) => ({ ...prev, ...updates }));
+
+    if (finished) {
+      finishVerse({ ...wordState, ...updates });
+    }
+  }
+
+  // Clear the native input buffer and our consumed-count. Called when we move
+  // to a new verse so the field doesn't grow without bound across a run.
+  function clearInputBuffer() {
+    consumedRef.current = 0;
+    if (inputRef.current) inputRef.current.clear();
   }
 
   // A verse is complete: it passes only if every typable word was correct.
@@ -351,16 +401,20 @@ export default function MemoryDrill({ list, startIndex = 0, onExit }) {
             Type the first letter of each word.
           </Text>
 
-          {/* Hidden capture input: we read the last char and reset to "". */}
+          {/* Hidden capture input. It is UNCONTROLLED (defaultValue, not value)
+              so the native buffer can accumulate fast keystrokes without a
+              per-keystroke value="" reset fighting it and dropping characters.
+              handleType receives the full accumulated text and processes only
+              the newly-typed tail; the buffer is cleared on each verse change.
+              spellCheck/textContentType off so nothing injects/replaces text. */}
           <TextInput
             ref={inputRef}
-            value=""
-            onChangeText={(t) => {
-              const ch = t.slice(-1);
-              if (ch) handleType(ch);
-            }}
+            defaultValue=""
+            onChangeText={handleType}
             autoCapitalize="none"
             autoCorrect={false}
+            autoComplete="off"
+            spellCheck={false}
             caretHidden
             blurOnSubmit={false}
             style={styles.hiddenInput}
