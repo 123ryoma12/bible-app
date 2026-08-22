@@ -9,7 +9,6 @@ import ReaderScreen from "./src/screens/ReaderScreen";
 import HistoryScreen from "./src/screens/HistoryScreen";
 import StatsScreen from "./src/screens/StatsScreen";
 import MemoryScreen from "./src/screens/MemoryScreen";
-import DevotionalScreen from "./src/screens/DevotionalScreen";
 import SettingsScreen from "./src/screens/SettingsScreen";
 import BottomTabBar from "./src/components/BottomTabBar";
 import * as SplashScreen from "expo-splash-screen";
@@ -257,8 +256,6 @@ function AppContent() {
         )}
 
         {activeTab === "memory" && <MemoryScreen />}
-
-        {activeTab === "devotional" && <DevotionalScreen />}
 
         {activeTab === "settings" && <SettingsScreen />}
       </View>

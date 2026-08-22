@@ -11,7 +11,6 @@ const TABS = [
   { key: "bible", label: "Bible", icon: "book", iconOutline: "book-outline" },
   { key: "stats", label: "Stats", icon: "stats-chart", iconOutline: "stats-chart-outline" },
   { key: "memory", label: "Memory", icon: "bulb", iconOutline: "bulb-outline" },
-  { key: "devotional", label: "Devotional", icon: "heart", iconOutline: "heart-outline" },
   { key: "settings", label: "Settings", icon: "settings", iconOutline: "settings-outline" },
 ];
 

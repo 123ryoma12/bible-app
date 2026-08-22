@@ -23,6 +23,9 @@ import {
   makeDateInRange,
   describeRange,
   formatDisplayDate,
+  getGoalDate,
+  setGoalDate,
+  computeGoalPace,
 } from "../data/statsSettingsStore";
 import { useTheme } from "../theme/ThemeContext";
 
@@ -65,6 +68,11 @@ export default function StatsScreen({ onOpenChapter, isActive = true }) {
   const [selected, setSelected] = useState(null);
   const [rangeSetting, setRangeSettingState] = useState(null); // null = loading
   const [rangeModalOpen, setRangeModalOpen] = useState(false);
+  // goalDate is a "YYYY-MM-DD" string or null (no goal). We track load
+  // completion separately because null is a valid loaded value.
+  const [goalDate, setGoalDateState] = useState(null);
+  const [goalLoaded, setGoalLoaded] = useState(false);
+  const [goalModalOpen, setGoalModalOpen] = useState(false);
 
   const reload = useCallback(() => {
     getAllBooksProgress(BOOKS.map((b) => b.id)).then(setProgressByBook);
@@ -73,7 +81,17 @@ export default function StatsScreen({ onOpenChapter, isActive = true }) {
   useEffect(() => {
     reload();
     getRangeSetting().then(setRangeSettingState);
+    getGoalDate().then((d) => {
+      setGoalDateState(d);
+      setGoalLoaded(true);
+    });
   }, [reload]);
+
+  // Persist and apply a new goal date (or null to clear it).
+  const applyGoalDate = useCallback((next) => {
+    setGoalDateState(next);
+    setGoalDate(next);
+  }, []);
 
   // Re-fetch progress whenever the Stats tab becomes active, so chapters read
   // elsewhere in the app show up without needing to restart.
@@ -119,6 +137,19 @@ export default function StatsScreen({ onOpenChapter, isActive = true }) {
   );
 
   const percent = Math.round((readChapterCount / TOTAL_CHAPTERS) * 100);
+
+  // Goal pace: how many chapters "should" have been read by today given the
+  // goal date, vs how many actually have. Only meaningful for ranges that end
+  // at today (This year / Since); returns applicable:false otherwise.
+  const goalPace = useMemo(() => {
+    if (!rangeSetting) return null;
+    return computeGoalPace({
+      setting: rangeSetting,
+      goalDate,
+      readChapterCount,
+      totalChapters: TOTAL_CHAPTERS,
+    });
+  }, [rangeSetting, goalDate, readChapterCount]);
 
   const renderItem = useCallback(
     ({ item }) => {
@@ -178,7 +209,7 @@ export default function StatsScreen({ onOpenChapter, isActive = true }) {
     [countsByKey, maxCount, colors, onOpenChapter, selected]
   );
 
-  if (progressByBook === null || rangeSetting === null) {
+  if (progressByBook === null || rangeSetting === null || !goalLoaded) {
     return (
       <SafeAreaView
         style={[styles.safe, { backgroundColor: colors.background }]}
@@ -219,6 +250,44 @@ export default function StatsScreen({ onOpenChapter, isActive = true }) {
             : `${totalReads.toLocaleString()} total read${totalReads === 1 ? "" : "s"} in this range`}
         </Text>
 
+        {goalPace && goalPace.applicable ? (
+          <View style={[styles.goalPaceRow, { borderColor: colors.border }]}>
+            <Text style={[styles.goalPaceText, { color: colors.mutedText }]}>
+              {goalPace.reached ? (
+                <Text style={{ color: colors.accent, fontFamily: uiFont(700) }}>
+                  Goal reached — whole Bible done! 🎉
+                </Text>
+              ) : goalPace.overdue ? (
+                <>
+                  Goal date passed —{" "}
+                  <Text style={{ color: colors.text, fontFamily: uiFont(700) }}>
+                    {goalPace.remaining.toLocaleString()}
+                  </Text>{" "}
+                  chapter{goalPace.remaining === 1 ? "" : "s"} still to go
+                </>
+              ) : (
+                <>
+                  Read{" "}
+                  <Text style={{ color: colors.accent, fontFamily: uiFont(700) }}>
+                    {goalPace.perDay.toLocaleString()}
+                  </Text>{" "}
+                  chapter{goalPace.perDay === 1 ? "" : "s"}/day to finish by then
+                  {" · "}
+                  {goalPace.remaining.toLocaleString()} left over {goalPace.daysLeft.toLocaleString()} day
+                  {goalPace.daysLeft === 1 ? "" : "s"}
+                </>
+              )}
+            </Text>
+          </View>
+        ) : null}
+
+        {goalPace && !goalPace.applicable && goalPace.hasGoal ? (
+          <Text style={[styles.goalNote, { color: colors.mutedText }]}>
+            Goal set for {formatDisplayDate(goalPace.goalDate)}. Choose “This year” or
+            “Since a date” to see your pace to today.
+          </Text>
+        ) : null}
+
         <TouchableOpacity
           style={[styles.rangeRow, { borderColor: colors.border, backgroundColor: colors.surface }]}
           onPress={() => setRangeModalOpen(true)}
@@ -231,6 +300,22 @@ export default function StatsScreen({ onOpenChapter, isActive = true }) {
             </Text>
           </View>
           <Text style={[styles.rangeChevron, { color: colors.accent }]}>Change ›</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.rangeRow, { borderColor: colors.border, backgroundColor: colors.surface }]}
+          onPress={() => setGoalModalOpen(true)}
+          activeOpacity={0.7}
+        >
+          <View style={styles.rangeRowText}>
+            <Text style={[styles.rangeLabel, { color: colors.mutedText }]}>Reading Goal</Text>
+            <Text style={[styles.rangeValue, { color: colors.text }]} numberOfLines={1}>
+              {goalDate ? `Finish by ${formatDisplayDate(goalDate)}` : "No goal set"}
+            </Text>
+          </View>
+          <Text style={[styles.rangeChevron, { color: colors.accent }]}>
+            {goalDate ? "Change ›" : "Set ›"}
+          </Text>
         </TouchableOpacity>
       </View>
 
@@ -287,7 +372,115 @@ export default function StatsScreen({ onOpenChapter, isActive = true }) {
           setRangeModalOpen(false);
         }}
       />
+
+      <GoalModal
+        visible={goalModalOpen}
+        goalDate={goalDate}
+        onClose={() => setGoalModalOpen(false)}
+        onApply={(next) => {
+          applyGoalDate(next);
+          setGoalModalOpen(false);
+        }}
+      />
     </SafeAreaView>
+  );
+}
+
+// Lets the user pick (or clear) a single "finish the whole Bible by" date. The
+// goal date is required to be in the future (a past date makes the whole target
+// "due now"), so the picker's minimum is tomorrow.
+function GoalModal({ visible, goalDate, onClose, onApply }) {
+  const { colors } = useTheme();
+  const [draft, setDraft] = useState(goalDate);
+  const [picking, setPicking] = useState(false);
+
+  useEffect(() => {
+    if (visible) {
+      setDraft(goalDate);
+      setPicking(false);
+    }
+  }, [visible, goalDate]);
+
+  const minimumDate = useMemo(() => {
+    const d = new Date();
+    d.setDate(d.getDate() + 1);
+    d.setHours(12, 0, 0, 0);
+    return d;
+  }, [visible]);
+
+  const onPickerChange = (event, selectedDate) => {
+    if (Platform.OS !== "ios") setPicking(false);
+    if (event?.type === "dismissed" || !selectedDate) return;
+    setDraft(toDateString(selectedDate));
+  };
+
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <View style={styles.modalBackdrop}>
+        <View style={[styles.modalCard, { backgroundColor: colors.surface }]}>
+          <Text style={[styles.modalTitle, { color: colors.text }]}>Reading Goal</Text>
+          <Text style={[styles.goalModalHint, { color: colors.mutedText }]}>
+            Pick the date you want to have read the whole Bible ({TOTAL_CHAPTERS.toLocaleString()}{" "}
+            chapters) by. Stats will show how many chapters you should have reached by today.
+          </Text>
+
+          <View style={styles.fieldRow}>
+            <Text style={[styles.fieldLabel, { color: colors.mutedText }]}>Finish by</Text>
+            <TouchableOpacity
+              style={[
+                styles.fieldBtn,
+                { borderColor: colors.border, backgroundColor: colors.background },
+              ]}
+              onPress={() => setPicking(true)}
+            >
+              <Text style={[styles.fieldValue, { color: draft ? colors.text : colors.mutedText }]}>
+                {draft ? formatDisplayDate(draft) : "Select date"}
+              </Text>
+            </TouchableOpacity>
+            {picking && (
+              <DateTimePicker
+                mode="date"
+                value={parseDate(draft, minimumDate)}
+                onChange={onPickerChange}
+                minimumDate={minimumDate}
+                display={Platform.OS === "ios" ? "inline" : "default"}
+              />
+            )}
+          </View>
+
+          <View style={styles.modalActions}>
+            {goalDate ? (
+              <TouchableOpacity
+                onPress={() => onApply(null)}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                style={[styles.modalActionBtn, { marginRight: "auto" }]}
+              >
+                <Text style={[styles.modalCancel, { color: colors.accent }]}>Clear goal</Text>
+              </TouchableOpacity>
+            ) : null}
+            <TouchableOpacity
+              onPress={onClose}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              style={styles.modalActionBtn}
+            >
+              <Text style={[styles.modalCancel, { color: colors.mutedText }]}>Cancel</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => draft && onApply(draft)}
+              disabled={!draft}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              style={[styles.modalActionBtn, styles.modalApplyBtn]}
+            >
+              <Text
+                style={[styles.modalApply, { color: draft ? colors.accent : colors.mutedText }]}
+              >
+                Save
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
   );
 }
 
@@ -487,6 +680,24 @@ const styles = StyleSheet.create({
     borderRadius: 5,
   },
   summarySubtext: { fontSize: 13, fontFamily: uiFont(400), marginTop: 8 },
+  goalPaceRow: {
+    marginTop: 8,
+    paddingTop: 8,
+    borderTopWidth: StyleSheet.hairlineWidth,
+  },
+  goalPaceText: { fontSize: 13, fontFamily: uiFont(400) },
+  goalNote: {
+    fontSize: 12,
+    fontFamily: uiFont(400),
+    marginTop: 8,
+    lineHeight: 17,
+  },
+  goalModalHint: {
+    fontSize: 13,
+    fontFamily: uiFont(400),
+    lineHeight: 19,
+    marginBottom: 12,
+  },
   tooltip: {
     flexDirection: "row",
     alignItems: "center",

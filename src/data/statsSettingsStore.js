@@ -14,6 +14,7 @@ import { backend } from "./storageBackend";
 import { todayDateString } from "./progressStore";
 
 const SETTINGS_KEY = "stats:dateRange";
+const GOAL_KEY = "stats:goalDate"; // a single "YYYY-MM-DD" target to finish the whole Bible, or null
 
 export const RANGE_MODES = {
   YEAR: "year",
@@ -99,4 +100,119 @@ export function describeRange(setting) {
     default:
       return "This year";
   }
+}
+
+// ---------------------------------------------------------------------------
+// Reading goal: a single target date by which the user wants to have read the
+// whole Bible. Stored as a "YYYY-MM-DD" string (or null when no goal is set).
+// ---------------------------------------------------------------------------
+
+export async function getGoalDate() {
+  const saved = await backend.getItem(GOAL_KEY);
+  return typeof saved === "string" && saved ? saved : null;
+}
+
+export async function setGoalDate(dateStr) {
+  await backend.setItem(GOAL_KEY, dateStr || null);
+  return dateStr || null;
+}
+
+// Number of whole days between two "YYYY-MM-DD" strings (b - a). Parses at noon
+// local time to avoid DST/timezone off-by-one issues.
+function daysBetween(a, b) {
+  const [ay, am, ad] = a.split("-").map(Number);
+  const [by, bm, bd] = b.split("-").map(Number);
+  const da = new Date(ay, am - 1, ad, 12, 0, 0, 0);
+  const db = new Date(by, bm - 1, bd, 12, 0, 0, 0);
+  return Math.round((db - da) / 86400000);
+}
+
+// A range "tracks a goal" only when it ends at today (i.e. it has a concrete
+// start and its end is today's date). That's YEAR and SINCE. BETWEEN and ALL
+// don't include a "today" anchor, so a "should've read by now" pace is
+// meaningless for them.
+function goalStartDate(setting, now = new Date()) {
+  switch (setting.mode) {
+    case RANGE_MODES.YEAR:
+      return startOfYearDateString(now);
+    case RANGE_MODES.SINCE:
+      return setting.since || null;
+    default:
+      return null; // BETWEEN / ALL -> no today-anchored start
+  }
+}
+
+// Computes goal pace for the Stats screen.
+//
+// Returns one of:
+//   { applicable: false, hasGoal, reason }  - nothing to show / show a note
+//   { applicable: true, goalDate, read, remaining, daysLeft, perDay,
+//     percentOfTimeElapsed, reached, overdue } - full pace info
+//
+// `remaining` = chapters left to finish the whole Bible (totalChapters - read).
+// `daysLeft`  = days from today through the goal date, inclusive of today.
+// `perDay`    = how many chapters you'd need to read each day from today to
+//               finish by the goal date: ceil(remaining / daysLeft).
+//   - `reached` (whole Bible done): perDay = 0.
+//   - `overdue` (goal date already passed, not done): perDay = remaining (all due now).
+export function computeGoalPace({
+  setting,
+  goalDate,
+  readChapterCount,
+  totalChapters,
+  now = new Date(),
+}) {
+  if (!goalDate) {
+    return { applicable: false, hasGoal: false, reason: "no-goal" };
+  }
+
+  const start = goalStartDate(setting, now);
+  if (!start) {
+    // BETWEEN / ALL: goal exists but this range can't express pace-to-today.
+    return { applicable: false, hasGoal: true, reason: "range-not-tracking", goalDate };
+  }
+
+  const today = todayDateString(now);
+  const totalDays = daysBetween(start, goalDate);
+  const remaining = Math.max(totalChapters - readChapterCount, 0);
+  const reached = readChapterCount >= totalChapters;
+
+  // "Days left" is inclusive of today, since you can still read today. On the
+  // goal date itself that's 1 day; the day after the goal it's 0 (overdue).
+  const daysLeft = daysBetween(today, goalDate) + 1;
+
+  // Goal date already passed (or is today with nothing left): everything is
+  // "due" now. Guard against dividing by zero / negative days.
+  if (daysLeft <= 0 || reached) {
+    return {
+      applicable: true,
+      goalDate,
+      read: readChapterCount,
+      remaining,
+      daysLeft: Math.max(daysLeft, 0),
+      // No future days to spread the work across: whatever's left is due now.
+      perDay: reached ? 0 : remaining,
+      reached,
+      overdue: !reached && daysLeft <= 0,
+    };
+  }
+
+  const perDay = Math.ceil(remaining / daysLeft);
+
+  return {
+    applicable: true,
+    goalDate,
+    read: readChapterCount,
+    remaining,
+    daysLeft,
+    perDay,
+    percentOfTimeElapsed:
+      totalDays > 0
+        ? Math.round(
+            (Math.min(Math.max(daysBetween(start, today), 0), totalDays) / totalDays) * 100
+          )
+        : 100,
+    reached: false,
+    overdue: false,
+  };
 }
