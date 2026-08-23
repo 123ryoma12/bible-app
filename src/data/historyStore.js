@@ -53,7 +53,20 @@ async function migrateLegacyIfNeeded() {
 async function getIndex() {
   await migrateLegacyIfNeeded();
   const index = await backend.getItem(INDEX_KEY);
-  return Array.isArray(index) ? index : [];
+  if (!Array.isArray(index)) return [];
+  // Defensively de-dupe the persisted index (keeping the first/most-recent
+  // occurrence). Interleaved, un-awaited addToHistory writes can race on the
+  // read-modify-write of history:index and persist a duplicate id, which would
+  // otherwise surface as a duplicate FlatList key (e.g. "GEN-1"). De-duping on
+  // read self-heals any already-corrupted storage.
+  const seen = new Set();
+  const deduped = [];
+  for (const id of index) {
+    if (seen.has(id)) continue;
+    seen.add(id);
+    deduped.push(id);
+  }
+  return deduped;
 }
 
 /**

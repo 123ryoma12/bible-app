@@ -21,6 +21,7 @@ import {
 import { addMemory } from "../../data/memoryStore";
 import { useTheme } from "../../theme/ThemeContext";
 import { FONT_FAMILIES, uiFont } from "../../theme/fonts";
+import { BIBLE_VERSIONS, versionAbbr } from "../../data/bibleVersions";
 
 const SECTIONS = [
   { title: "Old Testament", data: BOOKS.filter((b) => b.testament === "OT") },
@@ -43,6 +44,11 @@ export default function MemoryAdd({ onDone, onCancel }) {
   const [ve, setVe] = useState(null); // to verse
   const [saving, setSaving] = useState(false);
 
+  // Translation this memory set will be stored in. This is the FIRST thing the
+  // user picks (no default) - the flow is: version -> book -> chapter -> verse.
+  // The passage text is snapshotted from this version at save time.
+  const [version, setVersion] = useState(null);
+
   // Which picker modal is open: null | "cs" | "vs" | "ce" | "ve".
   const [openPicker, setOpenPicker] = useState(null);
 
@@ -61,12 +67,14 @@ export default function MemoryAdd({ onDone, onCancel }) {
 
   const rangeComplete = book && cs != null && vs != null && ce != null && ve != null;
   const rangeValid =
-    rangeComplete && getVersesInRange(book.id, cs, vs, ce, ve).length > 0;
+    rangeComplete && getVersesInRange(book.id, cs, vs, ce, ve, version).length > 0;
 
   const previewLabel = rangeValid ? formatReference(book.id, cs, vs, ce, ve) : null;
-  // The actual verse text for the chosen range, so the user can confirm the
-  // passage before adding it.
-  const previewVerses = rangeValid ? getVersesInRange(book.id, cs, vs, ce, ve) : [];
+  // The actual verse text for the chosen range (in the selected translation),
+  // so the user can confirm the passage before adding it.
+  const previewVerses = rangeValid
+    ? getVersesInRange(book.id, cs, vs, ce, ve, version)
+    : [];
 
   // ---- Cascade setters: setting an earlier field invalidates the later ones.
   function chooseFromChapter(n) {
@@ -108,6 +116,17 @@ export default function MemoryAdd({ onDone, onCancel }) {
     setVe(null);
   }
 
+  // Choosing (or changing) the version resets the whole passage selection so a
+  // set can never mix a version with a range picked under a different one.
+  function pickVersion(id) {
+    setVersion(id);
+    setBook(null);
+    setCs(null);
+    setVs(null);
+    setCe(null);
+    setVe(null);
+  }
+
   async function handleSave() {
     if (!rangeValid || saving) return;
     setSaving(true);
@@ -118,6 +137,7 @@ export default function MemoryAdd({ onDone, onCancel }) {
         verseStart: vs,
         chapterEnd: ce,
         verseEnd: ve,
+        version,
       });
       onDone();
     } catch (e) {
@@ -126,7 +146,10 @@ export default function MemoryAdd({ onDone, onCancel }) {
     }
   }
 
-  if (!book) {
+  // Step 1: choose a version. No default - the user must pick one before the
+  // book/chapter/verse steps become available.
+  if (!version) {
+    const available = BIBLE_VERSIONS.filter((v) => v.available);
     return (
       <SafeAreaView
         style={[styles.safe, { backgroundColor: colors.background }]}
@@ -138,7 +161,61 @@ export default function MemoryAdd({ onDone, onCancel }) {
               {"‹ Cancel"}
             </Text>
           </TouchableOpacity>
-          <Text style={[styles.title, { color: colors.text }]}>Pick a book</Text>
+          <Text style={[styles.title, { color: colors.text }]}>Pick a version</Text>
+          <View style={styles.headerSpacer} />
+        </View>
+        <View style={styles.form}>
+          <Text style={[styles.help, { color: colors.secondaryText }]}>
+            Choose the translation to memorise this passage in. You can pick a
+            different version each time you add a verse.
+          </Text>
+          {available.map((v) => (
+            <TouchableOpacity
+              key={v.id}
+              style={[styles.versionListRow, { borderColor: colors.border }]}
+              onPress={() => pickVersion(v.id)}
+              accessibilityRole="button"
+              accessibilityLabel={v.name}
+            >
+              <Text style={[styles.versionListAbbr, { color: colors.accent }]}>
+                {v.abbr}
+              </Text>
+              <Text
+                style={[styles.versionListName, { color: colors.text }]}
+                numberOfLines={1}
+              >
+                {v.name}
+              </Text>
+              <Text style={[styles.versionListChevron, { color: colors.mutedText }]}>
+                {"\u203A"}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  // Step 2: pick a book (version already chosen).
+  if (!book) {
+    return (
+      <SafeAreaView
+        style={[styles.safe, { backgroundColor: colors.background }]}
+        edges={["top", "left", "right"]}
+      >
+        <View style={[styles.header, { borderBottomColor: colors.border }]}>
+          <TouchableOpacity
+            style={styles.backBtn}
+            onPress={() => pickVersion(null)}
+            hitSlop={hit}
+          >
+            <Text style={[styles.back, { color: colors.accent }]} numberOfLines={1}>
+              {"‹ Version"}
+            </Text>
+          </TouchableOpacity>
+          <Text style={[styles.title, { color: colors.text }]}>
+            Pick a book · {versionAbbr(version)}
+          </Text>
           <View style={styles.headerSpacer} />
         </View>
         <SectionList
@@ -246,7 +323,9 @@ export default function MemoryAdd({ onDone, onCancel }) {
         </View>
 
         <Text style={[styles.preview, { color: colors.mutedText }]}>
-          {previewLabel ? `Adding: ${previewLabel}` : "Select a start and end verse"}
+          {previewLabel
+            ? `Adding: ${previewLabel} · ${versionAbbr(version)}`
+            : "Select a start and end verse"}
         </Text>
 
         {previewVerses.length > 0 && (
@@ -478,6 +557,20 @@ const styles = StyleSheet.create({
   help: { fontSize: 14, lineHeight: 20, marginBottom: 20, fontFamily: uiFont(400) },
   fieldLabel: { fontSize: 15, fontFamily: uiFont(700), marginBottom: 8, marginTop: 8 },
   rangeRow: { flexDirection: "row", gap: 12 },
+  // Full-width version rows for the first step of the add flow.
+  versionListRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    borderWidth: 1.5,
+    borderRadius: 12,
+    paddingVertical: 16,
+    paddingHorizontal: 16,
+    marginBottom: 12,
+  },
+  versionListAbbr: { fontSize: 16, fontFamily: uiFont(700), width: 44 },
+  versionListName: { flex: 1, fontSize: 16, fontFamily: uiFont(400) },
+  versionListChevron: { fontSize: 20, fontFamily: uiFont(400) },
   numLabel: { fontSize: 12, marginBottom: 4, fontFamily: uiFont(500) },
   selectField: { flex: 1 },
   selectBox: {

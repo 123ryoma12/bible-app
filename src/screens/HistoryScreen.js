@@ -61,7 +61,18 @@ export default function HistoryScreen({ onSelectEntry, onBack }) {
       );
       cursorRef.current = nextCursor;
       hasMoreRef.current = hasMore;
-      setEntries((prev) => [...prev, ...page]);
+      // De-dupe by entry id when appending. The history index can reorder
+      // between page loads (re-reading a chapter moves it to the front), and
+      // getHistoryPage falls back to start=0 if a cursor has since moved - both
+      // can re-surface an id already shown on a previous page. Without this,
+      // FlatList would see two children with the same key (e.g. "GEN-1").
+      setEntries((prev) => {
+        const seen = new Set(prev.map((e) => `${e.bookId}-${e.chapterNumber}`));
+        const additions = page.filter(
+          (e) => !seen.has(`${e.bookId}-${e.chapterNumber}`)
+        );
+        return additions.length ? [...prev, ...additions] : prev;
+      });
     } finally {
       loadingRef.current = false;
       setLoadingMore(false);

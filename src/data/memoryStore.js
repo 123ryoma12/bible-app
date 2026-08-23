@@ -33,6 +33,8 @@
 
 import { backend } from "./storageBackend";
 import { getVersesInRange, formatReference } from "./verses";
+import { getActivePrefs } from "./memoryPrefsStore";
+import { resolveVersion, DEFAULT_VERSION } from "./bibleVersions";
 
 const INDEX_KEY = "memory:index";
 const ENTRY_PREFIX = "memory:entry:";
@@ -106,32 +108,34 @@ async function getEntry(id) {
 // (weakest-first), resurfacing for review. Practise it again and its freshness
 // resets to 1.0, sending it back down.
 
-/** How much the (normalised) success COUNT contributes vs the success RATE. */
+// The four tuning knobs below are now USER-CONFIGURABLE via memoryPrefsStore.js
+// (Settings > Memory Prioritisation) rather than hard-coded. Their live values
+// come from getActivePrefs(); the exported constants remain as backwards-
+// compatible aliases for the tuned DEFAULTS so any importer/test still resolves.
+//
+//   countWeight       - how much the (normalised) success COUNT contributes vs
+//                       the success RATE.
+//   countScale        - successes needed to reach ~63% of the max count
+//                       contribution (diminishing returns).
+//   decayHalfLifeDays - days for a verse's freshness to HALVE (exponential
+//                       decay half-life); strong verses resurface after this.
+//   freshnessFloor    - freshness assigned to a memorised entry that has never
+//                       succeeded (treated as maximally stale, stays near top).
+
+/** Tuned default for the success-count weight. Live value: getActivePrefs(). */
 export const COUNT_WEIGHT = 0.35;
 
-/** Successes needed to reach ~63% of the max count contribution (diminishing).
- * Set to 30 as a middle ground: success count keeps differentiating verses well
- * into the dozens-of-reps range (so count still matters in a mature library),
- * without over-penalising freshly-memorised low-count verses the way a larger
- * scale would. */
-const COUNT_SCALE = 30;
-
-/** Days for a verse's freshness to HALVE (exponential decay half-life). Tuned
- * to 60 so that with a large library the review queue doesn't flood - strong
- * verses stay "known" for ~2 months before drifting up for a refresher. */
+/** Tuned default for the freshness half-life (days). Live: getActivePrefs(). */
 export const DECAY_HALF_LIFE_DAYS = 60;
-
-/** Freshness assigned to a memorised entry that has never succeeded (no
- * lastSuccessAt): treated as maximally stale so it stays near the top. */
-const FRESHNESS_FLOOR = 0.01;
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
 // Squash a raw success count into [0,1) with diminishing returns. The first few
-// successes move the needle a lot; beyond COUNT_SCALE each extra one adds little.
+// successes move the needle a lot; beyond countScale each extra one adds little.
 function normalisedSuccessCount(successes) {
+  const { countScale } = getActivePrefs();
   const n = Math.max(0, successes || 0);
-  return 1 - Math.exp(-n / COUNT_SCALE);
+  return 1 - Math.exp(-n / countScale);
 }
 
 // Whole days elapsed since the entry's last successful attempt. Memorised
@@ -145,13 +149,14 @@ function daysSinceLastSuccess(entry, now = Date.now()) {
 }
 
 // Exponential freshness in (0, 1]: 1.0 right after a success, halving every
-// DECAY_HALF_LIFE_DAYS and approaching (never reaching) 0. Entries that have
-// never succeeded return the floor so they stay maximally stale. Exported for
-// testing/UI.
+// decayHalfLifeDays and approaching (never reaching) 0. Entries that have
+// never succeeded return the freshnessFloor so they stay maximally stale. Both
+// values are user-configurable (memoryPrefsStore). Exported for testing/UI.
 export function freshness(entry, now = Date.now()) {
+  const { decayHalfLifeDays, freshnessFloor } = getActivePrefs();
   const days = daysSinceLastSuccess(entry, now);
-  if (!Number.isFinite(days)) return FRESHNESS_FLOOR; // never succeeded -> stale
-  return Math.pow(0.5, days / DECAY_HALF_LIFE_DAYS);
+  if (!Number.isFinite(days)) return freshnessFloor; // never succeeded -> stale
+  return Math.pow(0.5, days / decayHalfLifeDays);
 }
 
 /**
@@ -165,9 +170,10 @@ export function freshness(entry, now = Date.now()) {
 export function memorisedScore(entry, now = Date.now()) {
   const attempts = entry && entry.attempts ? entry.attempts : 0;
   if (!attempts) return -1; // never attempted -> top of the practice queue
+  const { countWeight } = getActivePrefs();
   const rate = successRate(entry);
   const normCount = normalisedSuccessCount(successCount(entry));
-  const strength = rate * (1 - COUNT_WEIGHT) + normCount * COUNT_WEIGHT;
+  const strength = rate * (1 - countWeight) + normCount * countWeight;
   return strength * freshness(entry, now);
 }
 
@@ -311,13 +317,19 @@ export async function addMemory({
   verseStart,
   chapterEnd,
   verseEnd,
+  version,
 }) {
+  // Each memory set snapshots the text of a specific translation, chosen at add
+  // time (independent of the reading version). Unbundled versions coerce to the
+  // default so the snapshot always has text.
+  const resolvedVersion = resolveVersion(version || DEFAULT_VERSION);
   const verses = getVersesInRange(
     bookId,
     chapterStart,
     verseStart,
     chapterEnd,
-    verseEnd
+    verseEnd,
+    resolvedVersion
   );
   if (verses.length === 0) {
     throw new Error("No verses found for that range (must be within one book).");
@@ -330,6 +342,7 @@ export async function addMemory({
     verseStart: Number(verseStart),
     chapterEnd: Number(chapterEnd),
     verseEnd: Number(verseEnd),
+    version: resolvedVersion, // translation this set was memorised in
     verses,
     status: STATUS.NOT_MEMORISED,
     stage: 1,      // learning stage reached (1..MAX_STAGE); resumed next session
@@ -424,4 +437,14 @@ export async function recordAttempt(id, { success }) {
   await backend.setItem(entryKey(id), updated);
   await reindex(byId);
   return updated;
+}
+
+/**
+ * Re-sort the whole memory list against the CURRENT prioritisation prefs and
+ * persist the new order. Call this after changing prefs (memoryPrefsStore) so
+ * the Memory tab reflects the new ranking immediately. Returns the new index.
+ */
+export async function resortMemory() {
+  const byId = await loadAllEntries();
+  return reindex(byId);
 }

@@ -23,6 +23,8 @@ import { Inter_500Medium } from "@expo-google-fonts/inter/500Medium";
 import { Inter_600SemiBold } from "@expo-google-fonts/inter/600SemiBold";
 import { Inter_700Bold } from "@expo-google-fonts/inter/700Bold";
 import { getLastPosition, setLastPosition } from "./src/data/lastPositionStore";
+import { loadMemoryPrefs } from "./src/data/memoryPrefsStore";
+import { loadReadingVersion } from "./src/data/bibleVersionStore";
 import { ThemeProvider, useTheme } from "./src/theme/ThemeContext";
 import {
   BackHandlerProvider,
@@ -45,6 +47,18 @@ export default function App() {
     Inter_600SemiBold,
     Inter_700Bold,
   });
+
+  // Prime the Memory prioritisation prefs cache once at startup so the (sync)
+  // ranking functions have the user's saved values before the Memory list first
+  // sorts. Fire-and-forget: the scorer safely defaults until this resolves.
+  useEffect(() => {
+    loadMemoryPrefs().catch(() => {
+      // Non-fatal: leaving the cache at defaults just means default ranking.
+    });
+    loadReadingVersion().catch(() => {
+      // Non-fatal: the reader falls back to the default version (NIV).
+    });
+  }, []);
 
   useEffect(() => {
     if (fontsLoaded || fontError) {

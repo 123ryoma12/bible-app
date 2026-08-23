@@ -6,12 +6,14 @@
 // in-order list of { chapter, verse, text } for a book, so this module walks
 // the blocks once and flattens them.
 
-import { BIBLE_DATA } from "./bibleData";
+import { getBookMap } from "./bibleData";
 import { BOOKS } from "./books";
 
 // Flat, in-order [{ chapter (number), verse (number), text }] for one chapter.
-export function getChapterVerses(bookId, chapterNumber) {
-  const book = BIBLE_DATA[bookId];
+// `version` is optional and defaults to NIV; unbundled versions fall back to
+// NIV via getBookMap.
+export function getChapterVerses(bookId, chapterNumber, version = "niv") {
+  const book = getBookMap(version)[bookId];
   if (!book) return [];
   const chapter = book.chapters.find(
     (c) => Number(c.chapter) === Number(chapterNumber)
@@ -78,7 +80,8 @@ export function getVersesInRange(
   chapterStart,
   verseStart,
   chapterEnd,
-  verseEnd
+  verseEnd,
+  version = "niv"
 ) {
   const cs = Number(chapterStart);
   const vs = Number(verseStart);
@@ -89,7 +92,7 @@ export function getVersesInRange(
 
   const out = [];
   for (let ch = cs; ch <= ce; ch++) {
-    const verses = getChapterVerses(bookId, ch);
+    const verses = getChapterVerses(bookId, ch, version);
     for (const v of verses) {
       if (ch === cs && v.verse < vs) continue;
       if (ch === ce && v.verse > ve) continue;

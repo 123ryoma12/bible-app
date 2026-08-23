@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   View,
   Text,
@@ -12,6 +12,23 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useTheme, FONT_SCALES } from "../theme/ThemeContext";
 import { uiFont, FONT_FAMILIES } from "../theme/fonts";
 import { exportBackup, importBackup } from "../data/backupStore";
+import {
+  PREF_FIELDS,
+  PRESET_ORDER,
+  PRESET_LABELS,
+  PRESET_DESCRIPTIONS,
+  getMemoryPrefs,
+  setMemoryPrefs,
+  applyPreset,
+  resetMemoryPrefs,
+  presetForPrefs,
+} from "../data/memoryPrefsStore";
+import { resortMemory } from "../data/memoryStore";
+import { BIBLE_VERSIONS } from "../data/bibleVersions";
+import {
+  getReadingVersion,
+  setReadingVersion,
+} from "../data/bibleVersionStore";
 
 const APPEARANCE_OPTIONS = [
   { key: "light", label: "Light Mode" },
@@ -22,11 +39,103 @@ const APPEARANCE_OPTIONS = [
 // can see the effect of their choice immediately.
 const PREVIEW_BASE_SIZE = 17;
 
+// A section heading. Every section except the first is preceded by a full-width
+// divider line with consistent spacing above/below, so groups are separated
+// identically regardless of what element (row, card, etc.) came before. The
+// divider is its OWN element (not a border on the text) so it can't collide
+// with a preceding view's margins.
+function SectionHeader({ title, colors, first = false }) {
+  return (
+    <>
+      {!first && (
+        <View style={[styles.sectionDivider, { borderTopColor: colors.border }]} />
+      )}
+      <Text style={[styles.sectionLabel, { color: colors.text }]}>{title}</Text>
+    </>
+  );
+}
+
 export default function SettingsScreen() {
   const { mode, setMode, colors, fontScale, setFontScale } = useTheme();
   // "idle" | "backing-up" | "restoring" - drives the row spinners and disables
   // both actions while one is running.
   const [busy, setBusy] = useState("idle");
+
+  // --- Reading version ---
+  // Which translation the reader shows. Only NIV is available today; ESV/KJV
+  // appear as disabled "coming soon" rows. Changing this does NOT affect stats.
+  const [readingVersion, setReadingVersionState] = useState(null);
+
+  // --- Memory prioritisation ---
+  // Local mirror of the persisted prefs so the UI updates instantly; every edit
+  // is written through to storage and the Memory list is re-sorted.
+  const [prefs, setPrefs] = useState(null);
+  const [showAdvanced, setShowAdvanced] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    getMemoryPrefs().then((p) => {
+      if (!cancelled) setPrefs(p);
+    });
+    getReadingVersion().then((v) => {
+      if (!cancelled) setReadingVersionState(v);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  async function handleSelectVersion(id) {
+    const next = await setReadingVersion(id);
+    setReadingVersionState(next);
+  }
+
+  // The preset the current prefs correspond to ("custom" if hand-tuned).
+  const activePreset = prefs ? presetForPrefs(prefs) : "balanced";
+
+  // Persist + re-sort after any prefs change, refreshing the local mirror.
+  async function commitPrefs(next) {
+    setPrefs(next); // optimistic
+    await resortMemory();
+  }
+
+  async function handlePreset(presetKey) {
+    const next = await applyPreset(presetKey);
+    await commitPrefs(next);
+  }
+
+  // Nudge a single advanced field by +/- one step, clamped to its bounds. The
+  // field metadata handles the display<->stored unit conversion (percentages).
+  async function handleStep(field, direction) {
+    if (!prefs) return;
+    const current = field.fromStored
+      ? field.fromStored(prefs[field.key])
+      : prefs[field.key];
+    const raw = current + direction * field.step;
+    const clamped = Math.min(field.max, Math.max(field.min, raw));
+    if (clamped === current) return; // already at the bound
+    const storedValue = field.toStored ? field.toStored(clamped) : clamped;
+    const next = await setMemoryPrefs({ [field.key]: storedValue });
+    await commitPrefs(next);
+  }
+
+  function handleResetPrefs() {
+    Alert.alert(
+      "Reset prioritisation?",
+      "Restore the default Memory prioritisation settings. Your verses and stats are not affected.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Reset",
+          style: "destructive",
+          onPress: async () => {
+            const next = await resetMemoryPrefs();
+            await commitPrefs(next);
+          },
+        },
+      ]
+    );
+  }
 
   // Write a backup file and hand it to the OS share sheet.
   async function handleBackup() {
@@ -91,7 +200,7 @@ export default function SettingsScreen() {
         <Text style={[styles.title, { color: colors.text }]}>Settings</Text>
 
         {/* Appearance */}
-        <Text style={[styles.sectionLabel, { color: colors.mutedText }]}>Appearance</Text>
+        <SectionHeader title="Appearance" colors={colors} first />
         {APPEARANCE_OPTIONS.map((opt) => {
           const isActive = mode === opt.key;
           return (
@@ -116,7 +225,7 @@ export default function SettingsScreen() {
         })}
 
         {/* Reading / font size */}
-        <Text style={[styles.sectionLabel, { color: colors.mutedText }]}>Reading</Text>
+        <SectionHeader title="Reading" colors={colors} />
         <Text style={[styles.settingName, { color: colors.text }]}>Font Size</Text>
 
         <View style={styles.segmentRow}>
@@ -174,10 +283,214 @@ export default function SettingsScreen() {
           </Text>
         </View>
 
+        {/* Bible version: which translation the reader shows. Only available
+            versions are selectable; others are shown as disabled "coming soon".
+            This choice does not affect reading stats. */}
+        <Text style={[styles.settingName, { color: colors.text, marginTop: 16 }]}>
+          Bible Version
+        </Text>
+        {BIBLE_VERSIONS.map((v) => {
+          const isActive = readingVersion === v.id;
+          const disabled = !v.available;
+          return (
+            <TouchableOpacity
+              key={v.id}
+              style={[styles.row, { borderBottomColor: colors.border }]}
+              onPress={() => handleSelectVersion(v.id)}
+              disabled={disabled || readingVersion == null}
+              accessibilityRole="radio"
+              accessibilityState={{ selected: isActive, disabled }}
+              accessibilityLabel={`${v.name}${disabled ? ", coming soon" : ""}`}
+            >
+              <View style={styles.actionRowText}>
+                <Text
+                  style={[
+                    styles.rowText,
+                    { color: disabled ? colors.mutedText : colors.text },
+                  ]}
+                >
+                  {v.abbr} — {v.name}
+                </Text>
+                {disabled && (
+                  <Text style={[styles.actionSubtext, { color: colors.mutedText }]}>
+                    Coming soon (TBD)
+                  </Text>
+                )}
+              </View>
+              {disabled ? (
+                <Text style={[styles.tbdBadge, { color: colors.mutedText }]}>TBD</Text>
+              ) : (
+                <View
+                  style={[
+                    styles.radioOuter,
+                    { borderColor: isActive ? colors.accent : colors.border },
+                  ]}
+                >
+                  {isActive && (
+                    <View
+                      style={[styles.radioInner, { backgroundColor: colors.accent }]}
+                    />
+                  )}
+                </View>
+              )}
+            </TouchableOpacity>
+          );
+        })}
+
+        {/* Memory prioritisation: controls how the Memory tab ranks verses for
+            practice. Presets up front; an expandable Advanced block exposes the
+            individual knobs. Every change persists and re-sorts the list. */}
+        <SectionHeader title="Memory Prioritisation" colors={colors} />
+        <Text style={[styles.dataNote, { color: colors.mutedText, paddingTop: 0 }]}>
+          Choose how the Memory tab decides which verses to practise first.
+        </Text>
+
+        {/* Presets as full-width rows: each shows its name AND a one-line
+            description so the choice is self-explanatory. A radio marks the
+            active one. When the prefs are hand-tuned, a read-only "Custom" row
+            appears at the end so the state is never ambiguous. */}
+        {PRESET_ORDER.map((key) => {
+          const isActive = activePreset === key;
+          return (
+            <TouchableOpacity
+              key={key}
+              style={[styles.row, { borderBottomColor: colors.border }]}
+              onPress={() => handlePreset(key)}
+              disabled={!prefs}
+              accessibilityRole="radio"
+              accessibilityState={{ selected: isActive }}
+              accessibilityLabel={`${PRESET_LABELS[key]}. ${PRESET_DESCRIPTIONS[key]}`}
+            >
+              <View style={styles.actionRowText}>
+                <Text style={[styles.rowText, { color: colors.text }]}>
+                  {PRESET_LABELS[key]}
+                </Text>
+                <Text style={[styles.actionSubtext, { color: colors.mutedText }]}>
+                  {PRESET_DESCRIPTIONS[key]}
+                </Text>
+              </View>
+              <View
+                style={[
+                  styles.radioOuter,
+                  { borderColor: isActive ? colors.accent : colors.border },
+                ]}
+              >
+                {isActive && (
+                  <View style={[styles.radioInner, { backgroundColor: colors.accent }]} />
+                )}
+              </View>
+            </TouchableOpacity>
+          );
+        })}
+
+        {activePreset === "custom" && (
+          <View style={[styles.row, { borderBottomColor: colors.border }]}>
+            <View style={styles.actionRowText}>
+              <Text style={[styles.rowText, { color: colors.text }]}>
+                {PRESET_LABELS.custom}
+              </Text>
+              <Text style={[styles.actionSubtext, { color: colors.mutedText }]}>
+                {PRESET_DESCRIPTIONS.custom}
+              </Text>
+            </View>
+            <View style={[styles.radioOuter, { borderColor: colors.accent }]}>
+              <View style={[styles.radioInner, { backgroundColor: colors.accent }]} />
+            </View>
+          </View>
+        )}
+
+        {/* Advanced: expandable so the raw knobs don't overwhelm by default. */}
+        <TouchableOpacity
+          style={[styles.row, { borderBottomColor: colors.border, marginTop: 8 }]}
+          onPress={() => setShowAdvanced((v) => !v)}
+          accessibilityRole="button"
+          accessibilityState={{ expanded: showAdvanced }}
+        >
+          <Text style={[styles.rowText, { color: colors.text }]}>Advanced</Text>
+          <Text style={[styles.chevron, { color: colors.mutedText }]}>
+            {showAdvanced ? "\u2304" : "\u203A"}
+          </Text>
+        </TouchableOpacity>
+
+        {showAdvanced &&
+          prefs &&
+          PREF_FIELDS.map((field) => {
+            const display = field.fromStored
+              ? field.fromStored(prefs[field.key])
+              : prefs[field.key];
+            const atMin = display <= field.min;
+            const atMax = display >= field.max;
+            return (
+              <View
+                key={field.key}
+                style={[styles.prefRow, { borderBottomColor: colors.border }]}
+              >
+                <View style={styles.prefText}>
+                  <Text style={[styles.rowText, { color: colors.text }]}>
+                    {field.label}
+                  </Text>
+                  <Text style={[styles.actionSubtext, { color: colors.mutedText }]}>
+                    {field.help}
+                  </Text>
+                </View>
+                <View style={styles.stepper}>
+                  <TouchableOpacity
+                    style={[
+                      styles.stepBtn,
+                      { borderColor: colors.border, opacity: atMin ? 0.35 : 1 },
+                    ]}
+                    onPress={() => handleStep(field, -1)}
+                    disabled={atMin}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Decrease ${field.label}`}
+                  >
+                    <Text style={[styles.stepBtnText, { color: colors.text }]}>
+                      {"\u2212"}
+                    </Text>
+                  </TouchableOpacity>
+                  <Text
+                    style={[styles.stepValue, { color: colors.text }]}
+                    numberOfLines={1}
+                  >
+                    {field.format(display)}
+                  </Text>
+                  <TouchableOpacity
+                    style={[
+                      styles.stepBtn,
+                      { borderColor: colors.border, opacity: atMax ? 0.35 : 1 },
+                    ]}
+                    onPress={() => handleStep(field, 1)}
+                    disabled={atMax}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Increase ${field.label}`}
+                  >
+                    <Text style={[styles.stepBtnText, { color: colors.text }]}>
+                      {"+"}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            );
+          })}
+
+        {showAdvanced && (
+          <TouchableOpacity
+            style={[styles.row, { borderBottomColor: colors.border }]}
+            onPress={handleResetPrefs}
+            accessibilityRole="button"
+            accessibilityLabel="Reset prioritisation to defaults"
+          >
+            <Text style={[styles.rowText, { color: colors.danger || "#c0392b" }]}>
+              Reset to Defaults
+            </Text>
+            <Text style={[styles.chevron, { color: colors.mutedText }]}>{"\u21BA"}</Text>
+          </TouchableOpacity>
+        )}
+
         {/* Data: local backup & restore. All app data lives on this device;
             these let the user save a JSON backup file and restore it later or
             on another device. */}
-        <Text style={[styles.sectionLabel, { color: colors.mutedText }]}>Data</Text>
+        <SectionHeader title="Data" colors={colors} />
 
         <TouchableOpacity
           style={[styles.row, { borderBottomColor: colors.border }]}
@@ -237,14 +550,25 @@ const styles = StyleSheet.create({
     paddingTop: 12,
     paddingBottom: 8,
   },
+  // Full-width divider between sections. Its own element (with symmetric top
+  // margin) so spacing is identical no matter what precedes it - a row, a card,
+  // etc. - and it never collides with a preceding view's margin.
+  // Use a borderTop hairline (the reliable pattern used by every row separator
+  // in this app) rather than a height+backgroundColor line, which can round
+  // down to 0 physical pixels and vanish on some screen densities. Full-bleed:
+  // edge-to-edge with no side margins for a stronger section break.
+  sectionDivider: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    marginTop: 24,
+  },
   sectionLabel: {
-    fontSize: 13,
+    fontSize: 15,
     fontFamily: uiFont(700),
     textTransform: "uppercase",
-    letterSpacing: 0.5,
+    letterSpacing: 0.8,
     paddingHorizontal: 20,
-    paddingTop: 20,
-    paddingBottom: 6,
+    paddingTop: 16,
+    paddingBottom: 8,
   },
   row: {
     flexDirection: "row",
@@ -308,5 +632,36 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
     letterSpacing: 0.5,
     marginBottom: 8,
+  },
+  prefRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 20,
+    paddingVertical: 14,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  tbdBadge: {
+    fontSize: 12,
+    fontFamily: uiFont(700),
+    letterSpacing: 0.5,
+  },
+  prefText: { flex: 1, paddingRight: 12 },
+  stepper: { flexDirection: "row", alignItems: "center" },
+  stepBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 8,
+    borderWidth: 1.5,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  stepBtnText: { fontSize: 20, fontFamily: uiFont(600), lineHeight: 22 },
+  stepValue: {
+    minWidth: 74,
+    textAlign: "center",
+    fontSize: 14,
+    fontFamily: uiFont(600),
+    paddingHorizontal: 6,
   },
 });

@@ -15,6 +15,7 @@ import { getChapter } from "../data/bibleData";
 import { incrementReadCount } from "../data/progressStore";
 import { addToHistory } from "../data/historyStore";
 import { useTheme } from "../theme/ThemeContext";
+import { getActiveReadingVersion } from "../data/bibleVersionStore";
 
 const SWIPE_THRESHOLD = 50;
 // How far you must scroll down before the chrome hides (avoids twitchy hiding).
@@ -36,7 +37,12 @@ export default function ReaderScreen({
   hasNext,
 }) {
   const { colors } = useTheme();
-  const chapter = getChapter(book.id, chapterNumber);
+  // Read in the user's selected translation. The active version is a synchronous
+  // cached value (primed at startup, updated when changed in Settings); the
+  // Reader re-reads it on each render, so switching versions then returning here
+  // shows the new translation. Unbundled versions fall back to NIV in getChapter.
+  const version = getActiveReadingVersion();
+  const chapter = getChapter(book.id, chapterNumber, version);
   const scrollRef = useRef(null);
 
   // Local mirror of chrome visibility so the Reader's own footer can animate
@@ -162,7 +168,7 @@ export default function ReaderScreen({
             <View style={[styles.chapterHeadingRule, { backgroundColor: colors.border }]} />
           </View>
 
-          <ChapterView chapter={chapter} />
+          <ChapterView chapter={chapter} version={version} />
         </TouchableOpacity>
 
         {/* End-of-chapter action. */}

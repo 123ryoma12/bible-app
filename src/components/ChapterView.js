@@ -2,11 +2,15 @@ import React from "react";
 import { View, Text, StyleSheet } from "react-native";
 import { useTheme } from "../theme/ThemeContext";
 import { FONT_FAMILIES } from "../theme/fonts";
+import { versionCopyright } from "../data/bibleVersions";
 
 // Renders the USFM-style "blocks" for a single chapter (paragraphs, headings,
-// poetry lines, etc.) with inline superscript verse numbers.
-export default function ChapterView({ chapter }) {
+// poetry lines, etc.) with inline superscript verse numbers. `version` is the
+// translation being shown; when it carries a required attribution (e.g. ESV),
+// a small copyright line is rendered under the chapter.
+export default function ChapterView({ chapter, version }) {
   const { colors, fontScale } = useTheme();
+  const copyright = versionCopyright(version);
 
   if (!chapter) {
     return (
@@ -30,6 +34,9 @@ export default function ChapterView({ chapter }) {
       {chapter.blocks.map((block, i) => (
         <Block key={i} block={block} seen={seen} colors={colors} fontScale={fontScale} />
       ))}
+      {!!copyright && (
+        <Text style={[styles.copyright, { color: colors.mutedText }]}>{copyright}</Text>
+      )}
     </View>
   );
 }
@@ -39,6 +46,31 @@ function scaled(base, fontScale, lineHeight) {
   const out = { fontSize: base * fontScale };
   if (lineHeight != null) out.lineHeight = lineHeight * fontScale;
   return out;
+}
+
+// Converts a verse number to Unicode superscript digits (e.g. 12 -> "¹²").
+// React Native has no reliable `vertical-align: super` for nested inline
+// <Text>, so we use dedicated superscript glyphs: they are genuinely raised
+// and small by design, render consistently on iOS and Android, and sit neatly
+// against the baseline of the surrounding body text without any lineHeight or
+// verticalAlign hacks.
+const SUPERSCRIPT_DIGITS = {
+  0: "\u2070",
+  1: "\u00B9",
+  2: "\u00B2",
+  3: "\u00B3",
+  4: "\u2074",
+  5: "\u2075",
+  6: "\u2076",
+  7: "\u2077",
+  8: "\u2078",
+  9: "\u2079",
+};
+function toSuperscript(num) {
+  return String(num)
+    .split("")
+    .map((d) => SUPERSCRIPT_DIGITS[d] ?? d)
+    .join("");
 }
 
 function Block({ block, seen, colors, fontScale }) {
@@ -120,13 +152,19 @@ function Verses({ verses, seen, colors, fontScale }) {
   return verses.map((v, i) => {
     const isNewVerse = v.verse !== seen.last;
     if (isNewVerse) seen.last = v.verse;
+    // A leading space separates the verse number from the previous verse's text
+    // (e.g. so "...end.5" becomes "...end. 5"). Skip it for the first verse of
+    // the block so the paragraph/poetry line doesn't start with an indent.
+    const leadingSpace = isNewVerse && i > 0;
     return (
       <Text key={i}>
         {isNewVerse && (
-          <Text style={[styles.verseNum, { color: colors.mutedText }, scaled(11, fontScale)]}>
-            {v.verse}{" "}
+          <Text style={[styles.verseNum, { color: colors.mutedText }, scaled(15, fontScale)]}>
+            {leadingSpace ? " " : ""}
+            {toSuperscript(v.verse)}
           </Text>
         )}
+        {isNewVerse && <Text>{"\u2009"}</Text>}
         {v.text}
       </Text>
     );
@@ -173,10 +211,19 @@ const styles = StyleSheet.create({
     fontFamily: FONT_FAMILIES.serifRegular,
   },
   verseNum: {
-    fontSize: 11,
+    // Rendered as Unicode superscript glyphs (see toSuperscript), which are
+    // already small and raised, so we size this near the body text and need no
+    // verticalAlign/lineHeight tricks. Semibold keeps the small glyph legible.
+    fontSize: 15,
     fontFamily: FONT_FAMILIES.serifSemiBold,
   },
   blank: {
     height: 16,
+  },
+  copyright: {
+    fontSize: 11,
+    lineHeight: 16,
+    marginTop: 28,
+    fontFamily: FONT_FAMILIES.serifItalic,
   },
 });

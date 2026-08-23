@@ -7,6 +7,8 @@ import {
   StyleSheet,
   ScrollView,
   Pressable,
+  Keyboard,
+  Platform,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -25,9 +27,6 @@ import {
   STATUS,
   MAX_STAGE,
   referenceLabel,
-  successRate,
-  successCount,
-  failureCount,
   markMemorised,
   recordAttempt,
   saveStage,
@@ -65,6 +64,13 @@ function readStage(entry) {
 export default function MemoryDrill({ list, startIndex = 0, onExit }) {
   const { colors } = useTheme();
   const inputRef = useRef(null);
+  // Scroll container + the Y offset of the first verse being attempted, used to
+  // scroll to it once when a run (re)starts. No while-typing auto-scroll.
+  const scrollRef = useRef(null);
+  const firstAttemptYRef = useRef(0);
+  // Live keyboard height (0 when hidden). Drives bottom padding on the scroll
+  // content so the last lines can be scrolled clear of the keyboard by the user.
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
 
   // Position within the ordered list. The active `entry` is derived from it.
   const [position, setPosition] = useState(startIndex);
@@ -104,13 +110,35 @@ export default function MemoryDrill({ list, startIndex = 0, onExit }) {
   // let the field accumulate and remember how many characters we've already
   // consumed, processing only the newly-appended tail on each change event.
   const consumedRef = useRef(0);
+  // The length (in code points) of the full text the native buffer last
+  // reported via onChangeText. handleType keeps this current on every event;
+  // clearInputBuffer uses it to mark everything typed so far as consumed when
+  // we advance to a new verse, WITHOUT relying on a synchronous native clear().
+  const bufferLenRef = useRef(0);
   // Per-word correctness for the CURRENT verse: index -> true|false|undefined.
+  // `wordState` drives rendering (WordSlot colours). `wordStateRef` is a
+  // synchronous mirror used for the PASS/FAIL decision: setWordState is async,
+  // so a wrong letter typed in one onChangeText event may not be reflected in
+  // the `wordState` closure captured by a later event that completes the verse.
+  // Reading correctness from the ref guarantees finishVerse sees every letter
+  // (including earlier wrong ones) regardless of React's render timing.
   const [wordState, setWordState] = useState({});
+  const wordStateRef = useRef({});
+  // Per-word correctness for verses ALREADY completed this run, keyed by
+  // verseIndex -> { wordIndex: true|false }. Lets finished verses render their
+  // TRUE colours (wrong words stay red) instead of being blanket-marked correct.
+  const [doneWordStates, setDoneWordStates] = useState({});
+  // Verse indices that PASSED on a previous attempt of this stage and are now
+  // being carried through a failed-verse retry: still rendered (greyed) for
+  // context, but not re-typed — the cursor auto-skips them. Empty on a fresh
+  // full-stage run.
+  const [carriedPassed, setCarriedPassed] = useState(() => new Set());
   // Accumulated pass/fail per verseIndex for this run.
   const [results, setResults] = useState({});
-  // Screen phase: "typing" | "done".
+  // Screen phase. There is no longer a "done" screen — a failed attempt now
+  // auto-retries the failed verses in place — but `phase` is kept as a small
+  // guard so a late keystroke can't be processed during a state transition.
   const [phase, setPhase] = useState("typing");
-  const [finalOutcome, setFinalOutcome] = useState(null); // {success, updatedEntry}
 
   const currentVerseIndex = drill.order[orderPos];
   const currentVerse = drill.verses[currentVerseIndex];
@@ -121,10 +149,43 @@ export default function MemoryDrill({ list, startIndex = 0, onExit }) {
     return () => clearTimeout(t);
   }, [orderPos, phase]);
 
+  // Track the on-screen keyboard height so we can pad the scroll content and
+  // scroll the active word above the keyboard. Uses the "Will"/"Did" events
+  // appropriate to each platform (iOS emits Will*, Android only Did*).
+  useEffect(() => {
+    const showEvt = Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
+    const hideEvt = Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide";
+    const onShow = (e) => setKeyboardHeight(e?.endCoordinates?.height ?? 0);
+    const onHide = () => setKeyboardHeight(0);
+    const s = Keyboard.addListener(showEvt, onShow);
+    const h = Keyboard.addListener(hideEvt, onHide);
+    return () => {
+      s.remove();
+      h.remove();
+    };
+  }, []);
+
+  // Scroll to the FIRST verse being attempted whenever a run (re)starts — a
+  // fresh full run scrolls to the top; a failed-verse retry scrolls to the
+  // first failed verse. We do NOT auto-scroll while typing; the user scrolls
+  // themselves. Keyed on `seed` (changes on every (re)start) so it fires once
+  // per run start, after the layout has settled.
+  useEffect(() => {
+    if (phase !== "typing") return;
+    const raf = requestAnimationFrame(() => {
+      if (!scrollRef.current) return;
+      // firstAttemptY is captured by the first attempted verse's onLayout.
+      const y = firstAttemptYRef.current;
+      scrollRef.current.scrollTo({ y: Math.max(0, y - 20), animated: true });
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [seed, phase]);
+
   function resetForVerse(verse) {
     const first = nextTypableIndex(verse.tokens, 0);
     wordPosRef.current = first;
     setWordPos(first);
+    wordStateRef.current = {};
     setWordState({});
     clearInputBuffer();
   }
@@ -146,6 +207,12 @@ export default function MemoryDrill({ list, startIndex = 0, onExit }) {
   function handleType(fullText) {
     if (phase !== "typing" || !currentVerse) return;
     const all = Array.from(fullText || "");
+    bufferLenRef.current = all.length;
+    // Guard against consumedRef drifting past the current buffer length. If the
+    // native field was cleared/shrunk (e.g. autofill, backspace-to-empty), the
+    // reported text can be shorter than what we've consumed; clamp so slice()
+    // starts at a valid position instead of returning garbage.
+    if (consumedRef.current > all.length) consumedRef.current = all.length;
     const fresh = all.slice(consumedRef.current);
     consumedRef.current = all.length;
     if (fresh.length === 0) return;
@@ -161,6 +228,9 @@ export default function MemoryDrill({ list, startIndex = 0, onExit }) {
 
       const { correct } = checkLetter(token, ch);
       updates[pos] = correct;
+      // Record correctness synchronously so finishVerse never misses a wrong
+      // letter typed in an earlier event (setWordState is async).
+      wordStateRef.current[pos] = correct;
 
       const next = nextTypableIndex(tokens, pos + 1);
       if (next < tokens.length) {
@@ -176,15 +246,28 @@ export default function MemoryDrill({ list, startIndex = 0, onExit }) {
     setWordState((prev) => ({ ...prev, ...updates }));
 
     if (finished) {
-      finishVerse({ ...wordState, ...updates });
+      // Use the synchronous ref (a copy) — the single source of truth for the
+      // pass/fail decision — rather than the possibly-stale wordState closure.
+      finishVerse({ ...wordStateRef.current });
     }
   }
 
-  // Clear the native input buffer and our consumed-count. Called when we move
-  // to a new verse so the field doesn't grow without bound across a run.
+  // Reset our consumed-count when moving to a new verse.
+  //
+  // IMPORTANT: we do NOT call inputRef.current.clear() here. `.clear()` is a
+  // native imperative command that does not empty the buffer synchronously
+  // (notably on Android). If we zeroed `consumedRef` and the buffer hadn't yet
+  // cleared, the very next onChangeText would arrive with the PREVIOUS verse's
+  // full text still present, and — with consumedRef at 0 — handleType would
+  // treat that entire accumulated string as "fresh" and replay it across every
+  // word of the new verse in a single keystroke. Instead we leave the native
+  // buffer alone and advance consumedRef to whatever it currently holds, so
+  // only genuinely new characters are processed. The buffer growing over a run
+  // is harmless (a few hundred chars at most).
   function clearInputBuffer() {
-    consumedRef.current = 0;
-    if (inputRef.current) inputRef.current.clear();
+    // Mark everything the native buffer has reported so far as already consumed,
+    // so the next keystroke's onChangeText only yields the genuinely new tail.
+    consumedRef.current = bufferLenRef.current;
   }
 
   // A verse is complete: it passes only if every typable word was correct.
@@ -196,6 +279,9 @@ export default function MemoryDrill({ list, startIndex = 0, onExit }) {
 
     const nextResults = { ...results, [currentVerseIndex]: passed };
     setResults(nextResults);
+    // Snapshot this verse's per-word correctness so it renders its true colours
+    // once it becomes a "done" (earlier) verse in the paragraph.
+    setDoneWordStates((prev) => ({ ...prev, [currentVerseIndex]: { ...finalWordState } }));
 
     const nextPos = orderPos + 1;
     if (nextPos < drill.order.length) {
@@ -211,9 +297,10 @@ export default function MemoryDrill({ list, startIndex = 0, onExit }) {
     setRunOrder(entry.verses.map((_, i) => i));
     setSeed(Date.now());
     setResults({});
+    setDoneWordStates({});
+    setCarriedPassed(new Set());
     setOrderPos(0);
     setPhase("typing");
-    setFinalOutcome(null);
   }
 
   // Move to the next set in the ordered list, or exit if we're at the end.
@@ -259,33 +346,83 @@ export default function MemoryDrill({ list, startIndex = 0, onExit }) {
         return;
       case "stay":
       default:
-        // Failed: stay on the current set/stage and show retry options.
-        setFinalOutcome({ success: false, updatedEntry, resultsArray, stageAtRun });
-        setPhase("done");
+        // Failed: automatically re-attempt just the failed verses (passed ones
+        // stay greyed and are auto-skipped). No intermediate screen or buttons.
+        // If every verse failed, retryFailed degrades to a full-stage restart.
+        // The top-left back button remains the only escape from a fail loop.
+        retryFailed(resultsArray);
         return;
     }
   }
 
-  // Retry only the verses that failed this run (same-session behaviour).
-  function retryFailed() {
-    const failed = failedVerseIndices(finalOutcome.resultsArray);
-    const order = failed.length ? failed : entry.verses.map((_, i) => i);
-    setRunOrder(order);
+  // Retry only the verses that failed a run. The verses that PASSED stay on
+  // screen (greyed, via carriedPassed) with their revealed text, and the cursor
+  // auto-skips them so the user only re-types the failed ones. If every verse
+  // failed (or none are known), this degrades to a full-stage restart.
+  //
+  // `resultsArray` is the pass/fail array from the just-finished run so this can
+  // be driven automatically from completeRun without waiting on state.
+  function retryFailed(resultsArray) {
+    const failed = failedVerseIndices(resultsArray);
+    const allIndices = entry.verses.map((_, i) => i);
+    const attempt = failed.length ? failed : allIndices;
+    // Passed verses to carry through greyed = everything not being re-attempted.
+    const passed = new Set(allIndices.filter((i) => !attempt.includes(i)));
+
+    setRunOrder(attempt);
     setSeed(Date.now());
     setResults({});
+    setCarriedPassed(passed);
+    // Keep doneWordStates for carried verses so they render their true colours;
+    // drop any entries for verses we're about to re-attempt.
+    setDoneWordStates((prev) => {
+      const next = {};
+      passed.forEach((i) => {
+        if (prev[i]) next[i] = prev[i];
+      });
+      return next;
+    });
     setOrderPos(0);
     setPhase("typing");
-    setFinalOutcome(null);
     // wordPos resets via the rebuilt drill in an effect below.
   }
 
+  // Restart the entire current stage from scratch (all verses to type again).
   function retryAll() {
     setRunOrder(entry.verses.map((_, i) => i));
     setSeed(Date.now());
     setResults({});
+    setDoneWordStates({});
+    setCarriedPassed(new Set());
     setOrderPos(0);
     setPhase("typing");
-    setFinalOutcome(null);
+  }
+
+  // Header refresh button. Restarts the CURRENT context: if we're partway
+  // through a failed-verse retry (some verses carried/greyed), restart just that
+  // failed-verse attempt again (re-type the same failed verses, passed ones stay
+  // greyed). Otherwise restart the whole current stage.
+  function refreshCurrent() {
+    if (carriedPassed.size > 0) {
+      // Rebuild the same failed-verse attempt: the verses NOT carried are the
+      // ones being re-attempted. Re-seed to re-randomise stage-2 visibility.
+      const attempt = entry.verses.map((_, i) => i).filter((i) => !carriedPassed.has(i));
+      setRunOrder(attempt.length ? attempt : entry.verses.map((_, i) => i));
+      setSeed(Date.now());
+      setResults({});
+      // Reset only the re-attempted verses' word states; keep carried greyed.
+      setDoneWordStates((prev) => {
+        const next = {};
+        carriedPassed.forEach((i) => {
+          if (prev[i]) next[i] = prev[i];
+        });
+        return next;
+      });
+      setOrderPos(0);
+      setPhase("typing");
+    } else {
+      retryAll();
+    }
   }
 
   // When the drill is rebuilt (retry), reset the word cursor to its first word.
@@ -337,25 +474,32 @@ export default function MemoryDrill({ list, startIndex = 0, onExit }) {
             {stageLabel}
           </Text>
         </View>
-        {phase === "typing" ? (
-          <TouchableOpacity
-            style={styles.resetBtn}
-            onPress={retryAll}
-            hitSlop={hit}
-            accessibilityRole="button"
-            accessibilityLabel="Restart this attempt"
-          >
-            <Ionicons name="refresh" size={22} color={colors.accent} />
-          </TouchableOpacity>
-        ) : (
-          <View style={styles.headerSpacer} />
-        )}
+        <TouchableOpacity
+          style={styles.resetBtn}
+          onPress={refreshCurrent}
+          hitSlop={hit}
+          accessibilityRole="button"
+          accessibilityLabel={
+            carriedPassed.size > 0
+              ? "Restart this failed-verse attempt"
+              : "Restart this stage"
+          }
+        >
+          <Ionicons name="refresh" size={22} color={colors.accent} />
+        </TouchableOpacity>
       </View>
 
       {phase === "typing" ? (
         <>
           <ScrollView
-            contentContainerStyle={styles.versesWrap}
+            ref={scrollRef}
+            style={styles.versesScroll}
+            contentContainerStyle={[
+              styles.versesWrap,
+              // Pad the bottom by the keyboard height so the final lines can be
+              // scrolled clear of the keyboard (by the user).
+              { paddingBottom: 20 + keyboardHeight },
+            ]}
             keyboardShouldPersistTaps="handled"
           >
             {/* Tapping anywhere on the verses brings the keyboard back (tapping
@@ -364,10 +508,21 @@ export default function MemoryDrill({ list, startIndex = 0, onExit }) {
                 superscript verse numbers, rather than one block per verse. */}
             <Pressable onPress={focusInput}>
               <View style={styles.verseLineWrap}>
-                {drill.order.map((vIdx, i) => {
-                  const verse = drill.verses[vIdx];
-                  const isCurrent = i === orderPos;
-                  const done = i < orderPos;
+                {/* Render EVERY verse in natural order so a failed-verse retry
+                    still shows the passed verses (greyed) for context. The
+                    cursor only stops on the verses in the attempt set
+                    (drill.order); passed/carried verses are auto-skipped. */}
+                {drill.verses.map((verse, vIdx) => {
+                  const isCurrent = vIdx === currentVerseIndex;
+                  // The first verse being attempted this run (drill.order[0]);
+                  // we capture its position to scroll to it on run (re)start.
+                  const isFirstAttempt = vIdx === drill.order[0];
+                  const firstTypable = nextTypableIndex(verse.tokens, 0);
+                  // Passed on a prior attempt and carried through greyed.
+                  const isCarried = carriedPassed.has(vIdx);
+                  // Completed earlier in THIS run (already-typed, shows true
+                  // colours). carried verses also have a doneWordStates entry.
+                  const doneState = doneWordStates[vIdx];
                   return (
                     <React.Fragment key={vIdx}>
                       <View style={styles.verseNumWrap}>
@@ -376,16 +531,36 @@ export default function MemoryDrill({ list, startIndex = 0, onExit }) {
                           <Text> </Text>
                         </Text>
                       </View>
-                      {verse.tokens.map((tok, ti) => (
-                        <WordSlot
-                          key={`${vIdx}-${ti}`}
-                          token={tok}
-                          shown={verse.visibility[ti]}
-                          state={isCurrent ? wordState[ti] : done ? true : undefined}
-                          isActive={isCurrent && ti === wordPos}
-                          colors={colors}
-                        />
-                      ))}
+                      {verse.tokens.map((tok, ti) => {
+                        const isActiveWord = isCurrent && ti === wordPos;
+                        // Capture the Y of the first attempted verse's first
+                        // word so we can scroll to it when the run (re)starts.
+                        const measureThis = isFirstAttempt && ti === firstTypable;
+                        return (
+                          <WordSlot
+                            key={`${vIdx}-${ti}`}
+                            token={tok}
+                            shown={verse.visibility[ti]}
+                            state={
+                              isCurrent
+                                ? wordState[ti]
+                                : doneState
+                                ? doneState[ti]
+                                : undefined
+                            }
+                            isActive={isActiveWord}
+                            dimmed={isCarried}
+                            colors={colors}
+                            onMeasure={
+                              measureThis
+                                ? (y) => {
+                                    firstAttemptYRef.current = y;
+                                  }
+                                : undefined
+                            }
+                          />
+                        );
+                      })}
                     </React.Fragment>
                   );
                 })}
@@ -420,19 +595,7 @@ export default function MemoryDrill({ list, startIndex = 0, onExit }) {
             style={styles.hiddenInput}
           />
         </>
-      ) : (
-        <DoneView
-          outcome={finalOutcome}
-          entry={entry}
-          memorised={memorised}
-          stage={stage}
-          colors={colors}
-          onRetryFailed={retryFailed}
-          onRetryAll={retryAll}
-          onSkip={goToNext}
-          onExit={onExit}
-        />
-      )}
+      ) : null}
     </SafeAreaView>
   );
 }
@@ -446,12 +609,26 @@ export default function MemoryDrill({ list, startIndex = 0, onExit }) {
 //   hidden + untyped -> real text covered by background overlay + underline
 //   correct          -> normal text colour (active = accent)
 //   wrong            -> red
-function WordSlot({ token, shown, state, isActive, colors }) {
+function WordSlot({ token, shown, state, isActive, dimmed, colors, onMeasure }) {
+  // Report this word's position/size within the scroll content (only wired for
+  // the active word) so the parent can keep it visible above the keyboard.
+  const handleLayout = onMeasure
+    ? (e) => {
+        const { y, height } = e.nativeEvent.layout;
+        onMeasure(y, height);
+      }
+    : undefined;
+
   if (!isTypable(token)) {
     // Punctuation-only token: always render as-is, non-interactive.
     return (
       <View style={styles.wordWrap}>
-        <Text style={[styles.verseLine, { color: colors.secondaryText }]}>
+        <Text
+          style={[
+            styles.verseLine,
+            { color: dimmed ? colors.mutedText : colors.secondaryText },
+          ]}
+        >
           {token.text}
           <Text> </Text>
         </Text>
@@ -460,17 +637,20 @@ function WordSlot({ token, shown, state, isActive, colors }) {
   }
 
   const typed = state === true || state === false;
-  const isBlank = !shown && !typed; // covered placeholder
-  const showUnderline = isBlank || isActive;
+  // Carried (passed, greyed) verses always show their full text — never covered
+  // or underlined — so the reader sees them as settled context, not blanks.
+  const isBlank = !dimmed && !shown && !typed; // covered placeholder
+  const showUnderline = !dimmed && (isBlank || isActive);
 
   let color;
-  if (state === true) color = isActive ? colors.accent : colors.text; // correct
+  if (dimmed) color = colors.mutedText; // carried-through passed verse (greyed)
+  else if (state === true) color = isActive ? colors.accent : colors.text; // correct
   else if (state === false) color = colors.danger; // wrong
   else if (shown) color = colors.secondaryText; // hint shown, not yet typed
   else color = colors.text; // blank: real colour, but hidden by the overlay
 
   return (
-    <View style={styles.wordWrap}>
+    <View style={styles.wordWrap} onLayout={handleLayout}>
       <Text style={[styles.verseLine, { color }]}>
         {token.text}
         <Text> </Text>
@@ -495,85 +675,6 @@ function WordSlot({ token, shown, state, isActive, colors }) {
   );
 }
 
-// Shown only after a FAILED attempt (successes auto-advance without a screen).
-// Lets the user retry (staying on the current set/stage per the spec), skip
-// ahead to the next set, or leave.
-function DoneView({
-  outcome,
-  entry,
-  memorised,
-  stage,
-  colors,
-  onRetryFailed,
-  onRetryAll,
-  onSkip,
-  onExit,
-}) {
-  const { updatedEntry, resultsArray, stageAtRun } = outcome;
-  const failedCount = resultsArray.filter((r) => r === false).length;
-  const stats = updatedEntry || entry;
-  const rate = successRate(stats);
-  const wins = successCount(stats);
-  const losses = failureCount(stats);
-
-  return (
-    <ScrollView contentContainerStyle={styles.doneWrap}>
-      <Text style={[styles.doneTitle, { color: colors.danger }]}>Not quite</Text>
-
-      <Text style={[styles.doneBody, { color: colors.text }]}>
-        You missed {failedCount} verse{failedCount === 1 ? "" : "s"}.
-        {memorised
-          ? `\n${wins} passed · ${losses} failed · ${Math.round(rate * 100)}% success rate`
-          : `\nYou're still on stage ${stageAtRun ?? stage} — retry to keep going.`}
-      </Text>
-
-      <View style={{ height: 24 }} />
-
-      {failedCount > 0 && (
-        <PrimaryButton
-          label={`Retry failed verse${failedCount === 1 ? "" : "s"}`}
-          colors={colors}
-          onPress={onRetryFailed}
-        />
-      )}
-
-      <TouchableOpacity
-        style={[styles.btnOutline, { borderColor: colors.border }]}
-        onPress={onRetryAll}
-      >
-        <Text style={[styles.btnText, { color: colors.text }]}>
-          {memorised ? "Try again" : "Restart this stage"}
-        </Text>
-      </TouchableOpacity>
-
-      <TouchableOpacity
-        style={[styles.btnOutline, { borderColor: colors.border }]}
-        onPress={onSkip}
-      >
-        <Text style={[styles.btnText, { color: colors.text }]}>Skip to next verse</Text>
-      </TouchableOpacity>
-
-      <TouchableOpacity
-        style={[styles.btnOutline, { borderColor: colors.border }]}
-        onPress={() => onExit()}
-      >
-        <Text style={[styles.btnText, { color: colors.text }]}>Back to Memory</Text>
-      </TouchableOpacity>
-    </ScrollView>
-  );
-}
-
-function PrimaryButton({ label, colors, onPress }) {
-  return (
-    <TouchableOpacity
-      style={[styles.btn, { backgroundColor: colors.accent, borderColor: colors.accentBorder }]}
-      onPress={onPress}
-    >
-      <Text style={[styles.btnText, { color: colors.accentContrast }]}>{label}</Text>
-    </TouchableOpacity>
-  );
-}
-
 const hit = { top: 10, bottom: 10, left: 10, right: 10 };
 
 const styles = StyleSheet.create({
@@ -588,13 +689,18 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
   backBtn: { width: 84 },
-  headerSpacer: { width: 84 },
   resetBtn: { width: 84, alignItems: "flex-end" },
   headerCenter: { flex: 1, alignItems: "center", paddingHorizontal: 4 },
   back: { fontSize: 16, fontFamily: uiFont() },
   title: { fontSize: 17, fontFamily: uiFont(700) },
   subtitle: { fontSize: 12, marginTop: 2, fontFamily: uiFont() },
-  versesWrap: { padding: 20 },
+  // The verses ScrollView fills the space between the header and the hint/input.
+  // We track the keyboard height (Keyboard API) and pad the content bottom by
+  // it, plus auto-scroll the active word into view, rather than using
+  // KeyboardAvoidingView (which fought the tiny absolute hidden input and could
+  // leave it unfocusable → keyboard not opening on long verses).
+  versesScroll: { flex: 1 },
+  versesWrap: { padding: 20, flexGrow: 1 },
   verseLine: { fontSize: 20, lineHeight: 32, fontFamily: FONT_FAMILIES.serifRegular },
   // Words are laid out as wrapping inline-block "chips" so a hidden word can be
   // covered by an absolutely-positioned overlay without disturbing the line.
@@ -636,26 +742,4 @@ const styles = StyleSheet.create({
     opacity: 0,
     bottom: 0,
   },
-  doneWrap: { padding: 24, alignItems: "center" },
-  doneTitle: { fontSize: 26, fontFamily: uiFont(700), marginTop: 12, marginBottom: 12 },
-  doneBody: { fontSize: 16, lineHeight: 24, textAlign: "center", fontFamily: uiFont() },
-  btn: {
-    borderWidth: 1,
-    borderRadius: 10,
-    paddingVertical: 14,
-    paddingHorizontal: 24,
-    alignItems: "center",
-    alignSelf: "stretch",
-    marginBottom: 12,
-  },
-  btnOutline: {
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: 10,
-    paddingVertical: 14,
-    paddingHorizontal: 24,
-    alignItems: "center",
-    alignSelf: "stretch",
-    marginBottom: 12,
-  },
-  btnText: { fontSize: 16, fontFamily: uiFont(700) },
 });

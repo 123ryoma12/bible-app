@@ -59,15 +59,15 @@ eas build -p android --profile preview
 2. Tap the downloaded file. Android will prompt to allow installs from that
    source ("Install unknown apps") — allow it for your browser/files app.
 3. Tap **Install**. The app appears on your home screen with its own icon
-   (currently the default Expo icon — swap `assets/icon.png` and the
-   `android-icon-*.png` files to customize it, then rebuild).
+   (uses `assets/logo.png` — swap it and the `android-icon-*.png`
+   files to customize it, then rebuild).
 
 No developer account fees, no store review, no expiry — it's yours.
 
 ## Customizing the app icon
 
 Replace these files in `assets/` with your own artwork, then rebuild:
-- `icon.png` — main icon
+- `logo.png` — main icon
 - `android-icon-foreground.png` / `android-icon-background.png` /
   `android-icon-monochrome.png` — Android adaptive icon layers
 - `splash-icon.png` — splash screen
