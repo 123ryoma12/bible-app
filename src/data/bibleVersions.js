@@ -18,25 +18,18 @@ export const BIBLE_VERSIONS = [
     abbr: "NIV",
     name: "New International Version",
     available: true,
-    copyright: "",
   },
   {
     id: "esv",
     abbr: "ESV",
     name: "English Standard Version",
     available: true, // bundled from api.esv.org
-    // Crossway requires this attribution wherever ESV text is displayed.
-    copyright:
-      "Scripture quotations are from the ESV\u00AE Bible (The Holy Bible, " +
-      "English Standard Version\u00AE), \u00A9 2001 by Crossway, a publishing " +
-      "ministry of Good News Publishers. Used by permission. All rights reserved.",
   },
   {
     id: "kjv",
     abbr: "KJV",
     name: "King James Version",
     available: true, // bundled from API.Bible (public domain)
-    copyright: "King James Version (Authorised). Public domain.",
   },
 ];
 
@@ -70,13 +63,4 @@ export function resolveVersion(id) {
 export function versionAbbr(id) {
   const v = BY_ID[id];
   return v ? v.abbr : String(id || "").toUpperCase();
-}
-
-/**
- * Attribution/copyright string for a version (empty if none). Some publishers
- * (e.g. Crossway/ESV) require this be shown wherever their text is displayed.
- */
-export function versionCopyright(id) {
-  const v = BY_ID[id];
-  return (v && v.copyright) || "";
 }

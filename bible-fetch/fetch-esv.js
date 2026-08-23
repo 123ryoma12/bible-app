@@ -144,6 +144,13 @@ function convertChapter(chapterNumber, passageText, bookId) {
   // Verse number of the poetry line most recently emitted, so a following
   // markerless (continuation) line attaches to it. Cleared by a blank line.
   let openPoetryVerse = null;
+  // Verse number most recently emitted anywhere in the chapter (prose or
+  // poetry), surviving blank lines. Used to attach verse CONTINUATIONS that the
+  // ESV separates from their verse with a blank line - e.g. the second half of
+  // a salutation ("Grace to you and peace...", Rom 1:7) or an embedded poetic
+  // quotation ("That you may be justified...", Rom 3:4). Without this we would
+  // mis-tag those continuation lines as editorial section headings.
+  let lastVerse = null;
 
   const flush = () => {
     if (pending && pending.verses.length) {
@@ -158,11 +165,38 @@ function convertChapter(chapterNumber, passageText, bookId) {
   const pushPoetry = (verse, text) => {
     const t = cleanText(text);
     if (!t) return;
+    if (verse != null) lastVerse = verse;
     blocks.push({
       style: "q1",
       verses: verse != null ? [{ verse, text: t }] : [],
       text: t,
     });
+  };
+
+  // Distinguish an embedded poetic line (part of the current verse) from a real
+  // editorial section heading when both arrive as markerless, unindented lines
+  // separated from their verse by a blank line. ESV headings are Title Case
+  // prose fragments that never carry clause/sentence punctuation and never open
+  // with a quote glyph; poetic verse lines routinely do. A line is therefore
+  // treated as POETRY (not a heading) when any of these hold:
+  //   - it opens with a quotation mark (embedded quote, e.g. Rom 3:4), or
+  //   - it opens with a lowercase letter or a non-letter (a continuation such as
+  //     "and prevail...", or a bracketed acrostic remnant "[...]"), or
+  //   - it ends with clause punctuation ("," ";" ":") - a poetic line-break that
+  //     no ESV heading ever uses (e.g. Dan 7:9 "thrones were placed,").
+  // This preserves genuine headings, including ESV speaker labels ("He",
+  // "Others") and Hebrew acrostic letters ("Aleph"), which are Title Case and
+  // unpunctuated.
+  const QUOTE_CHARS = "\u201C\u201D\u2018\u2019\"'";
+  const looksLikePoetryLine = (s) => {
+    if (!s) return false;
+    const first = s[0];
+    if (QUOTE_CHARS.includes(first)) return true;
+    if (!/[A-Za-z]/.test(first)) return true; // starts with [ , digit, etc.
+    if (first === first.toLowerCase() && first !== first.toUpperCase()) return true; // lowercase
+    const last = s[s.length - 1];
+    if (last === "," || last === ";" || last === ":") return true;
+    return false;
   };
 
   for (const rawLine of lines) {
@@ -180,8 +214,30 @@ function convertChapter(chapterNumber, passageText, bookId) {
       if (openPoetryVerse != null) {
         // Continuation line of the current poetry verse (no blank line before).
         pushPoetry(openPoetryVerse, line);
+      } else if (indent >= 2 && lastVerse != null) {
+        // Indented, markerless line with a blank line before it: this is a PROSE
+        // continuation of the current verse that the ESV split onto its own
+        // paragraph (e.g. the salutation's second half, "Grace to you and
+        // peace...", Rom 1:7). Headings are never indented, so this is never a
+        // heading. Re-open a prose paragraph carrying it under the last verse.
+        if (!pending) pending = { style: "p", verses: [] };
+        const existing = pending.verses.find((v) => v.verse === lastVerse);
+        if (existing) {
+          existing.text = cleanText(`${existing.text} ${line}`);
+        } else {
+          pending.verses.push({ verse: lastVerse, text: cleanText(line) });
+        }
+      } else if (indent === 0 && lastVerse != null && looksLikePoetryLine(line)) {
+        // Indent-0 markerless line that reads as verse text (embedded quotation
+        // or a poetic continuation), NOT an editorial heading - e.g. Rom 3:4
+        // "That you may be justified...", Dan 7:9 "thrones were placed,". Emit it
+        // as poetry under the last verse and keep it open so subsequent
+        // markerless lines in the same stanza continue it.
+        flush();
+        pushPoetry(lastVerse, line);
+        openPoetryVerse = lastVerse;
       } else {
-        // Genuine section heading (nothing open before it).
+        // Genuine section heading (nothing open, unindented, not a quotation).
         flush();
         blocks.push({ style: "s1", verses: [], text: cleanText(line) });
       }
@@ -205,6 +261,7 @@ function convertChapter(chapterNumber, passageText, bookId) {
       for (let i = 1; i < parts.length; i += 2) {
         const verseNum = Number(parts[i]);
         const text = cleanText(parts[i + 1] || "");
+        lastVerse = verseNum;
         const existing = pending.verses.find((v) => v.verse === verseNum);
         if (existing) {
           existing.text = cleanText(`${existing.text} ${text}`);

@@ -22,7 +22,7 @@ import { Inter_400Regular } from "@expo-google-fonts/inter/400Regular";
 import { Inter_500Medium } from "@expo-google-fonts/inter/500Medium";
 import { Inter_600SemiBold } from "@expo-google-fonts/inter/600SemiBold";
 import { Inter_700Bold } from "@expo-google-fonts/inter/700Bold";
-import { getLastPosition, setLastPosition } from "./src/data/lastPositionStore";
+import { getLastPosition, setLastPosition, setLastScroll } from "./src/data/lastPositionStore";
 import { loadMemoryPrefs } from "./src/data/memoryPrefsStore";
 import { loadReadingVersion } from "./src/data/bibleVersionStore";
 import { ThemeProvider, useTheme } from "./src/theme/ThemeContext";
@@ -94,6 +94,10 @@ function AppContent() {
   const [screen, setScreen] = useState("books");
   const [bookIndex, setBookIndex] = useState(0);
   const [chapterNumber, setChapterNumber] = useState(1);
+  // The scroll offset to restore into the Reader. Non-zero only for the chapter
+  // resumed on launch; any in-app navigation to a chapter starts at the top and
+  // resets this to 0.
+  const [initialScrollY, setInitialScrollY] = useState(0);
 
   // Controls visibility of the bottom tab bar. The Reader hides it for an
   // immersive reading experience while scrolling down; everything else keeps
@@ -117,6 +121,7 @@ function AppContent() {
         if (idx === -1) return;
         setBookIndex(idx);
         setChapterNumber(position.chapterNumber);
+        setInitialScrollY(position.scrollY || 0);
         setScreen("reader");
       })
       .finally(() => {
@@ -137,6 +142,7 @@ function AppContent() {
 
   function openChapter(num) {
     setChapterNumber(num);
+    setInitialScrollY(0);
     setScreen("reader");
     setLastPosition(book.id, num);
   }
@@ -153,6 +159,7 @@ function AppContent() {
     if (idx === -1) return;
     setBookIndex(idx);
     setChapterNumber(entryChapterNumber);
+    setInitialScrollY(0);
     setScreen("reader");
     setActiveTab("bible");
     setLastPosition(entryBookId, entryChapterNumber);
@@ -162,6 +169,7 @@ function AppContent() {
   const hasNext = bookIndex < BOOKS.length - 1 || chapterNumber < book.chapterCount;
 
   function goPrev() {
+    setInitialScrollY(0);
     if (chapterNumber > 1) {
       const newChapter = chapterNumber - 1;
       setChapterNumber(newChapter);
@@ -175,6 +183,7 @@ function AppContent() {
   }
 
   function goNext() {
+    setInitialScrollY(0);
     if (chapterNumber < book.chapterCount) {
       const newChapter = chapterNumber + 1;
       setChapterNumber(newChapter);
@@ -255,6 +264,8 @@ function AppContent() {
           <ReaderScreen
             book={book}
             chapterNumber={chapterNumber}
+            initialScrollY={initialScrollY}
+            onScrollPositionChange={setLastScroll}
             onPrev={goPrev}
             onNext={goNext}
             onBack={() => setScreen("chapters")}

@@ -28,6 +28,8 @@ const END_THRESHOLD = 48;
 export default function ReaderScreen({
   book,
   chapterNumber,
+  initialScrollY = 0,
+  onScrollPositionChange,
   onPrev,
   onNext,
   onBack,
@@ -55,6 +57,13 @@ export default function ReaderScreen({
   // the chapter (the footer sits waiting below it, never overlapping).
   const [footerHeight, setFooterHeight] = useState(0);
 
+  // Scroll-position restore/persist. `pendingScrollY` is the offset we still
+  // want to jump to once the content has grown tall enough to reach it; it is
+  // consumed (set to null) after a successful restore so user scrolling isn't
+  // fought. `saveTimer` debounces persistence while scrolling.
+  const pendingScrollY = useRef(initialScrollY > 0 ? initialScrollY : null);
+  const saveTimer = useRef(null);
+
   const setChrome = useCallback(
     (next) => {
       setChromeVisible((prev) => (prev === next ? prev : next));
@@ -68,6 +77,40 @@ export default function ReaderScreen({
     lastOffset.current = 0;
     setChrome(true);
   }, [book.id, chapterNumber, setChrome]);
+
+  // When the target chapter/offset to resume changes (launch resume, or moving
+  // to a new chapter which resets initialScrollY to 0), refresh what we still
+  // owe to restore. A 0 offset means "start at top" - nothing to restore.
+  useEffect(() => {
+    pendingScrollY.current = initialScrollY > 0 ? initialScrollY : null;
+  }, [book.id, chapterNumber, initialScrollY]);
+
+  // Flush any pending debounced save when unmounting.
+  useEffect(() => {
+    return () => {
+      if (saveTimer.current) clearTimeout(saveTimer.current);
+    };
+  }, []);
+
+  // Restore the saved scroll offset once the chapter content has laid out tall
+  // enough to contain it. Fires on content-size changes; consumes the pending
+  // target on the first successful jump so we never fight the user afterwards.
+  const handleContentSizeChange = useCallback(
+    (_w, contentHeight) => {
+      const target = pendingScrollY.current;
+      if (target == null || target <= 0) return;
+      // Wait until the content is at least as tall as the target; otherwise the
+      // scroll would clamp short and we'd land above where the user left off.
+      if (contentHeight < target) return;
+      pendingScrollY.current = null;
+      // A tiny delay lets the ScrollView settle its layout before jumping.
+      requestAnimationFrame(() => {
+        scrollRef.current?.scrollTo({ y: target, animated: false });
+        lastOffset.current = target;
+      });
+    },
+    []
+  );
 
   useEffect(() => {
     Animated.timing(footerAnim, {
@@ -85,6 +128,18 @@ export default function ReaderScreen({
       const prevY = lastOffset.current;
       const dy = y - prevY;
       lastOffset.current = y;
+
+      // Persist the reading position (debounced) so we can resume at this exact
+      // spot next launch. While a restore is still owed (pendingScrollY set), we
+      // skip saving so a spurious mount-time onScroll at y=0 can't clobber the
+      // stored offset before we've jumped to it. The programmatic restore jump
+      // clears pendingScrollY, after which real user scrolls persist normally.
+      if (onScrollPositionChange && pendingScrollY.current == null) {
+        if (saveTimer.current) clearTimeout(saveTimer.current);
+        saveTimer.current = setTimeout(() => {
+          onScrollPositionChange(Math.max(0, y));
+        }, 300);
+      }
 
       // Always show at the very top.
       if (y <= 0) {
@@ -111,7 +166,7 @@ export default function ReaderScreen({
         setChrome(false);
       }
     },
-    [setChrome]
+    [setChrome, onScrollPositionChange]
   );
 
   const toggleChrome = useCallback(() => {
@@ -151,6 +206,7 @@ export default function ReaderScreen({
         ]}
         onScroll={handleScroll}
         scrollEventThrottle={16}
+        onContentSizeChange={handleContentSizeChange}
         {...panResponder.panHandlers}
         key={`${book.id}-${chapterNumber}`}
       >
