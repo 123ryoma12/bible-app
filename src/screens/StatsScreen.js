@@ -81,6 +81,18 @@ const BOOK_BOUNDS = (() => {
 // lines up with the incoming book's inline first-row label).
 const STICKY_LABEL_HEIGHT = ROW_HEIGHT;
 
+// Canonical book index by id, so the sticky label can reproduce the same zebra
+// band parity a row uses (bookIndexParity = canonicalIndex % 2). Deriving from
+// the canonical index — not the (possibly filtered) sticky bounds index — keeps
+// the band correct even when a read-count filter hides some books.
+const BOOK_INDEX_BY_ID = (() => {
+  const map = {};
+  BOOKS.forEach((book, i) => {
+    map[book.id] = i;
+  });
+  return map;
+})();
+
 // Given a scroll offset and a set of book bounds, return { index, current,
 // next } for the book whose span contains the top of the viewport. `next` is
 // the following book (or null at the end). Used to render and push the sticky
@@ -623,12 +635,18 @@ export default function StatsScreen({ onOpenChapter, isActive = true }) {
               translateY = distanceToNext - STICKY_LABEL_HEIGHT; // negative → slides up
             }
           }
+          // Match the sticky label's background to the current book's zebra
+          // band (even index → background, odd index → surface) so it keeps the
+          // darker "yellow-ish" surface band while that book is pinned, instead
+          // of always showing the plain background.
+          const parity = (BOOK_INDEX_BY_ID[current.id] ?? 0) % 2;
+          const bandColor = parity === 0 ? colors.background : colors.surface;
           return (
             <View
               pointerEvents="none"
               style={[
                 styles.stickyLabelWrap,
-                { backgroundColor: colors.background, transform: [{ translateY }] },
+                { backgroundColor: bandColor, transform: [{ translateY }] },
               ]}
             >
               <Text
