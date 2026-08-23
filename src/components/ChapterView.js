@@ -2,15 +2,12 @@ import React from "react";
 import { View, Text, StyleSheet } from "react-native";
 import { useTheme } from "../theme/ThemeContext";
 import { FONT_FAMILIES } from "../theme/fonts";
-import { versionCopyright } from "../data/bibleVersions";
 
 // Renders the USFM-style "blocks" for a single chapter (paragraphs, headings,
 // poetry lines, etc.) with inline superscript verse numbers. `version` is the
-// translation being shown; when it carries a required attribution (e.g. ESV),
-// a small copyright line is rendered under the chapter.
+// translation being shown.
 export default function ChapterView({ chapter, version }) {
   const { colors, fontScale } = useTheme();
-  const copyright = versionCopyright(version);
 
   if (!chapter) {
     return (
@@ -34,9 +31,6 @@ export default function ChapterView({ chapter, version }) {
       {chapter.blocks.map((block, i) => (
         <Block key={i} block={block} seen={seen} colors={colors} fontScale={fontScale} />
       ))}
-      {!!copyright && (
-        <Text style={[styles.copyright, { color: colors.mutedText }]}>{copyright}</Text>
-      )}
     </View>
   );
 }
@@ -219,11 +213,5 @@ const styles = StyleSheet.create({
   },
   blank: {
     height: 16,
-  },
-  copyright: {
-    fontSize: 11,
-    lineHeight: 16,
-    marginTop: 28,
-    fontFamily: FONT_FAMILIES.serifItalic,
   },
 });
