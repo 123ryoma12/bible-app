@@ -75,31 +75,34 @@ function Block({ block, seen, colors, fontScale }) {
     return <View style={styles.blank} />;
   }
 
-  // Section headings (s1, s2, ...).
+  // Section headings (s1, s2, ...). These are editorial titles added by the
+  // translation, not scripture, so we render them as a quiet, uppercase,
+  // letter-spaced sans-serif label. Using the UI (sans) font + uppercasing keeps
+  // them visually distinct from the italic-serif biblical superscriptions (the
+  // "d" titles in the Psalms, which ARE scripture) while staying understated.
   if (style.startsWith("s")) {
     if (!block.text) return null;
     return (
-      <Text style={[styles.heading, { color: colors.headingText }, scaled(19, fontScale)]}>
-        {block.text}
+      <Text style={[styles.heading, { color: colors.secondaryText }, scaled(12, fontScale)]}>
+        {block.text.toUpperCase()}
       </Text>
     );
   }
 
-  // Chapter label (e.g. "Psalm 23") - subtle, we already show chapter # in header.
+  // Chapter label (e.g. "Psalm 23", present in NIV Psalms). The reader header
+  // already shows the book name and chapter number, so this in-content label is
+  // redundant and looks odd wedged above the superscription - skip rendering it.
   if (style === "cl") {
-    if (!block.text) return null;
-    return (
-      <Text style={[styles.chapterLabel, { color: colors.accent }, scaled(13, fontScale)]}>
-        {block.text}
-      </Text>
-    );
+    return null;
   }
 
-  // Descriptive title (e.g. "A psalm of David.").
+  // Descriptive title (e.g. "A psalm of David."). This is a biblical
+  // superscription (part of scripture), so it uses the normal reading text
+  // color - italic serif distinguishes it, no need to mute it.
   if (style === "d") {
     if (!block.text) return null;
     return (
-      <Text style={[styles.descriptive, { color: colors.secondaryText }, scaled(14, fontScale)]}>
+      <Text style={[styles.descriptive, { color: colors.text }, scaled(14, fontScale)]}>
         {block.text}
       </Text>
     );
@@ -177,15 +180,13 @@ const styles = StyleSheet.create({
     marginTop: 20,
   },
   heading: {
-    fontSize: 19,
-    fontFamily: FONT_FAMILIES.serifBold,
-    marginTop: 28,
-    marginBottom: 14,
-  },
-  chapterLabel: {
-    fontSize: 13,
-    fontFamily: FONT_FAMILIES.serifSemiBold,
-    marginTop: 8,
+    fontSize: 12,
+    // Uppercase sans-serif label with wide tracking: quiet and clearly editorial
+    // (not scripture), and distinct from the italic-serif biblical "d" titles.
+    fontFamily: FONT_FAMILIES.sansSemiBold,
+    letterSpacing: 1,
+    marginTop: 24,
+    marginBottom: 8,
   },
   descriptive: {
     fontSize: 14,
