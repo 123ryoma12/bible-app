@@ -126,6 +126,7 @@ function Block({ block, seen, colors, fontScale }) {
     const level = parseInt(style.replace("q", ""), 10) || 1;
     return (
       <Text
+        textBreakStrategy="simple"
         style={[
           styles.poetry,
           { color: colors.text, paddingLeft: 12 * level },
@@ -140,7 +141,10 @@ function Block({ block, seen, colors, fontScale }) {
   // Default: normal paragraph of verses.
   if (block.verses && block.verses.length > 0) {
     return (
-      <Text style={[styles.paragraph, { color: colors.text }, scaled(17, fontScale)]}>
+      <Text
+        textBreakStrategy="simple"
+        style={[styles.paragraph, { color: colors.text }, scaled(17, fontScale)]}
+      >
         <Verses verses={block.verses} seen={seen} colors={colors} fontScale={fontScale} />
       </Text>
     );
@@ -149,7 +153,10 @@ function Block({ block, seen, colors, fontScale }) {
   // Fallback for any other block with plain text (e.g. references).
   if (block.text) {
     return (
-      <Text style={[styles.paragraph, { color: colors.text }, scaled(17, fontScale)]}>
+      <Text
+        textBreakStrategy="simple"
+        style={[styles.paragraph, { color: colors.text }, scaled(17, fontScale)]}
+      >
         {block.text}
       </Text>
     );
@@ -217,21 +224,33 @@ const styles = StyleSheet.create({
     // We rely on the platform's natural line height and use margin for spacing.
     marginBottom: 22,
     fontFamily: FONT_FAMILIES.serifRegular,
+    // Keep Android's built-in font padding ENABLED (the default) - that padding
+    // is the reserved space descenders live in, so disabling it is what actually
+    // clips tails like "is just" in Romans 3:8. Critically, the inline verseNum
+    // child below must use the SAME setting; a parent/child mismatch made Android
+    // re-measure the block height inconsistently on remount (returning from
+    // Settings) and report it a sub-pixel short, clipping the final line.
+    includeFontPadding: true,
+    // Extra hard safety margin so a descender can never be clipped even if the
+    // measured text height ever comes back a hair short. Visually negligible.
+    paddingBottom: 2,
   },
   poetry: {
     fontSize: 17,
     marginBottom: 10,
     fontFamily: FONT_FAMILIES.serifRegular,
+    includeFontPadding: true,
+    paddingBottom: 2,
   },
   verseNum: {
     // Rendered as Unicode superscript glyphs (see toSuperscript), which are
     // already small and raised, so we size this near the body text and need no
     // verticalAlign/lineHeight tricks. Semibold keeps the small glyph legible.
-    // includeFontPadding:false trims Android's extra glyph padding so this
-    // inline run doesn't inflate the line box (no-op on iOS).
+    // Must match the parent paragraph's includeFontPadding (see above) so the
+    // block's measured height stays stable across re-layouts.
     fontSize: 15,
     fontFamily: FONT_FAMILIES.serifSemiBold,
-    includeFontPadding: false,
+    includeFontPadding: true,
   },
   blank: {
     height: 16,
