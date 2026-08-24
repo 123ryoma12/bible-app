@@ -37,16 +37,18 @@ export default function ChapterView({ chapter, version }) {
 
 // Applies the user's reading font scale to a base font size / line height pair.
 //
-// The scaled lineHeight is rounded UP (ceil) to a whole pixel. A fractional
-// lineHeight (e.g. 29 * 1.15 = 33.35 at the "large" scale) can end up marginally
-// smaller than the natural line box Android computes for the mixed body + smaller
-// semibold verse-number runs on the same line. When that happens the descenders
-// of the final wrapped line are clipped (hiding the tail "is just" in Romans
-// 3:8). Only "large" tripped this because its fractional part landed on the wrong
-// side of the rounding boundary (medium is whole; small/xlarge round the safe
-// way), and returning from Settings forced the re-measure that exposed it.
-// Ceiling guarantees the line box is never smaller than the glyphs need, on every
-// scale and across every layout pass.
+// IMPORTANT: for the flowing reading text (paragraphs / poetry) we deliberately
+// do NOT pass a lineHeight. React Native maps an explicit lineHeight to BOTH
+// minimumLineHeight and maximumLineHeight on the underlying paragraph style
+// (see RCTTextAttributes.mm), which *clamps* the line box - it will not grow to
+// fit tall glyphs. It also gets multiplied again by the OS accessibility font
+// multiplier. At the "large" app scale (1.15), that combined clamp landed just
+// below the descent of the final wrapped line, clipping its tail (e.g. hiding
+// "is just" in Romans 3:8). The clip only showed after visiting Settings and
+// returning, because that remount forced a fresh clamped re-measure. Omitting
+// lineHeight lets the platform use the natural line box, which always fully
+// contains descenders; paragraph spacing is handled by marginBottom instead.
+// A lineHeight is still honoured for fixed-size chrome (headings, titles).
 function scaled(base, fontScale, lineHeight) {
   const out = { fontSize: base * fontScale };
   if (lineHeight != null) out.lineHeight = Math.ceil(lineHeight * fontScale);
@@ -127,7 +129,7 @@ function Block({ block, seen, colors, fontScale }) {
         style={[
           styles.poetry,
           { color: colors.text, paddingLeft: 12 * level },
-          scaled(17, fontScale, 29),
+          scaled(17, fontScale),
         ]}
       >
         <Verses verses={block.verses} seen={seen} colors={colors} fontScale={fontScale} />
@@ -138,7 +140,7 @@ function Block({ block, seen, colors, fontScale }) {
   // Default: normal paragraph of verses.
   if (block.verses && block.verses.length > 0) {
     return (
-      <Text style={[styles.paragraph, { color: colors.text }, scaled(17, fontScale, 29)]}>
+      <Text style={[styles.paragraph, { color: colors.text }, scaled(17, fontScale)]}>
         <Verses verses={block.verses} seen={seen} colors={colors} fontScale={fontScale} />
       </Text>
     );
@@ -147,7 +149,7 @@ function Block({ block, seen, colors, fontScale }) {
   // Fallback for any other block with plain text (e.g. references).
   if (block.text) {
     return (
-      <Text style={[styles.paragraph, { color: colors.text }, scaled(17, fontScale, 29)]}>
+      <Text style={[styles.paragraph, { color: colors.text }, scaled(17, fontScale)]}>
         {block.text}
       </Text>
     );
@@ -157,14 +159,10 @@ function Block({ block, seen, colors, fontScale }) {
 }
 
 function Verses({ verses, seen, colors, fontScale }) {
-  // We deliberately emit each verse's pieces as sibling inline nodes inside the
-  // parent paragraph/poetry <Text> (via fragments) rather than wrapping each
-  // verse in its own nested <Text>. A nested <Text> without an explicit
-  // lineHeight lets its (smaller) verse-number child drive the line-box metrics,
-  // which on large font scales caused the final wrapped line of a long verse to
-  // be vertically clipped (e.g. the tail "is just" in Romans 3:8). Keeping the
-  // content flat means the single paragraph lineHeight governs every wrapped
-  // line consistently.
+  // We emit each verse's pieces as sibling inline nodes inside the parent
+  // paragraph/poetry <Text> (via fragments) rather than wrapping each verse in
+  // its own nested <Text>, so the whole paragraph flows as one text run with a
+  // single, consistent line box on every wrapped line.
   return verses.map((v, i) => {
     const isNewVerse = v.verse !== seen.last;
     if (isNewVerse) seen.last = v.verse;
@@ -214,26 +212,23 @@ const styles = StyleSheet.create({
   },
   paragraph: {
     fontSize: 17,
-    lineHeight: 29,
-    marginBottom: 20,
+    // No lineHeight: an explicit value clamps the line box (min == max) and
+    // clips descenders of the final wrapped line at some scales (see scaled()).
+    // We rely on the platform's natural line height and use margin for spacing.
+    marginBottom: 22,
     fontFamily: FONT_FAMILIES.serifRegular,
-    // Android adds extra font padding above/below the glyphs which throws off
-    // the line-box height on the final wrapped line and can clip descenders
-    // (the "is just" tail in Romans 3:8). Disabling it lets our explicit
-    // lineHeight fully govern the line box. No-op on iOS.
-    includeFontPadding: false,
   },
   poetry: {
     fontSize: 17,
-    lineHeight: 29,
-    marginBottom: 8,
+    marginBottom: 10,
     fontFamily: FONT_FAMILIES.serifRegular,
-    includeFontPadding: false,
   },
   verseNum: {
     // Rendered as Unicode superscript glyphs (see toSuperscript), which are
     // already small and raised, so we size this near the body text and need no
     // verticalAlign/lineHeight tricks. Semibold keeps the small glyph legible.
+    // includeFontPadding:false trims Android's extra glyph padding so this
+    // inline run doesn't inflate the line box (no-op on iOS).
     fontSize: 15,
     fontFamily: FONT_FAMILIES.serifSemiBold,
     includeFontPadding: false,
