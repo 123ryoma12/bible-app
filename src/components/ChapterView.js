@@ -36,9 +36,20 @@ export default function ChapterView({ chapter, version }) {
 }
 
 // Applies the user's reading font scale to a base font size / line height pair.
+//
+// The scaled lineHeight is rounded UP (ceil) to a whole pixel. A fractional
+// lineHeight (e.g. 29 * 1.15 = 33.35 at the "large" scale) can end up marginally
+// smaller than the natural line box Android computes for the mixed body + smaller
+// semibold verse-number runs on the same line. When that happens the descenders
+// of the final wrapped line are clipped (hiding the tail "is just" in Romans
+// 3:8). Only "large" tripped this because its fractional part landed on the wrong
+// side of the rounding boundary (medium is whole; small/xlarge round the safe
+// way), and returning from Settings forced the re-measure that exposed it.
+// Ceiling guarantees the line box is never smaller than the glyphs need, on every
+// scale and across every layout pass.
 function scaled(base, fontScale, lineHeight) {
   const out = { fontSize: base * fontScale };
-  if (lineHeight != null) out.lineHeight = lineHeight * fontScale;
+  if (lineHeight != null) out.lineHeight = Math.ceil(lineHeight * fontScale);
   return out;
 }
 
@@ -206,12 +217,18 @@ const styles = StyleSheet.create({
     lineHeight: 29,
     marginBottom: 20,
     fontFamily: FONT_FAMILIES.serifRegular,
+    // Android adds extra font padding above/below the glyphs which throws off
+    // the line-box height on the final wrapped line and can clip descenders
+    // (the "is just" tail in Romans 3:8). Disabling it lets our explicit
+    // lineHeight fully govern the line box. No-op on iOS.
+    includeFontPadding: false,
   },
   poetry: {
     fontSize: 17,
     lineHeight: 29,
     marginBottom: 8,
     fontFamily: FONT_FAMILIES.serifRegular,
+    includeFontPadding: false,
   },
   verseNum: {
     // Rendered as Unicode superscript glyphs (see toSuperscript), which are
@@ -219,6 +236,7 @@ const styles = StyleSheet.create({
     // verticalAlign/lineHeight tricks. Semibold keeps the small glyph legible.
     fontSize: 15,
     fontFamily: FONT_FAMILIES.serifSemiBold,
+    includeFontPadding: false,
   },
   blank: {
     height: 16,
