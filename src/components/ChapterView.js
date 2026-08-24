@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { View, Text, StyleSheet } from "react-native";
 import { useTheme } from "../theme/ThemeContext";
 import { FONT_FAMILIES } from "../theme/fonts";
@@ -8,6 +8,23 @@ import { FONT_FAMILIES } from "../theme/fonts";
 // translation being shown.
 export default function ChapterView({ chapter, version }) {
   const { colors, fontScale } = useTheme();
+
+  // Post-mount re-measure guard. On Android, RN can reuse a stale cached text
+  // layout for a paragraph when the component remounts with identical content
+  // and width (e.g. returning from Settings), sometimes leaving it one line
+  // short and clipping the whole final wrapped line of a verse (Romans 3:8 at
+  // the "large" scale). Bumping this epoch exactly once after the first paint
+  // gives the block tree a fresh key on the next frame, forcing a clean
+  // re-measure so the last line is always laid out. It is inexpensive (one extra
+  // layout pass on mount) and content-agnostic.
+  const [layoutEpoch, setLayoutEpoch] = useState(0);
+  useEffect(() => {
+    // Reset to 0 for this chapter/scale, then bump to 1 on the next frame so the
+    // block keys change once after the first paint and RN re-measures cleanly.
+    setLayoutEpoch(0);
+    const id = requestAnimationFrame(() => setLayoutEpoch(1));
+    return () => cancelAnimationFrame(id);
+  }, [chapter, fontScale]);
 
   if (!chapter) {
     return (
@@ -27,9 +44,20 @@ export default function ChapterView({ chapter, version }) {
   const seen = { last: null };
 
   return (
-    <View style={styles.wrap}>
+    // fontScale + layoutEpoch are folded into the keys so the block tree gets a
+    // fresh identity (a) whenever the reading size changes and (b) once right
+    // after the first paint on every mount. That second bump is what defeats the
+    // Android stale-text-layout cache described above, forcing a clean re-measure
+    // so a verse's final wrapped line is never dropped (Romans 3:8 at "large").
+    <View style={styles.wrap} key={`scale-${fontScale}-${layoutEpoch}`}>
       {chapter.blocks.map((block, i) => (
-        <Block key={i} block={block} seen={seen} colors={colors} fontScale={fontScale} />
+        <Block
+          key={`${i}-${fontScale}-${layoutEpoch}`}
+          block={block}
+          seen={seen}
+          colors={colors}
+          fontScale={fontScale}
+        />
       ))}
     </View>
   );
