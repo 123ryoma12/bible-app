@@ -146,6 +146,14 @@ function Block({ block, seen, colors, fontScale }) {
 }
 
 function Verses({ verses, seen, colors, fontScale }) {
+  // We deliberately emit each verse's pieces as sibling inline nodes inside the
+  // parent paragraph/poetry <Text> (via fragments) rather than wrapping each
+  // verse in its own nested <Text>. A nested <Text> without an explicit
+  // lineHeight lets its (smaller) verse-number child drive the line-box metrics,
+  // which on large font scales caused the final wrapped line of a long verse to
+  // be vertically clipped (e.g. the tail "is just" in Romans 3:8). Keeping the
+  // content flat means the single paragraph lineHeight governs every wrapped
+  // line consistently.
   return verses.map((v, i) => {
     const isNewVerse = v.verse !== seen.last;
     if (isNewVerse) seen.last = v.verse;
@@ -154,16 +162,16 @@ function Verses({ verses, seen, colors, fontScale }) {
     // the block so the paragraph/poetry line doesn't start with an indent.
     const leadingSpace = isNewVerse && i > 0;
     return (
-      <Text key={i}>
+      <React.Fragment key={i}>
         {isNewVerse && (
           <Text style={[styles.verseNum, { color: colors.mutedText }, scaled(15, fontScale)]}>
             {leadingSpace ? " " : ""}
             {toSuperscript(v.verse)}
+            {"\u2009"}
           </Text>
         )}
-        {isNewVerse && <Text>{"\u2009"}</Text>}
         {v.text}
-      </Text>
+      </React.Fragment>
     );
   });
 }
