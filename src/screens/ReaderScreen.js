@@ -381,13 +381,18 @@ const styles = StyleSheet.create({
   },
   chapterHeadingBook: {
     fontSize: 26,
-    fontFamily: FONT_FAMILIES.serifBold,
+    // This is navigation chrome, not Scripture. Inter avoids the clipped
+    // terminal glyph seen with the Lora display title on Android.
+    fontFamily: FONT_FAMILIES.sansSemiBold,
+    letterSpacing: 0.1,
     textAlign: "center",
   },
   chapterHeadingNumber: {
     fontSize: 15,
-    fontFamily: FONT_FAMILIES.serifMedium,
-    letterSpacing: 1,
+    // Chapter labels are UI metadata, not Scripture body text. Inter keeps
+    // narrow numerals such as "1" clear at this small tracked size on Android.
+    fontFamily: FONT_FAMILIES.sansSemiBold,
+    letterSpacing: 0.8,
     textTransform: "uppercase",
     marginTop: 4,
   },

@@ -61,18 +61,22 @@ function cleanText(s) {
 // assets/bible/esv/*.json from the already-fetched raw text, no token needed.
 const FROM_CACHE = process.argv.includes("--from-cache");
 
-// Fetch one chapter's plain text (cached). `ref` is like "John 3".
-async function fetchChapterText(bookName, chapter) {
+// Fetch one chapter's plain text (cached). A number after a one-chapter book
+// is interpreted by the ESV API as a VERSE reference (e.g. "3 John 1" means
+// verse 1), so those books must be queried by name alone.
+async function fetchChapterText(bookName, chapter, isSingleChapterBook = false) {
   const safeName = bookName.replace(/\s+/g, "_");
-  const cacheFile = path.join(CACHE_DIR, `${safeName}.${chapter}.json`);
+  const reference = isSingleChapterBook ? bookName : `${bookName} ${chapter}`;
+  const cacheKey = isSingleChapterBook ? "full-book" : chapter;
+  const cacheFile = path.join(CACHE_DIR, `${safeName}.${cacheKey}.json`);
   if (fs.existsSync(cacheFile)) {
     return JSON.parse(fs.readFileSync(cacheFile, "utf8")).passages[0] || "";
   }
   if (FROM_CACHE) {
-    throw new Error(`--from-cache but no cached text for ${bookName} ${chapter}`);
+    throw new Error(`--from-cache but no cached text for ${reference}`);
   }
   const params = new URLSearchParams({
-    q: `${bookName} ${chapter}`,
+    q: reference,
     "include-passage-references": "false",
     "include-verse-numbers": "true",
     "include-first-verse-numbers": "true",
@@ -325,7 +329,7 @@ function markPsalmSuperscription(blocks) {
 async function convertBook(meta) {
   const chapters = [];
   for (let ch = 1; ch <= meta.chapterCount; ch++) {
-    const text = await fetchChapterText(meta.name, ch);
+    const text = await fetchChapterText(meta.name, ch, meta.chapterCount === 1);
     chapters.push(convertChapter(ch, text, meta.id));
     // No need to pace when rebuilding offline from cache.
     if (!FROM_CACHE) await sleep(REQUEST_SPACING_MS);

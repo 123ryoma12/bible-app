@@ -3,17 +3,14 @@ import { StyleSheet, Text, View } from "react-native";
 import { useTheme } from "../theme/ThemeContext";
 import { FONT_FAMILIES } from "../theme/fonts";
 
-const BODY_SIZE = 17;
-const VERSE_NUMBER_SIZE = 11;
-const VERSE_NUMBER_DIGIT_WIDTH = 7;
-const VERSE_NUMBER_TRAILING_SPACE = 4;
+const BODY_SIZE = 18;
+const BODY_LINE_HEIGHT = 30;
+const VERSE_NUMBER_SIZE = 10;
+const VERSE_CONTINUATION_INDENT = 20;
 
 /**
- * Source blocks are rendered as source blocks: one native text layout per
- * paragraph, poetry line, or list item. This preserves the editorial structure
- * of the Bible text while allowing React Native to measure and wrap each block
- * naturally. No layout state, height constraints, or manual re-measure passes
- * are used.
+ * A stable, reading-first chapter layout. Each source paragraph or poetry line
+ * owns one native Text layout, preserving continuous Bible paragraph flow.
  */
 export default function ChapterView({ chapter }) {
   const { colors, fontScale } = useTheme();
@@ -32,12 +29,10 @@ export default function ChapterView({ chapter }) {
 
   return (
     <View style={styles.content}>
-      {blocks.map(({ block, verses, continuesPreviousVerse }, index) => (
+      {blocks.map((entry, index) => (
         <ChapterBlock
-          key={`${index}-${block?.style || "p"}`}
-          block={block}
-          verses={verses}
-          continuesPreviousVerse={continuesPreviousVerse}
+          key={`${index}-${entry.block?.style || "p"}`}
+          {...entry}
           colors={colors}
           fontScale={fontScale}
           typography={typography}
@@ -51,25 +46,27 @@ function ChapterBlock({
   block,
   verses,
   continuesPreviousVerse,
+  hasOnlyEditorialNotes,
   colors,
   fontScale,
   typography,
 }) {
-  const style = block?.style || "p";
-  const kind = getBlockKind(style);
+  const sourceStyle = block?.style || "p";
+  const kind = getBlockKind(sourceStyle);
   const label = typeof block?.text === "string" ? block.text.trim() : "";
 
-  // Blank USFM blocks add intentional breathing room. A block with scripture
-  // always renders its scripture, regardless of its presentation style.
-  if (style === "b" && verses.length === 0 && !label) {
+  if (sourceStyle === "b" && verses.length === 0 && !label) {
     return <View style={styles.spacer} />;
   }
 
-  // Chapter labels are metadata; the ReaderScreen already owns the title.
-  if (style === "cl") return null;
+  // The reader header already presents the chapter title.
+  if (sourceStyle === "cl") return null;
 
-  const appearance = getAppearance(style, kind);
+  const appearance = getAppearance(sourceStyle, kind);
   const showLabel = label && (kind === "heading" || verses.length === 0);
+  const continuationInset = continuesPreviousVerse
+    ? VERSE_CONTINUATION_INDENT * fontScale
+    : 0;
 
   if (!showLabel && verses.length === 0) return null;
 
@@ -78,9 +75,8 @@ function ChapterBlock({
       style={[
         styles.block,
         appearance.container,
-        continuesPreviousVerse
-          ? { paddingLeft: getVerseNumberGutter(verses[0]?.number, fontScale) }
-          : null,
+        continuationInset ? { paddingLeft: continuationInset } : null,
+        hasOnlyEditorialNotes ? styles.editorialBlock : null,
       ]}
     >
       {showLabel ? (
@@ -108,62 +104,67 @@ function ChapterBlock({
   );
 }
 
-function FlowingVerses({
-  verses,
-  beginsWithContinuation,
-  appearance,
-  colors,
-  typography,
-}) {
-  return (
-    <Text style={[styles.flowingText, typography[appearance.textType], appearance.text, { color: colors.text }]}>
-      {verses.map((verse, index) => {
-        const previousNumber =
-          index > 0
-            ? verses[index - 1].number
-            : beginsWithContinuation
-              ? verse.number
-              : null;
-        const showNumber = verse.number !== null && verse.number !== previousNumber;
+function FlowingVerses({ verses, beginsWithContinuation, appearance, colors, typography }) {
+  const segments = verses.map((verse, index) => {
+    const previousNumber = index > 0 ? verses[index - 1].number : null;
+    const repeatedOpeningVerse = index === 0 && beginsWithContinuation;
 
-        return (
-          <React.Fragment key={`${verse.number ?? "text"}-${index}`}>
-            {index > 0 ? " " : null}
-            {showNumber ? (
-              <Text style={[styles.verseNumber, typography.verseNumber, { color: colors.mutedText }]}>
-                {verse.number}{" "}
-              </Text>
-            ) : null}
-            {verse.text}
-          </React.Fragment>
-        );
-      })}
+    return {
+      number: verse.number,
+      text: verse.text,
+      editorialNote: verse.isEditorialNote,
+      showNumber:
+        !verse.isEditorialNote &&
+        verse.number !== null &&
+        verse.number !== previousNumber &&
+        !repeatedOpeningVerse,
+    };
+  });
+
+  return (
+    <Text
+      style={[
+        styles.flowingText,
+        typography[appearance.textType],
+        appearance.text,
+        { color: colors.text },
+      ]}
+    >
+      {segments.map((segment, index) => (
+        <Text key={`${segment.number ?? "text"}-${index}`} style={segment.editorialNote ? styles.editorialText : null}>
+          {index > 0 ? " " : null}
+          {segment.showNumber ? (
+            <Text style={[styles.verseNumber, typography.verseNumber, { color: colors.mutedText }]}>
+              {segment.number}{"\u00A0\u00A0"}
+            </Text>
+          ) : null}
+          {segment.text}
+        </Text>
+      ))}
     </Text>
   );
 }
 
-// Keep the source blocks intact while carrying the last verse number forward.
-// Poetry frequently splits one verse across consecutive source blocks; later
-// lines use the same gutter as the verse label instead of repeating it.
 function prepareBlocks(source) {
   let previousVerseNumber = null;
 
   return (Array.isArray(source) ? source : []).map((block) => {
     const verses = getVerses(block?.verses);
-    const firstVerseNumber = verses[0]?.number ?? null;
-    const lastVerseNumber = verses[verses.length - 1]?.number ?? null;
+    const scriptureVerses = verses.filter((verse) => !verse.isEditorialNote);
+    const firstVerseNumber = scriptureVerses[0]?.number ?? null;
+    const lastVerseNumber = scriptureVerses[scriptureVerses.length - 1]?.number ?? null;
     const continuesPreviousVerse =
       firstVerseNumber !== null && firstVerseNumber === previousVerseNumber;
 
     if (lastVerseNumber !== null) previousVerseNumber = lastVerseNumber;
 
-    return { block, verses, continuesPreviousVerse };
+    return {
+      block,
+      verses,
+      continuesPreviousVerse,
+      hasOnlyEditorialNotes: verses.length > 0 && scriptureVerses.length === 0,
+    };
   });
-}
-
-function getVerseNumberGutter(verseNumber, fontScale) {
-  const digitCount = String(verseNumber ?? "").length;
-  return (digitCount * VERSE_NUMBER_DIGIT_WIDTH + VERSE_NUMBER_TRAILING_SPACE) * fontScale;
 }
 
 function getVerses(source) {
@@ -171,10 +172,14 @@ function getVerses(source) {
 
   return source
     .filter((verse) => verse && typeof verse.text === "string" && verse.text.trim())
-    .map((verse) => ({
-      number: verse.verse == null ? null : String(verse.verse),
-      text: verse.text.trim(),
-    }));
+    .map((verse) => {
+      const text = verse.text.trim();
+      return {
+        number: verse.verse == null ? null : String(verse.verse),
+        text,
+        isEditorialNote: /^\[.*\]$/.test(text),
+      };
+    });
 }
 
 function getBlockKind(style) {
@@ -238,15 +243,19 @@ function createTypography(fontScale) {
     body: {
       fontFamily: FONT_FAMILIES.serifRegular,
       fontSize: BODY_SIZE * fontScale,
+      lineHeight: BODY_LINE_HEIGHT * fontScale,
+      includeFontPadding: true,
     },
     descriptive: {
       fontFamily: FONT_FAMILIES.serifItalic,
       fontSize: 15 * fontScale,
+      lineHeight: 24 * fontScale,
+      includeFontPadding: true,
     },
     heading: {
       fontFamily: FONT_FAMILIES.sansSemiBold,
-      fontSize: 12 * fontScale,
-      letterSpacing: 1.1,
+      fontSize: 11 * fontScale,
+      letterSpacing: 1.2,
     },
     verseNumber: {
       fontFamily: FONT_FAMILIES.sansSemiBold,
@@ -257,9 +266,9 @@ function createTypography(fontScale) {
 
 const styles = StyleSheet.create({
   content: {
-    paddingHorizontal: 24,
-    paddingTop: 20,
-    paddingBottom: 28,
+    paddingHorizontal: 22,
+    paddingTop: 14,
+    paddingBottom: 32,
   },
   missing: {
     fontFamily: FONT_FAMILIES.serifItalic,
@@ -269,36 +278,43 @@ const styles = StyleSheet.create({
     width: "100%",
   },
   paragraph: {
-    marginBottom: 22,
+    marginBottom: 18,
   },
   poetry: {
-    marginBottom: 12,
+    marginBottom: 7,
   },
   list: {
-    marginBottom: 12,
+    marginBottom: 10,
   },
   centered: {
-    marginBottom: 18,
+    marginBottom: 16,
   },
   indented: {
     marginBottom: 14,
     paddingLeft: 14,
   },
   heading: {
-    marginTop: 28,
-    marginBottom: 12,
+    marginTop: 26,
+    marginBottom: 10,
   },
   descriptive: {
-    marginBottom: 16,
+    marginBottom: 14,
+  },
+  editorialBlock: {
+    marginTop: 4,
+    marginBottom: 14,
   },
   spacer: {
-    height: 14,
+    height: 12,
   },
   flowingText: {
-    // Natural platform line height prevents clipped final lines at all scales.
+    // Explicit leading creates a relaxed reading rhythm without layout tricks.
   },
   verseNumber: {
-    letterSpacing: 0.2,
+    letterSpacing: 0.1,
+  },
+  editorialText: {
+    fontFamily: FONT_FAMILIES.serifItalic,
   },
   centeredText: {
     textAlign: "center",
@@ -307,7 +323,7 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   headingLabel: {
-    marginBottom: 10,
+    marginBottom: 8,
   },
   descriptiveLabel: {
     textAlign: "center",
