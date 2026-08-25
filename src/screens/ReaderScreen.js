@@ -269,7 +269,7 @@ export default function ReaderScreen({
             <View style={[styles.chapterHeadingRule, { backgroundColor: colors.border }]} />
           </View>
 
-          <ChapterView chapter={chapter} version={version} />
+          <ChapterView chapter={chapter} />
         </TouchableOpacity>
 
         {/* End-of-chapter action. */}
