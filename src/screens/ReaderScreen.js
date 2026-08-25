@@ -9,7 +9,7 @@ import {
   Animated,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { uiFont, FONT_FAMILIES } from "../theme/fonts";
+import { uiFont, readingFont } from "../theme/fonts";
 import ChapterView from "../components/ChapterView";
 import { getChapter } from "../data/bibleData";
 import { incrementReadCount } from "../data/progressStore";
@@ -39,7 +39,7 @@ export default function ReaderScreen({
   hasPrev,
   hasNext,
 }) {
-  const { colors } = useTheme();
+  const { colors, readingFontKey } = useTheme();
   // Read in the user's selected translation. The active version is a synchronous
   // cached value (primed at startup, updated when changed in Settings); the
   // Reader re-reads it on each render, so switching versions then returning here
@@ -260,10 +260,20 @@ export default function ReaderScreen({
           {/* Non-interactive page heading (the tappable version lives in the
               footer pill). Purely decorative, so it is not a button. */}
           <View style={styles.chapterHeading}>
-            <Text style={[styles.chapterHeadingBook, { color: colors.text }]}>
+            <Text
+              style={[
+                styles.chapterHeadingBook,
+                { color: colors.text, fontFamily: readingFont(readingFontKey, "bold") },
+              ]}
+            >
               {book.name}
             </Text>
-            <Text style={[styles.chapterHeadingNumber, { color: colors.accent }]}>
+            <Text
+              style={[
+                styles.chapterHeadingNumber,
+                { color: colors.accent, fontFamily: readingFont(readingFontKey, "semiBold") },
+              ]}
+            >
               Chapter {chapterNumber}
             </Text>
             <View style={[styles.chapterHeadingRule, { backgroundColor: colors.border }]} />
@@ -339,7 +349,10 @@ export default function ReaderScreen({
           accessibilityLabel={`${book.name} ${chapterNumber}, tap to choose another book or chapter`}
         >
           <Text
-            style={[styles.footerPillText, { color: colors.text }]}
+            style={[
+              styles.footerPillText,
+              { color: colors.text, fontFamily: readingFont(readingFontKey, "semiBold") },
+            ]}
             numberOfLines={1}
             adjustsFontSizeToFit
             minimumFontScale={0.7}
@@ -381,17 +394,11 @@ const styles = StyleSheet.create({
   },
   chapterHeadingBook: {
     fontSize: 26,
-    // This is navigation chrome, not Scripture. Inter avoids the clipped
-    // terminal glyph seen with the Lora display title on Android.
-    fontFamily: FONT_FAMILIES.sansSemiBold,
     letterSpacing: 0.1,
     textAlign: "center",
   },
   chapterHeadingNumber: {
     fontSize: 15,
-    // Chapter labels are UI metadata, not Scripture body text. Inter keeps
-    // narrow numerals such as "1" clear at this small tracked size on Android.
-    fontFamily: FONT_FAMILIES.sansSemiBold,
     letterSpacing: 0.8,
     textTransform: "uppercase",
     marginTop: 4,
@@ -441,5 +448,5 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  footerPillText: { fontSize: 16, fontFamily: FONT_FAMILIES.serifSemiBold },
+  footerPillText: { fontSize: 16 },
 });

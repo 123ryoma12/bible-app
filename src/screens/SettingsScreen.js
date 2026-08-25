@@ -9,8 +9,13 @@ import {
   Alert,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useTheme, FONT_SCALES } from "../theme/ThemeContext";
-import { uiFont, FONT_FAMILIES } from "../theme/fonts";
+import {
+  useTheme,
+  FONT_SCALE_MAX,
+  FONT_SCALE_MIN,
+  FONT_SCALE_STEP,
+} from "../theme/ThemeContext";
+import { uiFont, readingFont, READING_FONT_OPTIONS } from "../theme/fonts";
 import { exportBackup, importBackup } from "../data/backupStore";
 import {
   PREF_FIELDS,
@@ -56,10 +61,20 @@ function SectionHeader({ title, colors, first = false }) {
 }
 
 export default function SettingsScreen() {
-  const { mode, setMode, colors, fontScale, setFontScale } = useTheme();
+  const {
+    mode,
+    setMode,
+    colors,
+    fontScale,
+    setFontScale,
+    readingFontKey,
+    setReadingFontKey,
+  } = useTheme();
   // "idle" | "backing-up" | "restoring" - drives the row spinners and disables
   // both actions while one is running.
   const [busy, setBusy] = useState("idle");
+  const [showFontOptions, setShowFontOptions] = useState(false);
+  const [showVersionOptions, setShowVersionOptions] = useState(false);
 
   // --- Reading version ---
   // Which translation the reader shows. Only NIV is available today; ESV/KJV
@@ -92,11 +107,18 @@ export default function SettingsScreen() {
 
   // The preset the current prefs correspond to ("custom" if hand-tuned).
   const activePreset = prefs ? presetForPrefs(prefs) : "balanced";
+  const activeFont =
+    READING_FONT_OPTIONS.find((option) => option.key === readingFontKey) || READING_FONT_OPTIONS[0];
+  const activeVersion = BIBLE_VERSIONS.find((version) => version.id === readingVersion);
 
   // Persist + re-sort after any prefs change, refreshing the local mirror.
   async function commitPrefs(next) {
     setPrefs(next); // optimistic
     await resortMemory();
+  }
+
+  function handleFontSizeStep(direction) {
+    setFontScale(fontScale + direction * FONT_SCALE_STEP);
   }
 
   async function handlePreset(presetKey) {
@@ -201,63 +223,125 @@ export default function SettingsScreen() {
 
         {/* Appearance */}
         <SectionHeader title="Appearance" colors={colors} first />
-        {APPEARANCE_OPTIONS.map((opt) => {
-          const isActive = mode === opt.key;
+        <View style={[styles.appearanceToggle, { borderColor: colors.border }]}>
+          {APPEARANCE_OPTIONS.map((opt) => {
+            const isActive = mode === opt.key;
+            return (
+              <TouchableOpacity
+                key={opt.key}
+                style={[
+                  styles.appearanceOption,
+                  { backgroundColor: isActive ? colors.accent : "transparent" },
+                ]}
+                onPress={() => setMode(opt.key)}
+                accessibilityRole="button"
+                accessibilityState={{ selected: isActive }}
+                accessibilityLabel={opt.label}
+              >
+                <Text style={[styles.appearanceOptionText, { color: isActive ? colors.accentContrast : colors.text }]}>
+                  {opt.key === "light" ? "Light" : "Dark"}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+
+        {/* Reading / font size */}
+        <SectionHeader title="Reading" colors={colors} />
+        <Text style={[styles.settingName, { color: colors.text }]}>Font Size</Text>
+
+        <View style={styles.fontSizeStepper}>
+          <TouchableOpacity
+            style={[
+              styles.fontSizeButton,
+              { borderColor: colors.border, opacity: fontScale <= FONT_SCALE_MIN ? 0.4 : 1 },
+            ]}
+            onPress={() => handleFontSizeStep(-1)}
+            disabled={fontScale <= FONT_SCALE_MIN}
+            accessibilityRole="button"
+            accessibilityLabel="Decrease reading font size"
+          >
+            <Text style={[styles.fontSizeButtonText, { color: colors.text }]}>−</Text>
+          </TouchableOpacity>
+
+          <View style={styles.fontSizeValue}>
+            <Text style={[styles.fontSizePoints, { color: colors.text }]}>
+              {Math.round(PREVIEW_BASE_SIZE * fontScale)} pt
+            </Text>
+            <Text style={[styles.fontSizePercent, { color: colors.mutedText }]}>
+              {Math.round(fontScale * 100)}%
+            </Text>
+          </View>
+
+          <TouchableOpacity
+            style={[
+              styles.fontSizeButton,
+              { borderColor: colors.border, opacity: fontScale >= FONT_SCALE_MAX ? 0.4 : 1 },
+            ]}
+            onPress={() => handleFontSizeStep(1)}
+            disabled={fontScale >= FONT_SCALE_MAX}
+            accessibilityRole="button"
+            accessibilityLabel="Increase reading font size"
+          >
+            <Text style={[styles.fontSizeButtonText, { color: colors.text }]}>+</Text>
+          </TouchableOpacity>
+        </View>
+        <Text style={[styles.fontHelp, { color: colors.mutedText }]}>Adjusts in 5% steps.</Text>
+
+        <TouchableOpacity
+          style={[styles.row, { borderBottomColor: colors.border, marginTop: 12 }]}
+          onPress={() => setShowFontOptions((value) => !value)}
+          accessibilityRole="button"
+          accessibilityState={{ expanded: showFontOptions }}
+          accessibilityLabel={`Reading font, ${activeFont.label}`}
+        >
+          <View style={styles.actionRowText}>
+            <Text style={[styles.rowText, { color: colors.text }]}>Reading Font</Text>
+            <Text style={[styles.actionSubtext, { color: colors.mutedText }]}>
+              {activeFont.label} · {activeFont.description}
+            </Text>
+          </View>
+          <Text style={[styles.chevron, { color: colors.mutedText }]}>{showFontOptions ? "⌃" : "›"}</Text>
+        </TouchableOpacity>
+
+        {showFontOptions && READING_FONT_OPTIONS.map((option) => {
+          const isActive = readingFontKey === option.key;
           return (
             <TouchableOpacity
-              key={opt.key}
+              key={option.key}
               style={[styles.row, { borderBottomColor: colors.border }]}
-              onPress={() => setMode(opt.key)}
+              onPress={() => {
+                setReadingFontKey(option.key);
+                setShowFontOptions(false);
+              }}
+              accessibilityRole="radio"
+              accessibilityState={{ selected: isActive }}
+              accessibilityLabel={`${option.label}. ${option.description}`}
             >
-              <Text style={[styles.rowText, { color: colors.text }]}>{opt.label}</Text>
+              <View style={styles.actionRowText}>
+                <Text
+                  style={[
+                    styles.fontOptionName,
+                    { color: colors.text, fontFamily: readingFont(option.key, "regular") },
+                  ]}
+                >
+                  {option.label}
+                </Text>
+                <Text style={[styles.actionSubtext, { color: colors.mutedText }]}>
+                  {option.description}
+                </Text>
+              </View>
               <View
                 style={[
                   styles.radioOuter,
                   { borderColor: isActive ? colors.accent : colors.border },
                 ]}
               >
-                {isActive && (
-                  <View style={[styles.radioInner, { backgroundColor: colors.accent }]} />
-                )}
+                {isActive && <View style={[styles.radioInner, { backgroundColor: colors.accent }]} />}
               </View>
             </TouchableOpacity>
           );
         })}
-
-        {/* Reading / font size */}
-        <SectionHeader title="Reading" colors={colors} />
-        <Text style={[styles.settingName, { color: colors.text }]}>Font Size</Text>
-
-        <View style={styles.segmentRow}>
-          {FONT_SCALES.map((opt) => {
-            const isActive = fontScale === opt.value;
-            return (
-              <TouchableOpacity
-                key={opt.key}
-                style={[
-                  styles.segment,
-                  {
-                    borderColor: isActive ? colors.accent : colors.border,
-                    backgroundColor: isActive ? colors.accent : "transparent",
-                  },
-                ]}
-                onPress={() => setFontScale(opt.value)}
-                accessibilityRole="button"
-                accessibilityState={{ selected: isActive }}
-                accessibilityLabel={`Font size ${opt.label}`}
-              >
-                <Text
-                  style={[
-                    styles.segmentText,
-                    { color: isActive ? colors.accentContrast : colors.text },
-                  ]}
-                >
-                  {opt.label}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
-        </View>
 
         {/* Live preview so the choice is obvious before opening a chapter. */}
         <View style={[styles.previewCard, { backgroundColor: colors.surface }]}>
@@ -265,7 +349,7 @@ export default function SettingsScreen() {
           <Text
             style={{
               color: colors.surfaceText,
-              fontFamily: FONT_FAMILIES.serifRegular,
+              fontFamily: readingFont(readingFontKey, "regular"),
               fontSize: PREVIEW_BASE_SIZE * fontScale,
               lineHeight: PREVIEW_BASE_SIZE * fontScale * 1.55,
             }}
@@ -273,7 +357,7 @@ export default function SettingsScreen() {
             <Text
               style={{
                 color: colors.accent,
-                fontFamily: FONT_FAMILIES.serifSemiBold,
+                fontFamily: readingFont(readingFontKey, "semiBold"),
                 fontSize: 11 * fontScale,
               }}
             >
@@ -286,17 +370,32 @@ export default function SettingsScreen() {
         {/* Bible version: which translation the reader shows. Only available
             versions are selectable; others are shown as disabled "coming soon".
             This choice does not affect reading stats. */}
-        <Text style={[styles.settingName, { color: colors.text, marginTop: 16 }]}>
-          Bible Version
-        </Text>
-        {BIBLE_VERSIONS.map((v) => {
+        <TouchableOpacity
+          style={[styles.row, { borderBottomColor: colors.border, marginTop: 12 }]}
+          onPress={() => setShowVersionOptions((value) => !value)}
+          accessibilityRole="button"
+          accessibilityState={{ expanded: showVersionOptions }}
+          accessibilityLabel={`Bible version, ${activeVersion?.name || "loading"}`}
+        >
+          <View style={styles.actionRowText}>
+            <Text style={[styles.rowText, { color: colors.text }]}>Bible Version</Text>
+            <Text style={[styles.actionSubtext, { color: colors.mutedText }]}>
+              {activeVersion ? `${activeVersion.abbr} · ${activeVersion.name}` : "Loading…"}
+            </Text>
+          </View>
+          <Text style={[styles.chevron, { color: colors.mutedText }]}>{showVersionOptions ? "⌃" : "›"}</Text>
+        </TouchableOpacity>
+        {showVersionOptions && BIBLE_VERSIONS.map((v) => {
           const isActive = readingVersion === v.id;
           const disabled = !v.available;
           return (
             <TouchableOpacity
               key={v.id}
               style={[styles.row, { borderBottomColor: colors.border }]}
-              onPress={() => handleSelectVersion(v.id)}
+              onPress={async () => {
+                await handleSelectVersion(v.id);
+                setShowVersionOptions(false);
+              }}
               disabled={disabled || readingVersion == null}
               accessibilityRole="radio"
               accessibilityState={{ selected: isActive, disabled }}
@@ -570,6 +669,24 @@ const styles = StyleSheet.create({
     paddingTop: 16,
     paddingBottom: 8,
   },
+  appearanceToggle: {
+    flexDirection: "row",
+    marginHorizontal: 20,
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 3,
+  },
+  appearanceOption: {
+    flex: 1,
+    minHeight: 42,
+    borderRadius: 9,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  appearanceOptionText: {
+    fontSize: 14,
+    fontFamily: uiFont(600),
+  },
   row: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -605,21 +722,36 @@ const styles = StyleSheet.create({
     paddingTop: 6,
     paddingBottom: 4,
   },
-  segmentRow: {
+  fontHelp: {
+    fontSize: 13,
+    fontFamily: uiFont(400),
+    paddingHorizontal: 20,
+    paddingBottom: 4,
+  },
+  fontOptionName: { fontSize: 19 },
+  fontSizeStepper: {
     flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 20,
     paddingHorizontal: 20,
     paddingTop: 6,
-    gap: 8,
   },
-  segment: {
-    flex: 1,
+  fontSizeButton: {
+    width: 48,
+    height: 48,
     borderWidth: 1.5,
-    borderRadius: 10,
-    paddingVertical: 10,
+    borderRadius: 24,
     alignItems: "center",
     justifyContent: "center",
   },
-  segmentText: { fontSize: 13, fontFamily: uiFont(600), textAlign: "center" },
+  fontSizeButtonText: { fontSize: 28, fontFamily: uiFont(500), lineHeight: 32 },
+  fontSizeValue: {
+    minWidth: 88,
+    alignItems: "center",
+  },
+  fontSizePoints: { fontSize: 18, fontFamily: uiFont(600) },
+  fontSizePercent: { fontSize: 13, fontFamily: uiFont(400), marginTop: 1 },
   previewCard: {
     marginHorizontal: 20,
     marginTop: 16,

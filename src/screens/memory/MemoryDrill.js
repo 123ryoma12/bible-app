@@ -12,7 +12,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-import { uiFont, FONT_FAMILIES } from "../../theme/fonts";
+import { readingFont, uiFont } from "../../theme/fonts";
 import { useTheme } from "../../theme/ThemeContext";
 import {
   buildDrill,
@@ -62,7 +62,7 @@ function readStage(entry) {
 //   startIndex  index into `list` to begin at
 //   onExit()    called to return to the list (after refreshing it)
 export default function MemoryDrill({ list, startIndex = 0, onExit }) {
-  const { colors } = useTheme();
+  const { colors, readingFontKey } = useTheme();
   const inputRef = useRef(null);
   // Scroll container + the Y offset of the first verse being attempted, used to
   // scroll to it once when a run (re)starts. No while-typing auto-scroll.
@@ -526,7 +526,15 @@ export default function MemoryDrill({ list, startIndex = 0, onExit }) {
                   return (
                     <React.Fragment key={vIdx}>
                       <View style={styles.verseNumWrap}>
-                        <Text style={[styles.verseNumInline, { color: colors.mutedText }]}>
+                        <Text
+                          style={[
+                            styles.verseNumInline,
+                            {
+                              color: colors.mutedText,
+                              fontFamily: readingFont(readingFontKey, "semiBold"),
+                            },
+                          ]}
+                        >
                           {verse.reference.verse}
                           <Text> </Text>
                         </Text>
@@ -551,6 +559,7 @@ export default function MemoryDrill({ list, startIndex = 0, onExit }) {
                             isActive={isActiveWord}
                             dimmed={isCarried}
                             colors={colors}
+                            readingFontKey={readingFontKey}
                             onMeasure={
                               measureThis
                                 ? (y) => {
@@ -609,7 +618,16 @@ export default function MemoryDrill({ list, startIndex = 0, onExit }) {
 //   hidden + untyped -> real text covered by background overlay + underline
 //   correct          -> normal text colour (active = accent)
 //   wrong            -> red
-function WordSlot({ token, shown, state, isActive, dimmed, colors, onMeasure }) {
+function WordSlot({
+  token,
+  shown,
+  state,
+  isActive,
+  dimmed,
+  colors,
+  readingFontKey,
+  onMeasure,
+}) {
   // Report this word's position/size within the scroll content (only wired for
   // the active word) so the parent can keep it visible above the keyboard.
   const handleLayout = onMeasure
@@ -626,7 +644,10 @@ function WordSlot({ token, shown, state, isActive, dimmed, colors, onMeasure }) 
         <Text
           style={[
             styles.verseLine,
-            { color: dimmed ? colors.mutedText : colors.secondaryText },
+            {
+              color: dimmed ? colors.mutedText : colors.secondaryText,
+              fontFamily: readingFont(readingFontKey),
+            },
           ]}
         >
           {token.text}
@@ -651,7 +672,7 @@ function WordSlot({ token, shown, state, isActive, dimmed, colors, onMeasure }) 
 
   return (
     <View style={styles.wordWrap} onLayout={handleLayout}>
-      <Text style={[styles.verseLine, { color }]}>
+      <Text style={[styles.verseLine, { color, fontFamily: readingFont(readingFontKey) }]}>
         {token.text}
         <Text> </Text>
       </Text>
@@ -701,7 +722,7 @@ const styles = StyleSheet.create({
   // leave it unfocusable → keyboard not opening on long verses).
   versesScroll: { flex: 1 },
   versesWrap: { padding: 20, flexGrow: 1 },
-  verseLine: { fontSize: 20, lineHeight: 32, fontFamily: FONT_FAMILIES.serifRegular },
+  verseLine: { fontSize: 20, lineHeight: 32 },
   // Words are laid out as wrapping inline-block "chips" so a hidden word can be
   // covered by an absolutely-positioned overlay without disturbing the line.
   verseLineWrap: { flexDirection: "row", flexWrap: "wrap", alignItems: "flex-end" },
@@ -709,11 +730,7 @@ const styles = StyleSheet.create({
   // Inline superscript verse number at the start of each verse (matches the
   // subtle muted number used in the chapter reader).
   verseNumWrap: { alignSelf: "flex-start" },
-  verseNumInline: {
-    fontSize: 12,
-    lineHeight: 20,
-    fontFamily: FONT_FAMILIES.serifSemiBold,
-  },
+  verseNumInline: { fontSize: 12, lineHeight: 20 },
   // Opaque cover over a hidden word's glyphs. Spans the FULL chip height so
   // letter descenders (g, y, p, q, j) are hidden too. Leaves a small right gap
   // for the word's trailing space.

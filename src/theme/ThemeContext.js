@@ -1,24 +1,28 @@
 import React, { createContext, useContext, useEffect, useMemo, useState } from "react";
 import { backend } from "../data/storageBackend";
 import { lightColors, darkColors } from "./palette";
+import { DEFAULT_READING_FONT, isReadingFontKey } from "./fonts";
 
 const THEME_KEY = "themeMode";
 const FONT_SCALE_KEY = "fontScale";
+const READING_FONT_KEY = "readingFont";
 
-// Discrete font-size steps the reader can cycle through. Keeping this as a
-// fixed ladder (rather than free-form) keeps layouts predictable and gives the
-// Settings UI clear, labelled options.
-export const FONT_SCALES = [
-  { key: "small", label: "Small", value: 0.85 },
-  { key: "medium", label: "Medium", value: 1.0 },
-  { key: "large", label: "Large", value: 1.15 },
-  { key: "xlarge", label: "Extra Large", value: 1.3 },
-];
+// Reading size uses small, predictable increments rather than named presets.
+// The bounds prevent both unusably tiny text and layouts that overflow at very
+// large accessibility sizes.
+export const FONT_SCALE_MIN = 0.75;
+export const FONT_SCALE_MAX = 1.5;
+export const FONT_SCALE_STEP = 0.05;
 
 const DEFAULT_FONT_SCALE = 1.0;
 
 function isValidScale(v) {
-  return FONT_SCALES.some((s) => s.value === v);
+  return Number.isFinite(v) && v >= FONT_SCALE_MIN && v <= FONT_SCALE_MAX;
+}
+
+function normalizeScale(v) {
+  const clamped = Math.min(FONT_SCALE_MAX, Math.max(FONT_SCALE_MIN, v));
+  return Math.round(clamped * 100) / 100;
 }
 
 const ThemeContext = createContext(null);
@@ -26,6 +30,7 @@ const ThemeContext = createContext(null);
 export function ThemeProvider({ children }) {
   const [mode, setModeState] = useState("light"); // "light" | "dark"
   const [fontScale, setFontScaleState] = useState(DEFAULT_FONT_SCALE);
+  const [readingFontKey, setReadingFontKeyState] = useState(DEFAULT_READING_FONT);
 
   useEffect(() => {
     let cancelled = false;
@@ -40,6 +45,11 @@ export function ThemeProvider({ children }) {
         setFontScaleState(parsed);
       }
     });
+    backend.getItem(READING_FONT_KEY).then((saved) => {
+      if (!cancelled && isReadingFontKey(saved)) {
+        setReadingFontKeyState(saved);
+      }
+    });
     return () => {
       cancelled = true;
     };
@@ -51,15 +61,30 @@ export function ThemeProvider({ children }) {
   }
 
   function setFontScale(nextScale) {
-    if (!isValidScale(nextScale)) return;
-    setFontScaleState(nextScale);
-    backend.setItem(FONT_SCALE_KEY, String(nextScale));
+    if (!Number.isFinite(nextScale)) return;
+    const normalized = normalizeScale(nextScale);
+    setFontScaleState(normalized);
+    backend.setItem(FONT_SCALE_KEY, String(normalized));
+  }
+
+  function setReadingFontKey(nextKey) {
+    if (!isReadingFontKey(nextKey)) return;
+    setReadingFontKeyState(nextKey);
+    backend.setItem(READING_FONT_KEY, nextKey);
   }
 
   const colors = mode === "dark" ? darkColors : lightColors;
   const value = useMemo(
-    () => ({ mode, colors, setMode, fontScale, setFontScale }),
-    [mode, fontScale]
+    () => ({
+      mode,
+      colors,
+      setMode,
+      fontScale,
+      setFontScale,
+      readingFontKey,
+      setReadingFontKey,
+    }),
+    [mode, fontScale, readingFontKey]
   );
 
   return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;

@@ -22,6 +22,25 @@ import { Inter_400Regular } from "@expo-google-fonts/inter/400Regular";
 import { Inter_500Medium } from "@expo-google-fonts/inter/500Medium";
 import { Inter_600SemiBold } from "@expo-google-fonts/inter/600SemiBold";
 import { Inter_700Bold } from "@expo-google-fonts/inter/700Bold";
+import { CrimsonText_400Regular } from "@expo-google-fonts/crimson-text/400Regular";
+import { CrimsonText_400Regular_Italic } from "@expo-google-fonts/crimson-text/400Regular_Italic";
+import { CrimsonText_600SemiBold } from "@expo-google-fonts/crimson-text/600SemiBold";
+import { CrimsonText_700Bold } from "@expo-google-fonts/crimson-text/700Bold";
+import { Merriweather_400Regular } from "@expo-google-fonts/merriweather/400Regular";
+import { Merriweather_400Regular_Italic } from "@expo-google-fonts/merriweather/400Regular_Italic";
+import { Merriweather_500Medium } from "@expo-google-fonts/merriweather/500Medium";
+import { Merriweather_600SemiBold } from "@expo-google-fonts/merriweather/600SemiBold";
+import { Merriweather_700Bold } from "@expo-google-fonts/merriweather/700Bold";
+import { LibreBaskerville_400Regular } from "@expo-google-fonts/libre-baskerville/400Regular";
+import { LibreBaskerville_400Regular_Italic } from "@expo-google-fonts/libre-baskerville/400Regular_Italic";
+import { LibreBaskerville_500Medium } from "@expo-google-fonts/libre-baskerville/500Medium";
+import { LibreBaskerville_600SemiBold } from "@expo-google-fonts/libre-baskerville/600SemiBold";
+import { LibreBaskerville_700Bold } from "@expo-google-fonts/libre-baskerville/700Bold";
+import { SourceSerif4_400Regular } from "@expo-google-fonts/source-serif-4/400Regular";
+import { SourceSerif4_400Regular_Italic } from "@expo-google-fonts/source-serif-4/400Regular_Italic";
+import { SourceSerif4_500Medium } from "@expo-google-fonts/source-serif-4/500Medium";
+import { SourceSerif4_600SemiBold } from "@expo-google-fonts/source-serif-4/600SemiBold";
+import { SourceSerif4_700Bold } from "@expo-google-fonts/source-serif-4/700Bold";
 import { getLastPosition, setLastPosition, setLastScroll } from "./src/data/lastPositionStore";
 import { loadMemoryPrefs } from "./src/data/memoryPrefsStore";
 import { loadReadingVersion } from "./src/data/bibleVersionStore";
@@ -46,6 +65,25 @@ export default function App() {
     Inter_500Medium,
     Inter_600SemiBold,
     Inter_700Bold,
+    CrimsonText_400Regular,
+    CrimsonText_400Regular_Italic,
+    CrimsonText_600SemiBold,
+    CrimsonText_700Bold,
+    Merriweather_400Regular,
+    Merriweather_400Regular_Italic,
+    Merriweather_500Medium,
+    Merriweather_600SemiBold,
+    Merriweather_700Bold,
+    LibreBaskerville_400Regular,
+    LibreBaskerville_400Regular_Italic,
+    LibreBaskerville_500Medium,
+    LibreBaskerville_600SemiBold,
+    LibreBaskerville_700Bold,
+    SourceSerif4_400Regular,
+    SourceSerif4_400Regular_Italic,
+    SourceSerif4_500Medium,
+    SourceSerif4_600SemiBold,
+    SourceSerif4_700Bold,
   });
 
   // Prime the Memory prioritisation prefs cache once at startup so the (sync)

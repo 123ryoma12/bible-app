@@ -20,7 +20,7 @@ import {
 } from "../../data/verses";
 import { addMemory } from "../../data/memoryStore";
 import { useTheme } from "../../theme/ThemeContext";
-import { FONT_FAMILIES, uiFont } from "../../theme/fonts";
+import { readingFont, uiFont } from "../../theme/fonts";
 import { BIBLE_VERSIONS, versionAbbr } from "../../data/bibleVersions";
 
 const SECTIONS = [
@@ -32,7 +32,7 @@ const SECTIONS = [
 // that book (may cross chapters, never books). Validates against the bundled
 // text before saving via memoryStore.addMemory.
 export default function MemoryAdd({ onDone, onCancel }) {
-  const { colors } = useTheme();
+  const { colors, readingFontKey } = useTheme();
   const [book, setBook] = useState(null);
 
   // Cascading selection. Each is null until chosen; a later field cannot be set
@@ -336,9 +336,17 @@ export default function MemoryAdd({ onDone, onCancel }) {
             {previewVerses.map((v, i) => (
               <Text
                 key={`${v.chapter}:${v.verse}:${i}`}
-                style={[styles.previewVerse, { color: colors.surfaceText }]}
+                style={[
+                  styles.previewVerse,
+                  { color: colors.surfaceText, fontFamily: readingFont(readingFontKey) },
+                ]}
               >
-                <Text style={[styles.previewVerseNum, { color: colors.accent }]}>
+                <Text
+                  style={[
+                    styles.previewVerseNum,
+                    { color: colors.accent, fontFamily: readingFont(readingFontKey, "semiBold") },
+                  ]}
+                >
                   {v.chapter}:{v.verse}{" "}
                 </Text>
                 {v.text}
@@ -595,12 +603,8 @@ const styles = StyleSheet.create({
     fontSize: 15,
     lineHeight: 23,
     marginBottom: 6,
-    fontFamily: FONT_FAMILIES.serifRegular,
   },
-  previewVerseNum: {
-    fontSize: 11,
-    fontFamily: FONT_FAMILIES.serifSemiBold,
-  },
+  previewVerseNum: { fontSize: 11 },
   saveBtn: {
     borderWidth: 1,
     borderRadius: 10,

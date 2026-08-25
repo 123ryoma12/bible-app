@@ -1,7 +1,7 @@
 import React, { useMemo } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import { useTheme } from "../theme/ThemeContext";
-import { FONT_FAMILIES } from "../theme/fonts";
+import { readingFont, uiFont } from "../theme/fonts";
 
 const BODY_SIZE = 18;
 const BODY_LINE_HEIGHT = 30;
@@ -13,14 +13,17 @@ const VERSE_CONTINUATION_INDENT = 20;
  * owns one native Text layout, preserving continuous Bible paragraph flow.
  */
 export default function ChapterView({ chapter }) {
-  const { colors, fontScale } = useTheme();
-  const typography = useMemo(() => createTypography(fontScale), [fontScale]);
+  const { colors, fontScale, readingFontKey } = useTheme();
+  const typography = useMemo(
+    () => createTypography(fontScale, readingFontKey),
+    [fontScale, readingFontKey]
+  );
   const blocks = useMemo(() => prepareBlocks(chapter?.blocks), [chapter]);
 
   if (!chapter) {
     return (
       <View style={styles.content}>
-        <Text style={[styles.missing, typography.body, { color: colors.secondaryText }]}>
+        <Text style={[styles.missing, typography.descriptive, { color: colors.secondaryText }]}>
           This chapter isn't available yet.
         </Text>
       </View>
@@ -131,7 +134,10 @@ function FlowingVerses({ verses, beginsWithContinuation, appearance, colors, typ
       ]}
     >
       {segments.map((segment, index) => (
-        <Text key={`${segment.number ?? "text"}-${index}`} style={segment.editorialNote ? styles.editorialText : null}>
+        <Text
+          key={`${segment.number ?? "text"}-${index}`}
+          style={segment.editorialNote ? typography.editorialText : null}
+        >
           {index > 0 ? " " : null}
           {segment.showNumber ? (
             <Text style={[styles.verseNumber, typography.verseNumber, { color: colors.mutedText }]}>
@@ -187,7 +193,9 @@ function getBlockKind(style) {
   if (style === "d" || style === "sp" || style === "qa") return "descriptive";
   if (/^q/.test(style) || /^qm/.test(style) || style === "qr" || style === "qc") return "poetry";
   if (/^li\d*$/.test(style)) return "list";
-  if (style === "po" || style === "pr" || style === "pc" || style === "pmo") return "centered";
+  // Opening/salutation and centered-paragraph markers are source semantics,
+  // but the reader intentionally keeps all biblical content left-aligned.
+  if (style === "po" || style === "pr" || style === "pc" || style === "pmo") return "paragraph";
   if (/^pi\d*$/.test(style) || style === "pm" || style === "pmc" || style === "mi" || style === "nb") {
     return "indented";
   }
@@ -220,17 +228,16 @@ function getAppearance(style, kind) {
       return {
         ...base,
         container: styles.descriptive,
-        label: styles.descriptiveLabel,
+        label: styles.plainLabel,
         labelType: "descriptive",
         textType: "descriptive",
-        text: styles.centeredText,
       };
     case "poetry":
       return { ...base, container: [styles.poetry, { paddingLeft: 12 * (level - 1) }] };
     case "list":
       return { ...base, container: [styles.list, { paddingLeft: 12 * (level - 1) }] };
     case "centered":
-      return { ...base, container: styles.centered, textType: "descriptive", text: styles.centeredText };
+      return { ...base, container: styles.paragraph, textType: "descriptive" };
     case "indented":
       return { ...base, container: styles.indented };
     default:
@@ -238,29 +245,30 @@ function getAppearance(style, kind) {
   }
 }
 
-function createTypography(fontScale) {
+function createTypography(fontScale, fontKey) {
   return StyleSheet.create({
     body: {
-      fontFamily: FONT_FAMILIES.serifRegular,
+      fontFamily: readingFont(fontKey, "regular"),
       fontSize: BODY_SIZE * fontScale,
       lineHeight: BODY_LINE_HEIGHT * fontScale,
       includeFontPadding: true,
     },
     descriptive: {
-      fontFamily: FONT_FAMILIES.serifItalic,
+      fontFamily: readingFont(fontKey, "italic"),
       fontSize: 15 * fontScale,
       lineHeight: 24 * fontScale,
       includeFontPadding: true,
     },
     heading: {
-      fontFamily: FONT_FAMILIES.sansSemiBold,
+      fontFamily: uiFont(600),
       fontSize: 11 * fontScale,
       letterSpacing: 1.2,
     },
     verseNumber: {
-      fontFamily: FONT_FAMILIES.sansSemiBold,
+      fontFamily: uiFont(600),
       fontSize: VERSE_NUMBER_SIZE * fontScale,
     },
+    editorialText: { fontFamily: readingFont(fontKey, "italic") },
   });
 }
 
@@ -270,10 +278,7 @@ const styles = StyleSheet.create({
     paddingTop: 14,
     paddingBottom: 32,
   },
-  missing: {
-    fontFamily: FONT_FAMILIES.serifItalic,
-    marginTop: 20,
-  },
+  missing: { marginTop: 20 },
   block: {
     width: "100%",
   },
@@ -312,9 +317,6 @@ const styles = StyleSheet.create({
   },
   verseNumber: {
     letterSpacing: 0.1,
-  },
-  editorialText: {
-    fontFamily: FONT_FAMILIES.serifItalic,
   },
   centeredText: {
     textAlign: "center",
