@@ -7,6 +7,8 @@ import {
   ScrollView,
   ActivityIndicator,
   Alert,
+  Modal,
+  Pressable,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import {
@@ -49,6 +51,34 @@ const PREVIEW_BASE_SIZE = 17;
 // identically regardless of what element (row, card, etc.) came before. The
 // divider is its OWN element (not a border on the text) so it can't collide
 // with a preceding view's margins.
+// A small centered popup used for choices that would otherwise expand a long
+// list inline (reading font, Bible version). Keeps the main Settings list
+// short - options only appear once the user asks to change them.
+function PickerModal({ visible, title, onClose, colors, children, dismissLabel = "Cancel" }) {
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <Pressable style={styles.modalBackdrop} onPress={onClose}>
+        <Pressable
+          style={[styles.modalCard, { backgroundColor: colors.surface }]}
+          onPress={() => {}}
+        >
+          <Text style={[styles.modalTitle, { color: colors.surfaceText }]}>{title}</Text>
+          <ScrollView style={styles.modalOptions} bounces={false}>
+            {children}
+          </ScrollView>
+          <TouchableOpacity
+            style={[styles.modalCancel, { borderTopColor: colors.border }]}
+            onPress={onClose}
+            accessibilityRole="button"
+          >
+            <Text style={[styles.modalCancelText, { color: colors.accent }]}>{dismissLabel}</Text>
+          </TouchableOpacity>
+        </Pressable>
+      </Pressable>
+    </Modal>
+  );
+}
+
 function SectionHeader({ title, colors, first = false }) {
   return (
     <>
@@ -75,6 +105,7 @@ export default function SettingsScreen() {
   const [busy, setBusy] = useState("idle");
   const [showFontOptions, setShowFontOptions] = useState(false);
   const [showVersionOptions, setShowVersionOptions] = useState(false);
+  const [showPriorityOptions, setShowPriorityOptions] = useState(false);
 
   // --- Reading version ---
   // Which translation the reader shows. Only NIV is available today; ESV/KJV
@@ -290,10 +321,9 @@ export default function SettingsScreen() {
 
         <TouchableOpacity
           style={[styles.row, { borderBottomColor: colors.border, marginTop: 12 }]}
-          onPress={() => setShowFontOptions((value) => !value)}
+          onPress={() => setShowFontOptions(true)}
           accessibilityRole="button"
-          accessibilityState={{ expanded: showFontOptions }}
-          accessibilityLabel={`Reading font, ${activeFont.label}`}
+          accessibilityLabel={`Reading font, ${activeFont.label}. Opens font picker.`}
         >
           <View style={styles.actionRowText}>
             <Text style={[styles.rowText, { color: colors.text }]}>Reading Font</Text>
@@ -301,47 +331,54 @@ export default function SettingsScreen() {
               {activeFont.label} · {activeFont.description}
             </Text>
           </View>
-          <Text style={[styles.chevron, { color: colors.mutedText }]}>{showFontOptions ? "⌃" : "›"}</Text>
+          <Text style={[styles.chevron, { color: colors.mutedText }]}>›</Text>
         </TouchableOpacity>
 
-        {showFontOptions && READING_FONT_OPTIONS.map((option) => {
-          const isActive = readingFontKey === option.key;
-          return (
-            <TouchableOpacity
-              key={option.key}
-              style={[styles.row, { borderBottomColor: colors.border }]}
-              onPress={() => {
-                setReadingFontKey(option.key);
-                setShowFontOptions(false);
-              }}
-              accessibilityRole="radio"
-              accessibilityState={{ selected: isActive }}
-              accessibilityLabel={`${option.label}. ${option.description}`}
-            >
-              <View style={styles.actionRowText}>
-                <Text
+        <PickerModal
+          visible={showFontOptions}
+          title="Reading Font"
+          colors={colors}
+          onClose={() => setShowFontOptions(false)}
+        >
+          {READING_FONT_OPTIONS.map((option) => {
+            const isActive = readingFontKey === option.key;
+            return (
+              <TouchableOpacity
+                key={option.key}
+                style={[styles.row, { borderBottomColor: colors.border }]}
+                onPress={() => {
+                  setReadingFontKey(option.key);
+                  setShowFontOptions(false);
+                }}
+                accessibilityRole="radio"
+                accessibilityState={{ selected: isActive }}
+                accessibilityLabel={`${option.label}. ${option.description}`}
+              >
+                <View style={styles.actionRowText}>
+                  <Text
+                    style={[
+                      styles.fontOptionName,
+                      { color: colors.text, fontFamily: readingFont(option.key, "regular") },
+                    ]}
+                  >
+                    {option.label}
+                  </Text>
+                  <Text style={[styles.actionSubtext, { color: colors.mutedText }]}>
+                    {option.description}
+                  </Text>
+                </View>
+                <View
                   style={[
-                    styles.fontOptionName,
-                    { color: colors.text, fontFamily: readingFont(option.key, "regular") },
+                    styles.radioOuter,
+                    { borderColor: isActive ? colors.accent : colors.border },
                   ]}
                 >
-                  {option.label}
-                </Text>
-                <Text style={[styles.actionSubtext, { color: colors.mutedText }]}>
-                  {option.description}
-                </Text>
-              </View>
-              <View
-                style={[
-                  styles.radioOuter,
-                  { borderColor: isActive ? colors.accent : colors.border },
-                ]}
-              >
-                {isActive && <View style={[styles.radioInner, { backgroundColor: colors.accent }]} />}
-              </View>
-            </TouchableOpacity>
-          );
-        })}
+                  {isActive && <View style={[styles.radioInner, { backgroundColor: colors.accent }]} />}
+                </View>
+              </TouchableOpacity>
+            );
+          })}
+        </PickerModal>
 
         {/* Live preview so the choice is obvious before opening a chapter. */}
         <View style={[styles.previewCard, { backgroundColor: colors.surface }]}>
@@ -372,10 +409,9 @@ export default function SettingsScreen() {
             This choice does not affect reading stats. */}
         <TouchableOpacity
           style={[styles.row, { borderBottomColor: colors.border, marginTop: 12 }]}
-          onPress={() => setShowVersionOptions((value) => !value)}
+          onPress={() => setShowVersionOptions(true)}
           accessibilityRole="button"
-          accessibilityState={{ expanded: showVersionOptions }}
-          accessibilityLabel={`Bible version, ${activeVersion?.name || "loading"}`}
+          accessibilityLabel={`Bible version, ${activeVersion?.name || "loading"}. Opens version picker.`}
         >
           <View style={styles.actionRowText}>
             <Text style={[styles.rowText, { color: colors.text }]}>Bible Version</Text>
@@ -383,208 +419,204 @@ export default function SettingsScreen() {
               {activeVersion ? `${activeVersion.abbr} · ${activeVersion.name}` : "Loading…"}
             </Text>
           </View>
-          <Text style={[styles.chevron, { color: colors.mutedText }]}>{showVersionOptions ? "⌃" : "›"}</Text>
+          <Text style={[styles.chevron, { color: colors.mutedText }]}>›</Text>
         </TouchableOpacity>
-        {showVersionOptions && BIBLE_VERSIONS.map((v) => {
-          const isActive = readingVersion === v.id;
-          const disabled = !v.available;
-          return (
-            <TouchableOpacity
-              key={v.id}
-              style={[styles.row, { borderBottomColor: colors.border }]}
-              onPress={async () => {
-                await handleSelectVersion(v.id);
-                setShowVersionOptions(false);
-              }}
-              disabled={disabled || readingVersion == null}
-              accessibilityRole="radio"
-              accessibilityState={{ selected: isActive, disabled }}
-              accessibilityLabel={`${v.name}${disabled ? ", coming soon" : ""}`}
-            >
-              <View style={styles.actionRowText}>
-                <Text
-                  style={[
-                    styles.rowText,
-                    { color: disabled ? colors.mutedText : colors.text },
-                  ]}
-                >
-                  {v.abbr} — {v.name}
-                </Text>
-                {disabled && (
-                  <Text style={[styles.actionSubtext, { color: colors.mutedText }]}>
-                    Coming soon (TBD)
+
+        <PickerModal
+          visible={showVersionOptions}
+          title="Bible Version"
+          colors={colors}
+          onClose={() => setShowVersionOptions(false)}
+        >
+          {BIBLE_VERSIONS.map((v) => {
+            const isActive = readingVersion === v.id;
+            const disabled = !v.available;
+            return (
+              <TouchableOpacity
+                key={v.id}
+                style={[styles.row, { borderBottomColor: colors.border }]}
+                onPress={async () => {
+                  await handleSelectVersion(v.id);
+                  setShowVersionOptions(false);
+                }}
+                disabled={disabled || readingVersion == null}
+                accessibilityRole="radio"
+                accessibilityState={{ selected: isActive, disabled }}
+                accessibilityLabel={`${v.name}${disabled ? ", coming soon" : ""}`}
+              >
+                <View style={styles.actionRowText}>
+                  <Text
+                    style={[
+                      styles.rowText,
+                      { color: disabled ? colors.mutedText : colors.text },
+                    ]}
+                  >
+                    {v.abbr} — {v.name}
                   </Text>
+                  {disabled && (
+                    <Text style={[styles.actionSubtext, { color: colors.mutedText }]}>
+                      Coming soon (TBD)
+                    </Text>
+                  )}
+                </View>
+                {disabled ? (
+                  <Text style={[styles.tbdBadge, { color: colors.mutedText }]}>TBD</Text>
+                ) : (
+                  <View
+                    style={[
+                      styles.radioOuter,
+                      { borderColor: isActive ? colors.accent : colors.border },
+                    ]}
+                  >
+                    {isActive && (
+                      <View
+                        style={[styles.radioInner, { backgroundColor: colors.accent }]}
+                      />
+                    )}
+                  </View>
                 )}
-              </View>
-              {disabled ? (
-                <Text style={[styles.tbdBadge, { color: colors.mutedText }]}>TBD</Text>
-              ) : (
+              </TouchableOpacity>
+            );
+          })}
+        </PickerModal>
+
+        <SectionHeader title="Memory Prioritisation" colors={colors} />
+        <TouchableOpacity
+          style={[styles.row, { borderBottomColor: colors.border }]}
+          onPress={() => setShowPriorityOptions(true)}
+          disabled={!prefs}
+          accessibilityRole="button"
+          accessibilityLabel={`Memory prioritisation, ${PRESET_LABELS[activePreset]}. Opens prioritisation picker.`}
+        >
+          <View style={styles.actionRowText}>
+            <Text style={[styles.rowText, { color: colors.text }]}>Memory Prioritisation</Text>
+            <Text style={[styles.actionSubtext, { color: colors.mutedText }]}>
+              {PRESET_LABELS[activePreset]} · {PRESET_DESCRIPTIONS[activePreset]}
+            </Text>
+          </View>
+          <Text style={[styles.chevron, { color: colors.mutedText }]}>›</Text>
+        </TouchableOpacity>
+
+        <PickerModal
+          visible={showPriorityOptions}
+          title="Memory Prioritisation"
+          dismissLabel="Close"
+          colors={colors}
+          onClose={() => {
+            setShowPriorityOptions(false);
+            setShowAdvanced(false);
+          }}
+        >
+          <Text style={[styles.modalNote, { color: colors.mutedText }]}>
+            Choose how the Memory tab decides which verses to practise first.
+          </Text>
+          {PRESET_ORDER.map((key) => {
+            const isActive = activePreset === key;
+            return (
+              <TouchableOpacity
+                key={key}
+                style={[styles.row, { borderBottomColor: colors.border }]}
+                onPress={() => handlePreset(key)}
+                disabled={!prefs}
+                accessibilityRole="radio"
+                accessibilityState={{ selected: isActive }}
+                accessibilityLabel={`${PRESET_LABELS[key]}. ${PRESET_DESCRIPTIONS[key]}`}
+              >
+                <View style={styles.actionRowText}>
+                  <Text style={[styles.rowText, { color: colors.text }]}>
+                    {PRESET_LABELS[key]}
+                  </Text>
+                  <Text style={[styles.actionSubtext, { color: colors.mutedText }]}>
+                    {PRESET_DESCRIPTIONS[key]}
+                  </Text>
+                </View>
                 <View
                   style={[
                     styles.radioOuter,
                     { borderColor: isActive ? colors.accent : colors.border },
                   ]}
                 >
-                  {isActive && (
-                    <View
-                      style={[styles.radioInner, { backgroundColor: colors.accent }]}
-                    />
-                  )}
+                  {isActive && <View style={[styles.radioInner, { backgroundColor: colors.accent }]} />}
                 </View>
-              )}
-            </TouchableOpacity>
-          );
-        })}
+              </TouchableOpacity>
+            );
+          })}
 
-        {/* Memory prioritisation: controls how the Memory tab ranks verses for
-            practice. Presets up front; an expandable Advanced block exposes the
-            individual knobs. Every change persists and re-sorts the list. */}
-        <SectionHeader title="Memory Prioritisation" colors={colors} />
-        <Text style={[styles.dataNote, { color: colors.mutedText, paddingTop: 0 }]}>
-          Choose how the Memory tab decides which verses to practise first.
-        </Text>
-
-        {/* Presets as full-width rows: each shows its name AND a one-line
-            description so the choice is self-explanatory. A radio marks the
-            active one. When the prefs are hand-tuned, a read-only "Custom" row
-            appears at the end so the state is never ambiguous. */}
-        {PRESET_ORDER.map((key) => {
-          const isActive = activePreset === key;
-          return (
-            <TouchableOpacity
-              key={key}
-              style={[styles.row, { borderBottomColor: colors.border }]}
-              onPress={() => handlePreset(key)}
-              disabled={!prefs}
-              accessibilityRole="radio"
-              accessibilityState={{ selected: isActive }}
-              accessibilityLabel={`${PRESET_LABELS[key]}. ${PRESET_DESCRIPTIONS[key]}`}
-            >
+          {activePreset === "custom" && (
+            <View style={[styles.row, { borderBottomColor: colors.border }]}>
               <View style={styles.actionRowText}>
-                <Text style={[styles.rowText, { color: colors.text }]}>
-                  {PRESET_LABELS[key]}
-                </Text>
+                <Text style={[styles.rowText, { color: colors.text }]}>{PRESET_LABELS.custom}</Text>
                 <Text style={[styles.actionSubtext, { color: colors.mutedText }]}>
-                  {PRESET_DESCRIPTIONS[key]}
+                  {PRESET_DESCRIPTIONS.custom}
                 </Text>
               </View>
-              <View
-                style={[
-                  styles.radioOuter,
-                  { borderColor: isActive ? colors.accent : colors.border },
-                ]}
-              >
-                {isActive && (
-                  <View style={[styles.radioInner, { backgroundColor: colors.accent }]} />
-                )}
+              <View style={[styles.radioOuter, { borderColor: colors.accent }]}>
+                <View style={[styles.radioInner, { backgroundColor: colors.accent }]} />
               </View>
-            </TouchableOpacity>
-          );
-        })}
-
-        {activePreset === "custom" && (
-          <View style={[styles.row, { borderBottomColor: colors.border }]}>
-            <View style={styles.actionRowText}>
-              <Text style={[styles.rowText, { color: colors.text }]}>
-                {PRESET_LABELS.custom}
-              </Text>
-              <Text style={[styles.actionSubtext, { color: colors.mutedText }]}>
-                {PRESET_DESCRIPTIONS.custom}
-              </Text>
             </View>
-            <View style={[styles.radioOuter, { borderColor: colors.accent }]}>
-              <View style={[styles.radioInner, { backgroundColor: colors.accent }]} />
-            </View>
-          </View>
-        )}
+          )}
 
-        {/* Advanced: expandable so the raw knobs don't overwhelm by default. */}
-        <TouchableOpacity
-          style={[styles.row, { borderBottomColor: colors.border, marginTop: 8 }]}
-          onPress={() => setShowAdvanced((v) => !v)}
-          accessibilityRole="button"
-          accessibilityState={{ expanded: showAdvanced }}
-        >
-          <Text style={[styles.rowText, { color: colors.text }]}>Advanced</Text>
-          <Text style={[styles.chevron, { color: colors.mutedText }]}>
-            {showAdvanced ? "\u2304" : "\u203A"}
-          </Text>
-        </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.row, { borderBottomColor: colors.border, marginTop: 8 }]}
+            onPress={() => setShowAdvanced((value) => !value)}
+            accessibilityRole="button"
+            accessibilityState={{ expanded: showAdvanced }}
+          >
+            <Text style={[styles.rowText, { color: colors.text }]}>Advanced tuning</Text>
+            <Text style={[styles.chevron, { color: colors.mutedText }]}>{showAdvanced ? "⌃" : "›"}</Text>
+          </TouchableOpacity>
 
-        {showAdvanced &&
-          prefs &&
-          PREF_FIELDS.map((field) => {
+          {showAdvanced && prefs && PREF_FIELDS.map((field) => {
             const display = field.fromStored
               ? field.fromStored(prefs[field.key])
               : prefs[field.key];
             const atMin = display <= field.min;
             const atMax = display >= field.max;
             return (
-              <View
-                key={field.key}
-                style={[styles.prefRow, { borderBottomColor: colors.border }]}
-              >
+              <View key={field.key} style={[styles.prefRow, { borderBottomColor: colors.border }]}>
                 <View style={styles.prefText}>
-                  <Text style={[styles.rowText, { color: colors.text }]}>
-                    {field.label}
-                  </Text>
-                  <Text style={[styles.actionSubtext, { color: colors.mutedText }]}>
-                    {field.help}
-                  </Text>
+                  <Text style={[styles.rowText, { color: colors.text }]}>{field.label}</Text>
+                  <Text style={[styles.actionSubtext, { color: colors.mutedText }]}>{field.help}</Text>
                 </View>
                 <View style={styles.stepper}>
                   <TouchableOpacity
-                    style={[
-                      styles.stepBtn,
-                      { borderColor: colors.border, opacity: atMin ? 0.35 : 1 },
-                    ]}
+                    style={[styles.stepBtn, { borderColor: colors.border, opacity: atMin ? 0.35 : 1 }]}
                     onPress={() => handleStep(field, -1)}
                     disabled={atMin}
                     accessibilityRole="button"
                     accessibilityLabel={`Decrease ${field.label}`}
                   >
-                    <Text style={[styles.stepBtnText, { color: colors.text }]}>
-                      {"\u2212"}
-                    </Text>
+                    <Text style={[styles.stepBtnText, { color: colors.text }]}>−</Text>
                   </TouchableOpacity>
-                  <Text
-                    style={[styles.stepValue, { color: colors.text }]}
-                    numberOfLines={1}
-                  >
+                  <Text style={[styles.stepValue, { color: colors.text }]} numberOfLines={1}>
                     {field.format(display)}
                   </Text>
                   <TouchableOpacity
-                    style={[
-                      styles.stepBtn,
-                      { borderColor: colors.border, opacity: atMax ? 0.35 : 1 },
-                    ]}
+                    style={[styles.stepBtn, { borderColor: colors.border, opacity: atMax ? 0.35 : 1 }]}
                     onPress={() => handleStep(field, 1)}
                     disabled={atMax}
                     accessibilityRole="button"
                     accessibilityLabel={`Increase ${field.label}`}
                   >
-                    <Text style={[styles.stepBtnText, { color: colors.text }]}>
-                      {"+"}
-                    </Text>
+                    <Text style={[styles.stepBtnText, { color: colors.text }]}>+</Text>
                   </TouchableOpacity>
                 </View>
               </View>
             );
           })}
 
-        {showAdvanced && (
-          <TouchableOpacity
-            style={[styles.row, { borderBottomColor: colors.border }]}
-            onPress={handleResetPrefs}
-            accessibilityRole="button"
-            accessibilityLabel="Reset prioritisation to defaults"
-          >
-            <Text style={[styles.rowText, { color: colors.danger || "#c0392b" }]}>
-              Reset to Defaults
-            </Text>
-            <Text style={[styles.chevron, { color: colors.mutedText }]}>{"\u21BA"}</Text>
-          </TouchableOpacity>
-        )}
+          {showAdvanced && (
+            <TouchableOpacity
+              style={[styles.row, { borderBottomColor: colors.border }]}
+              onPress={handleResetPrefs}
+              accessibilityRole="button"
+              accessibilityLabel="Reset prioritisation to defaults"
+            >
+              <Text style={[styles.rowText, { color: colors.danger || "#c0392b" }]}>Reset to Defaults</Text>
+              <Text style={[styles.chevron, { color: colors.mutedText }]}>↺</Text>
+            </TouchableOpacity>
+          )}
+        </PickerModal>
 
         {/* Data: local backup & restore. All app data lives on this device;
             these let the user save a JSON backup file and restore it later or
@@ -668,6 +700,46 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingTop: 16,
     paddingBottom: 8,
+  },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.45)",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 24,
+  },
+  modalCard: {
+    width: "100%",
+    maxWidth: 420,
+    maxHeight: "80%",
+    borderRadius: 16,
+    overflow: "hidden",
+  },
+  modalTitle: {
+    fontSize: 15,
+    fontFamily: uiFont(700),
+    textAlign: "center",
+    paddingVertical: 16,
+    paddingHorizontal: 20,
+  },
+  modalOptions: {
+    flexGrow: 0,
+  },
+  modalNote: {
+    fontSize: 13,
+    fontFamily: uiFont(400),
+    lineHeight: 18,
+    paddingHorizontal: 20,
+    paddingBottom: 10,
+  },
+  modalCancel: {
+    borderTopWidth: 1,
+    paddingVertical: 14,
+    alignItems: "center",
+  },
+  modalCancelText: {
+    fontSize: 15,
+    fontFamily: uiFont(600),
   },
   appearanceToggle: {
     flexDirection: "row",
