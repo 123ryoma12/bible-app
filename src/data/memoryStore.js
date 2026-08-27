@@ -20,6 +20,7 @@
 //     attempts,                  // total memorised attempts (memorised only)
 //     successes, failures,       // per-set win/loss counts (attempts = sum)
 //     lastSuccessAt,             // ISO string | null (drives ordering)
+//     lastPractisedAt,           // ISO string | null (most recent completed drill)
 //     createdAt
 //   }
 //
@@ -350,6 +351,7 @@ export async function addMemory({
     successes: 0,  // perfect (100%) memorised attempts
     failures: 0,   // memorised attempts with any mistake
     lastSuccessAt: null,
+    lastPractisedAt: null,
     createdAt: new Date().toISOString(),
   };
 
@@ -398,7 +400,11 @@ export async function markMemorised(id) {
   const entry = await getEntry(id);
   if (!entry || entry.status !== STATUS.NOT_MEMORISED) return entry;
 
-  const updated = { ...entry, status: STATUS.MEMORISED };
+  const updated = {
+    ...entry,
+    status: STATUS.MEMORISED,
+    lastPractisedAt: new Date().toISOString(),
+  };
 
   const byId = await loadAllEntries();
   byId[id] = updated;
@@ -424,12 +430,14 @@ export async function recordAttempt(id, { success }) {
       ? entry.failures
       : Math.max(0, (entry.attempts || 0) - (entry.successes || 0));
 
+  const attemptedAt = new Date().toISOString();
   const updated = {
     ...entry,
     attempts: entry.attempts + 1,
     successes: entry.successes + (success ? 1 : 0),
     failures: priorFailures + (success ? 0 : 1),
-    lastSuccessAt: success ? new Date().toISOString() : entry.lastSuccessAt,
+    lastSuccessAt: success ? attemptedAt : entry.lastSuccessAt,
+    lastPractisedAt: attemptedAt,
   };
 
   const byId = await loadAllEntries();

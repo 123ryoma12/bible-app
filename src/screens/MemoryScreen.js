@@ -21,6 +21,7 @@ import {
   successCount,
   failureCount,
 } from "../data/memoryStore";
+import { versionAbbr } from "../data/bibleVersions";
 import MemoryAdd from "./memory/MemoryAdd";
 import MemoryDrill from "./memory/MemoryDrill";
 
@@ -73,6 +74,14 @@ export default function MemoryScreen() {
       out.push({ key: "memorised", title: "Memorised", data: memorised });
     return out;
   }, [entries]);
+
+  const memorisedVerseCount = useMemo(
+    () =>
+      entries
+        .filter((entry) => entry.status === STATUS.MEMORISED)
+        .reduce((total, entry) => total + (entry.verses?.length || 0), 0),
+    [entries]
+  );
 
   // Android back inside the Memory tab: if we're in a sub-view (add / drill),
   // return to the list first instead of letting the app-level handler switch
@@ -141,7 +150,12 @@ export default function MemoryScreen() {
       edges={["top", "left", "right"]}
     >
       <View style={styles.headerRow}>
-        <Text style={[styles.title, { color: colors.text }]}>Memory</Text>
+        <View>
+          <Text style={[styles.title, { color: colors.text }]}>Memory</Text>
+          <Text style={[styles.total, { color: colors.secondaryText }]}>
+            {memorisedVerseCount} verse{memorisedVerseCount === 1 ? "" : "s"} memorised
+          </Text>
+        </View>
         <TouchableOpacity onPress={() => setView("add")} hitSlop={hit}>
           <Text style={[styles.addLink, { color: colors.accent }]}>+ Add</Text>
         </TouchableOpacity>
@@ -203,6 +217,7 @@ function MemoryRow({ entry, colors, onPress, onLongPress, onDelete }) {
   const rate = successRate(entry);
   const wins = successCount(entry);
   const losses = failureCount(entry);
+  const lastDone = formatLastDone(entry);
 
   return (
     <TouchableOpacity
@@ -216,13 +231,15 @@ function MemoryRow({ entry, colors, onPress, onLongPress, onDelete }) {
           {referenceLabel(entry)}
         </Text>
         <Text style={[styles.rowMeta, { color: colors.secondaryText }]}>
-          {entry.verses.length} verse{entry.verses.length === 1 ? "" : "s"}
+          {versionAbbr(entry.version)} · {entry.verses.length} verse
+          {entry.verses.length === 1 ? "" : "s"}
           {memorised
             ? entry.attempts
               ? ` · ${wins}✓ / ${losses}✗ · ${Math.round(rate * 100)}%`
-              : " · no attempts yet"
-            : " · Not memorised"}
+              : " · no review attempts yet"
+            : " · Learning"}
         </Text>
+        <Text style={[styles.rowLastDone, { color: colors.mutedText }]}>{lastDone}</Text>
       </View>
       <StatusBadge memorised={memorised} colors={colors} />
       <TouchableOpacity
@@ -236,6 +253,19 @@ function MemoryRow({ entry, colors, onPress, onLongPress, onDelete }) {
       </TouchableOpacity>
     </TouchableOpacity>
   );
+}
+
+function formatLastDone(entry) {
+  // Older entries only have lastSuccessAt; use it as a graceful fallback.
+  const timestamp = entry.lastPractisedAt || entry.lastSuccessAt;
+  const date = timestamp ? new Date(timestamp) : null;
+  if (!date || Number.isNaN(date.getTime())) return "Last practised: not yet";
+
+  return `Last practised: ${date.toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  })}`;
 }
 
 function StatusBadge({ memorised, colors }) {
@@ -275,6 +305,7 @@ const styles = StyleSheet.create({
     paddingBottom: 8,
   },
   title: { fontSize: 28, fontFamily: uiFont(700) },
+  total: { fontSize: 13, fontFamily: uiFont(600), marginTop: 1 },
   addLink: { fontSize: 16, fontFamily: uiFont(600) },
   empty: {
     flex: 1,
@@ -306,6 +337,7 @@ const styles = StyleSheet.create({
   },
   rowRef: { fontSize: 17, fontFamily: uiFont(600) },
   rowMeta: { fontSize: 13, marginTop: 3, fontFamily: uiFont() },
+  rowLastDone: { fontSize: 12, marginTop: 2, fontFamily: uiFont() },
   badge: {
     borderWidth: StyleSheet.hairlineWidth,
     borderRadius: 12,
