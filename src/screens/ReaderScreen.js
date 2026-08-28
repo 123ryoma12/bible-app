@@ -11,6 +11,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { uiFont, readingFont } from "../theme/fonts";
 import ChapterView from "../components/ChapterView";
+import ReaderTabBar from "../components/ReaderTabBar";
 import { getChapter } from "../data/bibleData";
 import { incrementReadCount } from "../data/progressStore";
 import { addToHistory } from "../data/historyStore";
@@ -38,6 +39,12 @@ export default function ReaderScreen({
   onChromeChange,
   hasPrev,
   hasNext,
+  // Tab bar props – passed through from App
+  readerTabs,
+  activeTabId,
+  onSelectTab,
+  onCloseTab,
+  onAddTab,
 }) {
   const { colors, readingFontKey } = useTheme();
   // Read in the user's selected translation. The active version is a synchronous
@@ -324,58 +331,72 @@ export default function ReaderScreen({
           },
         ]}
       >
-        <TouchableOpacity
-          style={styles.footerArrow}
-          onPress={onPrev}
-          disabled={!hasPrev}
-          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-        >
-          <Text
-            style={[
-              styles.footerArrowText,
-              { color: hasPrev ? colors.accent : colors.disabledText },
-            ]}
-          >
-            {"‹"}
-          </Text>
-        </TouchableOpacity>
+        {/* Chrome-style tab strip – sits above the nav arrows */}
+        {readerTabs && readerTabs.length > 0 && (
+          <ReaderTabBar
+            tabs={readerTabs}
+            activeTabId={activeTabId}
+            onSelectTab={onSelectTab}
+            onCloseTab={onCloseTab}
+            onAddTab={onAddTab}
+          />
+        )}
 
-        <TouchableOpacity
-          style={[styles.footerPill, { borderColor: colors.accent, backgroundColor: colors.surface }]}
-          onPress={onOpenBooks}
-          hitSlop={{ top: 10, bottom: 10 }}
-          activeOpacity={0.7}
-          accessibilityRole="button"
-          accessibilityLabel={`${book.name} ${chapterNumber}, tap to choose another book or chapter`}
-        >
-          <Text
-            style={[
-              styles.footerPillText,
-              { color: colors.text, fontFamily: readingFont(readingFontKey, "semiBold") },
-            ]}
-            numberOfLines={1}
-            adjustsFontSizeToFit
-            minimumFontScale={0.7}
+        {/* Nav row: ‹  [ Book Chapter ]  › */}
+        <View style={styles.footerNav}>
+          <TouchableOpacity
+            style={styles.footerArrow}
+            onPress={onPrev}
+            disabled={!hasPrev}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
           >
-            {book.name} {chapterNumber}
-          </Text>
-        </TouchableOpacity>
+            <Text
+              style={[
+                styles.footerArrowText,
+                { color: hasPrev ? colors.accent : colors.disabledText },
+              ]}
+            >
+              {"‹"}
+            </Text>
+          </TouchableOpacity>
 
-        <TouchableOpacity
-          style={styles.footerArrow}
-          onPress={onNext}
-          disabled={!hasNext}
-          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-        >
-          <Text
-            style={[
-              styles.footerArrowText,
-              { color: hasNext ? colors.accent : colors.disabledText },
-            ]}
+          <TouchableOpacity
+            style={[styles.footerPill, { borderColor: colors.accent, backgroundColor: colors.surface }]}
+            onPress={onOpenBooks}
+            hitSlop={{ top: 10, bottom: 10 }}
+            activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel={`${book.name} ${chapterNumber}, tap to choose another book or chapter`}
           >
-            {"›"}
-          </Text>
-        </TouchableOpacity>
+            <Text
+              style={[
+                styles.footerPillText,
+                { color: colors.text, fontFamily: readingFont(readingFontKey, "semiBold") },
+              ]}
+              numberOfLines={1}
+              adjustsFontSizeToFit
+              minimumFontScale={0.7}
+            >
+              {book.name} {chapterNumber}
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.footerArrow}
+            onPress={onNext}
+            disabled={!hasNext}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          >
+            <Text
+              style={[
+                styles.footerArrowText,
+                { color: hasNext ? colors.accent : colors.disabledText },
+              ]}
+            >
+              {"›"}
+            </Text>
+          </TouchableOpacity>
+        </View>
       </Animated.View>
     </SafeAreaView>
   );
@@ -424,10 +445,13 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
+    flexDirection: "column",
+    borderTopWidth: StyleSheet.hairlineWidth,
+  },
+  footerNav: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    borderTopWidth: StyleSheet.hairlineWidth,
     paddingHorizontal: 8,
     paddingVertical: 8,
   },

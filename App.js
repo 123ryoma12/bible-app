@@ -5,6 +5,7 @@ import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import { BOOKS } from "./src/data/books";
 import BookListScreen from "./src/screens/BookListScreen";
 import ChapterListScreen from "./src/screens/ChapterListScreen";
+import BookChapterPicker from "./src/screens/BookChapterPicker";
 import ReaderScreen from "./src/screens/ReaderScreen";
 import HistoryScreen from "./src/screens/HistoryScreen";
 import StatsScreen from "./src/screens/StatsScreen";
@@ -44,6 +45,12 @@ import { SourceSerif4_700Bold } from "@expo-google-fonts/source-serif-4/700Bold"
 import { getLastPosition, setLastPosition, setLastScroll } from "./src/data/lastPositionStore";
 import { loadMemoryPrefs } from "./src/data/memoryPrefsStore";
 import { loadReadingVersion } from "./src/data/bibleVersionStore";
+import {
+  getReaderTabs,
+  setReaderTabs,
+  newTabId,
+  MAX_TABS,
+} from "./src/data/readerTabsStore";
 import { ThemeProvider, useTheme } from "./src/theme/ThemeContext";
 import {
   BackHandlerProvider,
@@ -142,35 +149,116 @@ function AppContent() {
   // it visible.
   const [chromeVisible, setChromeVisible] = useState(true);
 
-  // Whenever we leave the reader, switch tabs, or move to another chapter,
-  // force the chrome back on so it can never get "stuck" hidden.
+  // ── Reader tabs ────────────────────────────────────────────────────────────
+  // Each tab: { id: string, bookId: string, chapterNumber: number }
+  // The active tab drives bookIndex/chapterNumber in the reader. Opening a new
+  // chapter from the book/chapter lists always updates the active tab.
+  const [readerTabs, setReaderTabsState] = useState([]);
+  const [activeTabId, setActiveTabId] = useState(null);
+
+  /** Persist tabs and update local state in one call. */
+  function applyTabs(tabs, tabId) {
+    setReaderTabsState(tabs);
+    setActiveTabId(tabId);
+    setReaderTabs(tabs, tabs.findIndex((t) => t.id === tabId));
+  }
+
+  /** Sync bookIndex/chapterNumber from the active tab object. */
+  function syncReaderFromTab(tab) {
+    const idx = BOOKS.findIndex((b) => b.id === tab.bookId);
+    if (idx === -1) return;
+    setBookIndex(idx);
+    setChapterNumber(tab.chapterNumber);
+    setInitialScrollY(0);
+  }
+
+  // ── Whenever we leave the reader, switch tabs, or move to another chapter,
+  //    force the chrome back on so it can never get "stuck" hidden.
   useEffect(() => {
     setChromeVisible(true);
   }, [activeTab, screen, bookIndex, chapterNumber]);
+
   const [isRestoring, setIsRestoring] = useState(true);
 
-  // On launch, resume wherever the user last left off.
+  // On launch, restore tabs and last position.
   useEffect(() => {
     let cancelled = false;
-    getLastPosition()
-      .then((position) => {
-        if (cancelled || !position) return;
-        const idx = BOOKS.findIndex((b) => b.id === position.bookId);
-        if (idx === -1) return;
-        setBookIndex(idx);
-        setChapterNumber(position.chapterNumber);
-        setInitialScrollY(position.scrollY || 0);
-        setScreen("reader");
+
+    Promise.all([getReaderTabs(), getLastPosition()])
+      .then(([savedTabs, position]) => {
+        if (cancelled) return;
+
+        // ── Restore reader tabs ──────────────────────────────────────────────
+        if (savedTabs && savedTabs.tabs && savedTabs.tabs.length > 0) {
+          // Validate that all saved tab bookIds still exist in BOOKS.
+          const validTabs = savedTabs.tabs.filter((t) =>
+            BOOKS.some((b) => b.id === t.bookId)
+          );
+          if (validTabs.length > 0) {
+            const savedIdx = Math.min(
+              Math.max(savedTabs.activeIndex || 0, 0),
+              validTabs.length - 1
+            );
+            const activeTab = validTabs[savedIdx];
+            setReaderTabsState(validTabs);
+            setActiveTabId(activeTab.id);
+            const bookIdx = BOOKS.findIndex((b) => b.id === activeTab.bookId);
+            if (bookIdx !== -1) {
+              setBookIndex(bookIdx);
+              setChapterNumber(activeTab.chapterNumber);
+            }
+            setInitialScrollY(position?.scrollY || 0);
+            setScreen("reader");
+            return;
+          }
+        }
+
+        // ── Fall back: restore from lastPosition (pre-tabs users) ────────────
+        if (position) {
+          const idx = BOOKS.findIndex((b) => b.id === position.bookId);
+          if (idx !== -1) {
+            const tab = {
+              id: newTabId(),
+              bookId: position.bookId,
+              chapterNumber: position.chapterNumber,
+            };
+            setReaderTabsState([tab]);
+            setActiveTabId(tab.id);
+            setBookIndex(idx);
+            setChapterNumber(position.chapterNumber);
+            setInitialScrollY(position.scrollY || 0);
+            setScreen("reader");
+            setReaderTabs([tab], 0);
+          }
+        }
       })
       .finally(() => {
         if (!cancelled) setIsRestoring(false);
       });
+
     return () => {
       cancelled = true;
     };
   }, []);
 
   const book = BOOKS[bookIndex];
+
+  // ── Update the active tab's stored chapter whenever book/chapter changes ──
+  // (covers prev/next navigation and direct opens)
+  useEffect(() => {
+    if (!activeTabId || readerTabs.length === 0) return;
+    setReaderTabsState((prev) => {
+      const updated = prev.map((t) =>
+        t.id === activeTabId
+          ? { ...t, bookId: book.id, chapterNumber }
+          : t
+      );
+      const activeIdx = updated.findIndex((t) => t.id === activeTabId);
+      setReaderTabs(updated, activeIdx);
+      return updated;
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [book?.id, chapterNumber]);
 
   function openBook(selectedBook) {
     const idx = BOOKS.findIndex((b) => b.id === selectedBook.id);
@@ -183,6 +271,18 @@ function AppContent() {
     setInitialScrollY(0);
     setScreen("reader");
     setLastPosition(book.id, num);
+
+    // If no tabs exist yet, create the first one.
+    if (readerTabs.length === 0) {
+      const tab = { id: newTabId(), bookId: book.id, chapterNumber: num };
+      applyTabs([tab], tab.id);
+    } else if (activeTabId) {
+      // Update the active tab to reflect the newly chosen chapter.
+      const updated = readerTabs.map((t) =>
+        t.id === activeTabId ? { ...t, bookId: book.id, chapterNumber: num } : t
+      );
+      applyTabs(updated, activeTabId);
+    }
   }
 
   function openHistory() {
@@ -201,7 +301,59 @@ function AppContent() {
     setScreen("reader");
     setActiveTab("bible");
     setLastPosition(entryBookId, entryChapterNumber);
+
+    // Update active tab or create first tab.
+    if (readerTabs.length === 0) {
+      const tab = { id: newTabId(), bookId: entryBookId, chapterNumber: entryChapterNumber };
+      applyTabs([tab], tab.id);
+    } else if (activeTabId) {
+      const updated = readerTabs.map((t) =>
+        t.id === activeTabId
+          ? { ...t, bookId: entryBookId, chapterNumber: entryChapterNumber }
+          : t
+      );
+      applyTabs(updated, activeTabId);
+    }
   }
+
+  // ── Tab bar handlers ───────────────────────────────────────────────────────
+
+  function handleSelectTab(id) {
+    const tab = readerTabs.find((t) => t.id === id);
+    if (!tab || id === activeTabId) return;
+    setActiveTabId(id);
+    syncReaderFromTab(tab);
+    setScreen("reader");
+    const activeIdx = readerTabs.findIndex((t) => t.id === id);
+    setReaderTabs(readerTabs, activeIdx);
+  }
+
+  function handleCloseTab(id) {
+    if (readerTabs.length <= 1) return; // guard: always keep at least 1 tab
+    const idx = readerTabs.findIndex((t) => t.id === id);
+    const newTabs = readerTabs.filter((t) => t.id !== id);
+
+    let newActiveId = activeTabId;
+    if (id === activeTabId) {
+      // Activate the tab to the left, or the new rightmost if closing the first.
+      const newIdx = Math.min(idx, newTabs.length - 1);
+      newActiveId = newTabs[newIdx].id;
+      syncReaderFromTab(newTabs[newIdx]);
+    }
+    applyTabs(newTabs, newActiveId);
+  }
+
+  function handleAddTab() {
+    if (readerTabs.length >= MAX_TABS) return;
+    // New tab opens on the current book/chapter (a good default — the user can
+    // then navigate away from it independently).
+    const tab = { id: newTabId(), bookId: book.id, chapterNumber };
+    const newTabs = [...readerTabs, tab];
+    applyTabs(newTabs, tab.id);
+    setScreen("reader");
+  }
+
+  // ── Prev / Next ────────────────────────────────────────────────────────────
 
   const hasPrev = bookIndex > 0 || chapterNumber > 1;
   const hasNext = bookIndex < BOOKS.length - 1 || chapterNumber < book.chapterCount;
@@ -250,6 +402,10 @@ function AppContent() {
 
       // 2. Bible tab internal screens.
       if (activeTab === "bible") {
+        if (screen === "picker") {
+          setScreen("reader");
+          return true;
+        }
         if (screen === "reader") {
           setScreen("chapters");
           return true;
@@ -288,6 +444,34 @@ function AppContent() {
         {activeTab === "bible" && screen === "books" && (
           <BookListScreen onSelectBook={openBook} onOpenHistory={openHistory} />
         )}
+        {activeTab === "bible" && screen === "picker" && (
+          <BookChapterPicker
+            currentBookId={book.id}
+            currentChapter={chapterNumber}
+            onOpenHistory={() => { setScreen("history"); }}
+            onSelectChapter={(selectedBook, selectedChapter) => {
+              const idx = BOOKS.findIndex((b) => b.id === selectedBook.id);
+              if (idx === -1) return;
+              setBookIndex(idx);
+              setChapterNumber(selectedChapter);
+              setInitialScrollY(0);
+              setLastPosition(selectedBook.id, selectedChapter);
+              if (readerTabs.length === 0) {
+                const tab = { id: newTabId(), bookId: selectedBook.id, chapterNumber: selectedChapter };
+                applyTabs([tab], tab.id);
+              } else if (activeTabId) {
+                const updated = readerTabs.map((t) =>
+                  t.id === activeTabId
+                    ? { ...t, bookId: selectedBook.id, chapterNumber: selectedChapter }
+                    : t
+                );
+                applyTabs(updated, activeTabId);
+              }
+              setScreen("reader");
+            }}
+            onClose={() => setScreen("reader")}
+          />
+        )}
         {activeTab === "bible" && screen === "history" && (
           <HistoryScreen onSelectEntry={openChapterDirect} onBack={() => setScreen("books")} />
         )}
@@ -307,10 +491,15 @@ function AppContent() {
             onPrev={goPrev}
             onNext={goNext}
             onBack={() => setScreen("chapters")}
-            onOpenBooks={() => setScreen("books")}
+            onOpenBooks={() => setScreen("picker")}
             onChromeChange={setChromeVisible}
             hasPrev={hasPrev}
             hasNext={hasNext}
+            readerTabs={readerTabs}
+            activeTabId={activeTabId}
+            onSelectTab={handleSelectTab}
+            onCloseTab={handleCloseTab}
+            onAddTab={handleAddTab}
           />
         )}
 

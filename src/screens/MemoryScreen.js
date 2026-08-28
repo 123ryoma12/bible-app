@@ -17,9 +17,7 @@ import {
   getMemoryList,
   removeMemory,
   referenceLabel,
-  successRate,
   successCount,
-  failureCount,
 } from "../data/memoryStore";
 import { versionAbbr } from "../data/bibleVersions";
 import MemoryAdd from "./memory/MemoryAdd";
@@ -67,21 +65,18 @@ export default function MemoryScreen() {
       else notMemorised.push(row);
     });
 
+    const memorisedVerseCount = memorised.reduce(
+      (total, row) => total + (row.entry.verses?.length || 0),
+      0
+    );
+
     const out = [];
     if (notMemorised.length)
       out.push({ key: "not_memorised", title: "Not Memorised", data: notMemorised });
     if (memorised.length)
-      out.push({ key: "memorised", title: "Memorised", data: memorised });
+      out.push({ key: "memorised", title: "Memorised", data: memorised, verseCount: memorisedVerseCount });
     return out;
   }, [entries]);
-
-  const memorisedVerseCount = useMemo(
-    () =>
-      entries
-        .filter((entry) => entry.status === STATUS.MEMORISED)
-        .reduce((total, entry) => total + (entry.verses?.length || 0), 0),
-    [entries]
-  );
 
   // Android back inside the Memory tab: if we're in a sub-view (add / drill),
   // return to the list first instead of letting the app-level handler switch
@@ -150,12 +145,7 @@ export default function MemoryScreen() {
       edges={["top", "left", "right"]}
     >
       <View style={styles.headerRow}>
-        <View>
-          <Text style={[styles.title, { color: colors.text }]}>Memory</Text>
-          <Text style={[styles.total, { color: colors.secondaryText }]}>
-            {memorisedVerseCount} verse{memorisedVerseCount === 1 ? "" : "s"} memorised
-          </Text>
-        </View>
+        <Text style={[styles.title, { color: colors.text }]}>Memory</Text>
         <TouchableOpacity onPress={() => setView("add")} hitSlop={hit}>
           <Text style={[styles.addLink, { color: colors.accent }]}>+ Add</Text>
         </TouchableOpacity>
@@ -178,7 +168,12 @@ export default function MemoryScreen() {
           contentContainerStyle={{ paddingBottom: 24 }}
           stickySectionHeadersEnabled={false}
           renderSectionHeader={({ section }) => (
-            <SectionHeader title={section.title} colors={colors} />
+            <SectionHeader
+              title={section.title}
+              count={section.verseCount != null ? section.verseCount : section.data.length}
+              label={section.verseCount != null ? "verse" : null}
+              colors={colors}
+            />
           )}
           renderItem={({ item }) => (
             <MemoryRow
@@ -202,11 +197,16 @@ export default function MemoryScreen() {
   );
 }
 
-function SectionHeader({ title, colors }) {
+function SectionHeader({ title, count, label, colors }) {
+  const countLabel = count != null
+    ? label
+      ? ` (${count} ${label}${count === 1 ? "" : "s"} memorised)`
+      : ` (${count})`
+    : "";
   return (
     <View style={[styles.sectionHeader, { backgroundColor: colors.background }]}>
       <Text style={[styles.sectionHeaderText, { color: colors.secondaryText }]}>
-        {title}
+        {title}{countLabel}
       </Text>
     </View>
   );
@@ -214,10 +214,12 @@ function SectionHeader({ title, colors }) {
 
 function MemoryRow({ entry, colors, onPress, onLongPress, onDelete }) {
   const memorised = entry.status === STATUS.MEMORISED;
-  const rate = successRate(entry);
   const wins = successCount(entry);
-  const losses = failureCount(entry);
   const lastDone = formatLastDone(entry);
+
+  const meta = memorised
+    ? `${versionAbbr(entry.version)} · Review Count ${wins} · ${lastDone}`
+    : versionAbbr(entry.version);
 
   return (
     <TouchableOpacity
@@ -231,17 +233,9 @@ function MemoryRow({ entry, colors, onPress, onLongPress, onDelete }) {
           {referenceLabel(entry)}
         </Text>
         <Text style={[styles.rowMeta, { color: colors.secondaryText }]}>
-          {versionAbbr(entry.version)} · {entry.verses.length} verse
-          {entry.verses.length === 1 ? "" : "s"}
-          {memorised
-            ? entry.attempts
-              ? ` · ${wins}✓ / ${losses}✗ · ${Math.round(rate * 100)}%`
-              : " · no review attempts yet"
-            : " · Learning"}
+          {meta}
         </Text>
-        <Text style={[styles.rowLastDone, { color: colors.mutedText }]}>{lastDone}</Text>
       </View>
-      <StatusBadge memorised={memorised} colors={colors} />
       <TouchableOpacity
         onPress={onDelete}
         hitSlop={hit}
@@ -259,38 +253,15 @@ function formatLastDone(entry) {
   // Older entries only have lastSuccessAt; use it as a graceful fallback.
   const timestamp = entry.lastPractisedAt || entry.lastSuccessAt;
   const date = timestamp ? new Date(timestamp) : null;
-  if (!date || Number.isNaN(date.getTime())) return "Last practised: not yet";
+  if (!date || Number.isNaN(date.getTime())) return "never practised";
 
-  return `Last practised: ${date.toLocaleDateString(undefined, {
+  return date.toLocaleDateString(undefined, {
     month: "short",
     day: "numeric",
     year: "numeric",
-  })}`;
+  });
 }
 
-function StatusBadge({ memorised, colors }) {
-  const label = memorised ? "Memorised" : "Learning";
-  return (
-    <View
-      style={[
-        styles.badge,
-        {
-          backgroundColor: memorised ? colors.accent : colors.surface,
-          borderColor: memorised ? colors.accentBorder : colors.border,
-        },
-      ]}
-    >
-      <Text
-        style={[
-          styles.badgeText,
-          { color: memorised ? colors.accentContrast : colors.surfaceText },
-        ]}
-      >
-        {label}
-      </Text>
-    </View>
-  );
-}
 
 const hit = { top: 10, bottom: 10, left: 10, right: 10 };
 
@@ -305,7 +276,6 @@ const styles = StyleSheet.create({
     paddingBottom: 8,
   },
   title: { fontSize: 28, fontFamily: uiFont(700) },
-  total: { fontSize: 13, fontFamily: uiFont(600), marginTop: 1 },
   addLink: { fontSize: 16, fontFamily: uiFont(600) },
   empty: {
     flex: 1,
@@ -332,20 +302,11 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
     paddingHorizontal: 20,
-    paddingVertical: 16,
+    paddingVertical: 10,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
-  rowRef: { fontSize: 17, fontFamily: uiFont(600) },
-  rowMeta: { fontSize: 13, marginTop: 3, fontFamily: uiFont() },
-  rowLastDone: { fontSize: 12, marginTop: 2, fontFamily: uiFont() },
-  badge: {
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: 12,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    marginLeft: 12,
-  },
-  badgeText: { fontSize: 12, fontFamily: uiFont(700) },
+  rowRef: { fontSize: 15, fontFamily: uiFont(600) },
+  rowMeta: { fontSize: 12, marginTop: 2, fontFamily: uiFont() },
   deleteBtn: {
     marginLeft: 12,
     padding: 4,
