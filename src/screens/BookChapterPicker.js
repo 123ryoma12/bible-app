@@ -42,6 +42,9 @@ export default function BookChapterPicker({ onSelectChapter, onClose, onOpenHist
   const listRef = useRef(null);
   // True once the list has completed its first layout and is ready to scroll.
   const listLaidOut = useRef(false);
+  // Keep the list invisible until we've jumped to the current book so the
+  // user never sees it flash from the top before scrolling into position.
+  const [scrollReady, setScrollReady] = useState(!currentBookId);
 
   // Precompute the section/item index for the current book so both the
   // getItemLayout and the scroll call can use it without re-searching.
@@ -230,10 +233,13 @@ export default function BookChapterPicker({ onSelectChapter, onClose, onOpenHist
       <ScrollView
         ref={listRef}
         contentContainerStyle={{ paddingBottom: 32 }}
+        style={{ opacity: scrollReady ? 1 : 0 }}
         onLayout={() => {
           if (!listLaidOut.current) {
             listLaidOut.current = true;
             scrollToCurrentBook();
+            // Reveal after the scroll jump so the list never flashes from top.
+            requestAnimationFrame(() => setScrollReady(true));
           }
         }}
       >
