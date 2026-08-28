@@ -17,7 +17,10 @@ import { incrementReadCount } from "../data/progressStore";
 import { addToHistory } from "../data/historyStore";
 import { useTheme } from "../theme/ThemeContext";
 import { getActiveReadingVersion } from "../data/bibleVersionStore";
-import { getLastPosition } from "../data/lastPositionStore";
+// lastPositionStore is intentionally not imported here — the global
+// lastPosition record is only needed at cold-launch time (handled in App.js).
+// Per-tab scroll offsets are passed in via the initialScrollY prop so each
+// tab independently restores to its own saved position.
 
 const SWIPE_THRESHOLD = 50;
 // How far you must scroll down before the chrome hides (avoids twitchy hiding).
@@ -97,40 +100,18 @@ export default function ReaderScreen({
     setChrome(true);
   }, [book.id, chapterNumber, setChrome]);
 
-  // Decide what scroll offset to restore whenever this chapter (re)mounts. Two
-  // sources feed in:
-  //   1. `initialScrollY` from the app (set on launch-resume) - applied
-  //      synchronously so a cold start lands in the right place immediately.
-  //   2. The persisted position for THIS exact book+chapter - read async so we
-  //      also restore when the Reader remounts during the session (switching
-  //      tabs, or going back to the chapter list and returning). The record's
-  //      book/chapter is stamped on reader entry, so we only honour it when it
-  //      still matches to avoid dropping a stale offset onto a new chapter.
+  // Decide what scroll offset to restore whenever this chapter (re)mounts.
+  // `initialScrollY` is the single source of truth: App.js resolves it from
+  // the per-tab scroll map (populated as the user scrolls) so each tab
+  // independently restores its own position. Cold-launch restore is also
+  // handled in App.js before the Reader ever mounts.
   useEffect(() => {
-    let cancelled = false;
     restoreResolved.current = false;
     lastContentHeight.current = 0;
     pendingScrollY.current = initialScrollY > 0 ? initialScrollY : null;
-    getLastPosition()
-      .then((pos) => {
-        if (cancelled) return;
-        if (pos && pos.bookId === book.id && pos.chapterNumber === chapterNumber) {
-          // Don't override once the user has already scrolled this mount (the
-          // save path updates lastOffset as they move).
-          if (lastOffset.current <= 0) {
-            pendingScrollY.current = pos.scrollY > 0 ? pos.scrollY : null;
-          }
-        }
-      })
-      .finally(() => {
-        if (cancelled) return;
-        restoreResolved.current = true;
-        // Nothing to restore — reveal immediately at y=0.
-        if (pendingScrollY.current == null) setScrollReady(true);
-      });
-    return () => {
-      cancelled = true;
-    };
+    restoreResolved.current = true;
+    // Nothing to restore — reveal immediately at y=0.
+    if (pendingScrollY.current == null) setScrollReady(true);
   }, [book.id, chapterNumber, initialScrollY]);
 
   // Flush any pending debounced save when unmounting.
