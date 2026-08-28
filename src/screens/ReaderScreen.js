@@ -76,6 +76,9 @@ export default function ReaderScreen({
   // mount-time onScroll at y=0 can't overwrite the stored offset before we've
   // had the chance to read and restore it.
   const restoreResolved = useRef(false);
+  // Keep content invisible until we've jumped to the restored position so the
+  // user never sees it flash from y=0 to wherever they left off.
+  const [scrollReady, setScrollReady] = useState(false);
   // Largest content height seen for the current chapter, used to tell whether
   // the ScrollView content is still growing across layout passes.
   const lastContentHeight = useRef(0);
@@ -120,7 +123,10 @@ export default function ReaderScreen({
         }
       })
       .finally(() => {
-        if (!cancelled) restoreResolved.current = true;
+        if (cancelled) return;
+        restoreResolved.current = true;
+        // Nothing to restore — reveal immediately at y=0.
+        if (pendingScrollY.current == null) setScrollReady(true);
       });
     return () => {
       cancelled = true;
@@ -155,6 +161,8 @@ export default function ReaderScreen({
       requestAnimationFrame(() => {
         scrollRef.current?.scrollTo({ y: target, animated: false });
         lastOffset.current = target;
+        // Reveal now that we're at the right position.
+        setScrollReady(true);
       });
     },
     []
@@ -250,7 +258,7 @@ export default function ReaderScreen({
     >
       <ScrollView
         ref={scrollRef}
-        style={{ flex: 1 }}
+        style={{ flex: 1, opacity: scrollReady ? 1 : 0 }}
         contentContainerStyle={[
           styles.scrollContent,
           // Reserve room so the last content (Mark as Read) clears the footer.
@@ -260,7 +268,6 @@ export default function ReaderScreen({
         scrollEventThrottle={16}
         onContentSizeChange={handleContentSizeChange}
         {...panResponder.panHandlers}
-        key={`${book.id}-${chapterNumber}`}
       >
         {/* Tapping the reading area toggles the chrome (immersive reading). */}
         <TouchableOpacity activeOpacity={1} onPress={toggleChrome}>

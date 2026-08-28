@@ -469,6 +469,7 @@ function AppContent() {
         )}
         {activeTab === "bible" && screen === "reader" && (
           <ReaderScreen
+            key={`${activeTabId}-${book.id}-${chapterNumber}`}
             book={book}
             chapterNumber={chapterNumber}
             initialScrollY={initialScrollY}
