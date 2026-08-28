@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { StatusBar } from "expo-status-bar";
 import { View, ActivityIndicator, StyleSheet, BackHandler, Platform } from "react-native";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
@@ -154,6 +154,10 @@ function AppContent() {
   const [readerTabs, setReaderTabsState] = useState([]);
   const [activeTabId, setActiveTabId] = useState(null);
 
+  // Per-tab scroll offsets: { [tabId]: number }. Populated as the user scrolls
+  // within each tab so switching back to a tab restores the exact position.
+  const tabScrollPositions = useRef({});
+
   /** Persist tabs and update local state in one call. */
   function applyTabs(tabs, tabId) {
     setReaderTabsState(tabs);
@@ -161,13 +165,13 @@ function AppContent() {
     setReaderTabs(tabs, tabs.findIndex((t) => t.id === tabId));
   }
 
-  /** Sync bookIndex/chapterNumber from the active tab object. */
+  /** Sync bookIndex/chapterNumber from the active tab object, restoring its saved scroll offset. */
   function syncReaderFromTab(tab) {
     const idx = BOOKS.findIndex((b) => b.id === tab.bookId);
     if (idx === -1) return;
     setBookIndex(idx);
     setChapterNumber(tab.chapterNumber);
-    setInitialScrollY(0);
+    setInitialScrollY(tabScrollPositions.current[tab.id] ?? 0);
   }
 
   // ── Whenever we leave the reader, switch tabs, or move to another chapter,
@@ -301,8 +305,19 @@ function AppContent() {
     setReaderTabs(readerTabs, activeIdx);
   }
 
+  /** Called by ReaderScreen on every debounced scroll. Keeps the per-tab map
+   *  and the global lastPosition record in sync. */
+  function handleScrollPositionChange(scrollY) {
+    if (activeTabId) {
+      tabScrollPositions.current[activeTabId] = scrollY;
+    }
+    setLastScroll(scrollY);
+  }
+
   function handleCloseTab(id) {
     if (readerTabs.length <= 1) return; // guard: always keep at least 1 tab
+    // Drop the stored scroll position for the closed tab.
+    delete tabScrollPositions.current[id];
     const idx = readerTabs.findIndex((t) => t.id === id);
     const newTabs = readerTabs.filter((t) => t.id !== id);
 
@@ -321,8 +336,11 @@ function AppContent() {
     // New tab opens on the current book/chapter (a good default — the user can
     // then navigate away from it independently).
     const tab = { id: newTabId(), bookId: book.id, chapterNumber };
+    // New tabs always start at the top.
+    tabScrollPositions.current[tab.id] = 0;
     const newTabs = [...readerTabs, tab];
     applyTabs(newTabs, tab.id);
+    setInitialScrollY(0);
     setScreen("reader");
   }
 
@@ -454,7 +472,7 @@ function AppContent() {
             book={book}
             chapterNumber={chapterNumber}
             initialScrollY={initialScrollY}
-            onScrollPositionChange={setLastScroll}
+            onScrollPositionChange={handleScrollPositionChange}
             onPrev={goPrev}
             onNext={goNext}
             onBack={() => setScreen("chapters")}
