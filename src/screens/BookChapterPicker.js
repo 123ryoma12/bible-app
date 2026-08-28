@@ -26,8 +26,8 @@ const SECTIONS = [
 ];
 
 const NUM_COLS = 5;
-const GRID_H_PAD = 12;
-const CELL_MARGIN = 5;
+const GRID_H_PAD = 20;
+const CELL_GAP = 8; // total horizontal gap between cells, split evenly
 
 export default function BookChapterPicker({ onSelectChapter, onClose, onOpenHistory, currentBookId, currentChapter }) {
   const { colors } = useTheme();
@@ -63,8 +63,10 @@ export default function BookChapterPicker({ onSelectChapter, onClose, onOpenHist
     return () => clearTimeout(timer);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Available width minus outer padding minus gaps between cells
+  // CELL_GAP is the space between cells; (NUM_COLS - 1) gaps exist between columns
   const cellSize =
-    (windowWidth - GRID_H_PAD * 2 - CELL_MARGIN * 2 * NUM_COLS) / NUM_COLS;
+    (windowWidth - GRID_H_PAD * 2 - CELL_GAP * (NUM_COLS - 1)) / NUM_COLS;
 
   const toggleBook = useCallback(
     (book) => {
@@ -91,7 +93,8 @@ export default function BookChapterPicker({ onSelectChapter, onClose, onOpenHist
                     width: cellSize,
                     height: cellSize,
                     backgroundColor: isActive ? colors.accent : colors.surface,
-                    margin: CELL_MARGIN,
+                    marginBottom: CELL_GAP,
+                    marginRight: CELL_GAP,
                   },
                 ]}
                 onPress={() => onSelectChapter(book, ch)}
@@ -176,12 +179,16 @@ export default function BookChapterPicker({ onSelectChapter, onClose, onOpenHist
     >
       {/* Header */}
       <View style={[styles.header, { borderBottomColor: colors.border }]}>
-        <TouchableOpacity
-          onPress={onClose}
-          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-        >
-          <Text style={[styles.headerBtn, { color: colors.accent }]}>{"‹ Back"}</Text>
-        </TouchableOpacity>
+        {onClose ? (
+          <TouchableOpacity
+            onPress={onClose}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          >
+            <Text style={[styles.headerBtn, { color: colors.accent }]}>{"‹ Back"}</Text>
+          </TouchableOpacity>
+        ) : (
+          <View style={styles.headerSpacer} />
+        )}
         <Text style={[styles.headerTitle, { color: colors.text }]}>Bible</Text>
         <TouchableOpacity
           onPress={onOpenHistory}
@@ -241,6 +248,7 @@ const styles = StyleSheet.create({
   },
   headerBtn: { fontSize: 15, fontFamily: uiFont(600) },
   headerTitle: { fontSize: 28, fontFamily: uiFont(700) },
+  headerSpacer: { width: 60 },
 
   sectionHeader: {
     fontSize: 13,
@@ -272,9 +280,9 @@ const styles = StyleSheet.create({
   chapterGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
-    paddingHorizontal: GRID_H_PAD,
+    paddingLeft: GRID_H_PAD,
     paddingTop: 8,
-    paddingBottom: 12,
+    paddingBottom: 4,
   },
   chapterCell: {
     borderRadius: 10,

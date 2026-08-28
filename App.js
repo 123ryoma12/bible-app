@@ -3,8 +3,6 @@ import { StatusBar } from "expo-status-bar";
 import { View, ActivityIndicator, StyleSheet, BackHandler, Platform } from "react-native";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import { BOOKS } from "./src/data/books";
-import BookListScreen from "./src/screens/BookListScreen";
-import ChapterListScreen from "./src/screens/ChapterListScreen";
 import BookChapterPicker from "./src/screens/BookChapterPicker";
 import ReaderScreen from "./src/screens/ReaderScreen";
 import HistoryScreen from "./src/screens/HistoryScreen";
@@ -260,31 +258,6 @@ function AppContent() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [book?.id, chapterNumber]);
 
-  function openBook(selectedBook) {
-    const idx = BOOKS.findIndex((b) => b.id === selectedBook.id);
-    setBookIndex(idx);
-    setScreen("chapters");
-  }
-
-  function openChapter(num) {
-    setChapterNumber(num);
-    setInitialScrollY(0);
-    setScreen("reader");
-    setLastPosition(book.id, num);
-
-    // If no tabs exist yet, create the first one.
-    if (readerTabs.length === 0) {
-      const tab = { id: newTabId(), bookId: book.id, chapterNumber: num };
-      applyTabs([tab], tab.id);
-    } else if (activeTabId) {
-      // Update the active tab to reflect the newly chosen chapter.
-      const updated = readerTabs.map((t) =>
-        t.id === activeTabId ? { ...t, bookId: book.id, chapterNumber: num } : t
-      );
-      applyTabs(updated, activeTabId);
-    }
-  }
-
   function openHistory() {
     setScreen("history");
   }
@@ -407,14 +380,18 @@ function AppContent() {
           return true;
         }
         if (screen === "reader") {
-          setScreen("chapters");
-          return true;
-        }
-        if (screen === "chapters" || screen === "history") {
           setScreen("books");
           return true;
         }
-        // At books root - allow default (exit app).
+        if (screen === "history") {
+          setScreen("books");
+          return true;
+        }
+        if (screen === "books" && readerTabs.length > 0) {
+          setScreen("reader");
+          return true;
+        }
+        // At books root with no prior reader - allow default (exit app).
         return false;
       }
 
@@ -441,14 +418,11 @@ function AppContent() {
       <StatusBar style={mode === "dark" ? "light" : "dark"} />
 
       <View style={{ flex: 1 }}>
-        {activeTab === "bible" && screen === "books" && (
-          <BookListScreen onSelectBook={openBook} onOpenHistory={openHistory} />
-        )}
-        {activeTab === "bible" && screen === "picker" && (
+        {activeTab === "bible" && (screen === "books" || screen === "picker") && (
           <BookChapterPicker
-            currentBookId={book.id}
-            currentChapter={chapterNumber}
-            onOpenHistory={() => { setScreen("history"); }}
+            currentBookId={screen === "picker" ? book.id : null}
+            currentChapter={screen === "picker" ? chapterNumber : null}
+            onOpenHistory={openHistory}
             onSelectChapter={(selectedBook, selectedChapter) => {
               const idx = BOOKS.findIndex((b) => b.id === selectedBook.id);
               if (idx === -1) return;
@@ -469,18 +443,11 @@ function AppContent() {
               }
               setScreen("reader");
             }}
-            onClose={() => setScreen("reader")}
+            onClose={readerTabs.length > 0 ? () => setScreen("reader") : null}
           />
         )}
         {activeTab === "bible" && screen === "history" && (
           <HistoryScreen onSelectEntry={openChapterDirect} onBack={() => setScreen("books")} />
-        )}
-        {activeTab === "bible" && screen === "chapters" && (
-          <ChapterListScreen
-            book={book}
-            onSelectChapter={openChapter}
-            onBack={() => setScreen("books")}
-          />
         )}
         {activeTab === "bible" && screen === "reader" && (
           <ReaderScreen
