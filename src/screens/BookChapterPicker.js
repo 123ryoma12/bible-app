@@ -150,7 +150,7 @@ export default function BookChapterPicker({ onSelectChapter, onClose, onOpenHist
     ({ item: book }) => {
       const isExpanded = expandedBookId === book.id;
       return (
-        <View>
+        <View key={book.id}>
           <TouchableOpacity
             style={[
               styles.bookRow,
