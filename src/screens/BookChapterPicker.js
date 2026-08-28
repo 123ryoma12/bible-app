@@ -2,7 +2,7 @@ import React, { useState, useRef, useCallback, useMemo } from "react";
 import {
   View,
   Text,
-  SectionList,
+  ScrollView,
   TouchableOpacity,
   StyleSheet,
   LayoutAnimation,
@@ -54,65 +54,48 @@ export default function BookChapterPicker({ onSelectChapter, onClose, onOpenHist
     return null;
   }, [currentBookId]);
 
-  // Scroll to the current book. Called both from onLayout (first render) and
-  // from onScrollToIndexFailed (retry). Using getItemLayout means the list
-  // already knows every item offset, so this succeeds on the very first call.
-  const scrollToCurrentBook = useCallback(() => {
-    if (!currentBookLocation) return;
-    listRef.current?.scrollToLocation({
-      sectionIndex: currentBookLocation.sectionIndex,
-      itemIndex: currentBookLocation.itemIndex,
-      viewOffset: 16,
-      animated: false,
-    });
-  }, [currentBookLocation]);
-
   // Available width minus outer padding minus gaps between cells
   // CELL_GAP is the space between cells; (NUM_COLS - 1) gaps exist between columns
   const cellSize =
     (windowWidth - GRID_H_PAD * 2 - CELL_GAP * (NUM_COLS - 1)) / NUM_COLS;
 
-  // Build a getItemLayout function so SectionList knows every item's offset
-  // and height without needing to measure them first. This is what makes
-  // scrollToLocation work immediately on the first render.
-  // Layout is: [section header] then [book rows], where an expanded book also
-  // has a chapter grid appended after its row.
-  const getItemLayout = useCallback(
-    (_data, index) => {
-      // SectionList passes a flat index. We must walk the sections to find
-      // the cumulative offset at that index.
-      // The flat index sequence is:
-      //   section-header (index -1 per section, but SectionList uses the item
-      //   index directly — getItemLayout receives the *item* flat index only,
-      //   not header positions; headers are accounted for via the returned
-      //   offset). We track offset manually.
-      let offset = 0;
-      let flatIndex = 0;
-      for (let s = 0; s < SECTIONS.length; s++) {
-        // Section header
-        offset += SECTION_HEADER_HEIGHT;
-        const items = SECTIONS[s].data;
-        for (let i = 0; i < items.length; i++) {
-          const book = items[i];
-          const rowHeight = BOOK_ROW_HEIGHT;
-          // Chapter grid height when this book is expanded
+  // Compute the exact pixel offset of the current book row, accounting for
+  // any expanded book that appears before it in the list (which adds extra
+  // height that getItemLayout cannot track without becoming stale).
+  const computeScrollOffset = useCallback(() => {
+    if (!currentBookLocation) return null;
+    let offset = 0;
+    for (let s = 0; s < SECTIONS.length; s++) {
+      offset += SECTION_HEADER_HEIGHT;
+      const items = SECTIONS[s].data;
+      for (let i = 0; i < items.length; i++) {
+        if (s === currentBookLocation.sectionIndex && i === currentBookLocation.itemIndex) {
+          return offset;
+        }
+        offset += BOOK_ROW_HEIGHT;
+        // If this book is currently expanded and comes before the target,
+        // its chapter grid adds extra height we must account for.
+        const book = items[i];
+        if (expandedBookId === book.id) {
           const numRows = Math.ceil(book.chapterCount / NUM_COLS);
-          const gridHeight =
-            expandedBookId === book.id
-              ? 8 + numRows * (cellSize + CELL_GAP) + 4 // paddingTop + rows + paddingBottom
-              : 0;
-          const itemHeight = rowHeight + gridHeight;
-          if (flatIndex === index) {
-            return { length: itemHeight, offset, index };
-          }
-          offset += itemHeight;
-          flatIndex++;
+          offset += 8 + numRows * (cellSize + CELL_GAP) + 4;
         }
       }
-      return { length: BOOK_ROW_HEIGHT, offset, index };
-    },
-    [expandedBookId, cellSize]
-  );
+    }
+    return null;
+  }, [currentBookLocation, expandedBookId, cellSize]);
+
+  // Scroll to the current book using a direct scrollTo call so we control
+  // the exact offset and aren't at the mercy of getItemLayout estimates.
+  const scrollToCurrentBook = useCallback(() => {
+    const offset = computeScrollOffset();
+    if (offset == null) return;
+    listRef.current?.scrollTo({
+      y: Math.max(0, offset - 16),
+      animated: false,
+    });
+  }, [computeScrollOffset]);
+
 
   const toggleBook = useCallback(
     (book) => {
@@ -244,35 +227,30 @@ export default function BookChapterPicker({ onSelectChapter, onClose, onOpenHist
         </TouchableOpacity>
       </View>
 
-      <SectionList
+      <ScrollView
         ref={listRef}
-        sections={SECTIONS}
-        keyExtractor={(item) => item.id}
-        renderSectionHeader={({ section }) => (
-          <Text
-            style={[
-              styles.sectionHeader,
-              { color: colors.accent, backgroundColor: colors.background },
-            ]}
-          >
-            {section.title}
-          </Text>
-        )}
-        renderItem={renderBook}
-        stickySectionHeadersEnabled={false}
         contentContainerStyle={{ paddingBottom: 32 }}
-        removeClippedSubviews={false}
-        getItemLayout={getItemLayout}
         onLayout={() => {
-          // Fire scroll on the very first layout pass. getItemLayout means the
-          // list already knows all offsets, so this always succeeds immediately.
           if (!listLaidOut.current) {
             listLaidOut.current = true;
             scrollToCurrentBook();
           }
         }}
-        onScrollToIndexFailed={scrollToCurrentBook}
-      />
+      >
+        {SECTIONS.map((section) => (
+          <View key={section.title}>
+            <Text
+              style={[
+                styles.sectionHeader,
+                { color: colors.accent, backgroundColor: colors.background },
+              ]}
+            >
+              {section.title}
+            </Text>
+            {section.data.map((book) => renderBook({ item: book }))}
+          </View>
+        ))}
+      </ScrollView>
     </SafeAreaView>
   );
 }
