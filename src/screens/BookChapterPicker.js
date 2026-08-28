@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback, useEffect } from "react";
+import React, { useState, useRef, useCallback, useMemo } from "react";
 import {
   View,
   Text,
@@ -29,44 +29,90 @@ const NUM_COLS = 5;
 const GRID_H_PAD = 20;
 const CELL_GAP = 8; // total horizontal gap between cells, split evenly
 
+// Fixed heights used by getItemLayout so SectionList can scroll without measuring.
+// Must stay in sync with the StyleSheet values below.
+const BOOK_ROW_HEIGHT = 14 * 2 + 24; // paddingVertical*2 + approx text line height
+const SECTION_HEADER_HEIGHT = 16 + 6 + 20; // paddingTop + paddingBottom + text
+
 export default function BookChapterPicker({ onSelectChapter, onClose, onOpenHistory, currentBookId, currentChapter }) {
   const { colors } = useTheme();
   const { width: windowWidth } = useWindowDimensions();
   // ID of the currently expanded book, or null
   const [expandedBookId, setExpandedBookId] = useState(currentBookId ?? null);
   const listRef = useRef(null);
+  // True once the list has completed its first layout and is ready to scroll.
+  const listLaidOut = useRef(false);
 
-  // On mount, scroll so the current book is visible
-  useEffect(() => {
-    if (!currentBookId) return;
-    // Find which section + item index the current book lives in
-    let sectionIndex = -1;
-    let itemIndex = -1;
+  // Precompute the section/item index for the current book so both the
+  // getItemLayout and the scroll call can use it without re-searching.
+  const currentBookLocation = useMemo(() => {
+    if (!currentBookId) return null;
     for (let s = 0; s < SECTIONS.length; s++) {
       const idx = SECTIONS[s].data.findIndex((b) => b.id === currentBookId);
-      if (idx !== -1) {
-        sectionIndex = s;
-        itemIndex = idx;
-        break;
-      }
+      if (idx !== -1) return { sectionIndex: s, itemIndex: idx };
     }
-    if (sectionIndex === -1) return;
-    // Small delay lets the list finish its first layout before we scroll
-    const timer = setTimeout(() => {
-      listRef.current?.scrollToLocation({
-        sectionIndex,
-        itemIndex,
-        viewOffset: 16,
-        animated: false,
-      });
-    }, 120);
-    return () => clearTimeout(timer);
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+    return null;
+  }, [currentBookId]);
+
+  // Scroll to the current book. Called both from onLayout (first render) and
+  // from onScrollToIndexFailed (retry). Using getItemLayout means the list
+  // already knows every item offset, so this succeeds on the very first call.
+  const scrollToCurrentBook = useCallback(() => {
+    if (!currentBookLocation) return;
+    listRef.current?.scrollToLocation({
+      sectionIndex: currentBookLocation.sectionIndex,
+      itemIndex: currentBookLocation.itemIndex,
+      viewOffset: 16,
+      animated: false,
+    });
+  }, [currentBookLocation]);
 
   // Available width minus outer padding minus gaps between cells
   // CELL_GAP is the space between cells; (NUM_COLS - 1) gaps exist between columns
   const cellSize =
     (windowWidth - GRID_H_PAD * 2 - CELL_GAP * (NUM_COLS - 1)) / NUM_COLS;
+
+  // Build a getItemLayout function so SectionList knows every item's offset
+  // and height without needing to measure them first. This is what makes
+  // scrollToLocation work immediately on the first render.
+  // Layout is: [section header] then [book rows], where an expanded book also
+  // has a chapter grid appended after its row.
+  const getItemLayout = useCallback(
+    (_data, index) => {
+      // SectionList passes a flat index. We must walk the sections to find
+      // the cumulative offset at that index.
+      // The flat index sequence is:
+      //   section-header (index -1 per section, but SectionList uses the item
+      //   index directly — getItemLayout receives the *item* flat index only,
+      //   not header positions; headers are accounted for via the returned
+      //   offset). We track offset manually.
+      let offset = 0;
+      let flatIndex = 0;
+      for (let s = 0; s < SECTIONS.length; s++) {
+        // Section header
+        offset += SECTION_HEADER_HEIGHT;
+        const items = SECTIONS[s].data;
+        for (let i = 0; i < items.length; i++) {
+          const book = items[i];
+          const rowHeight = BOOK_ROW_HEIGHT;
+          // Chapter grid height when this book is expanded
+          const numRows = Math.ceil(book.chapterCount / NUM_COLS);
+          const gridHeight =
+            expandedBookId === book.id
+              ? 8 + numRows * (cellSize + CELL_GAP) + 4 // paddingTop + rows + paddingBottom
+              : 0;
+          const itemHeight = rowHeight + gridHeight;
+          if (flatIndex === index) {
+            return { length: itemHeight, offset, index };
+          }
+          offset += itemHeight;
+          flatIndex++;
+        }
+      }
+      return { length: BOOK_ROW_HEIGHT, offset, index };
+    },
+    [expandedBookId, cellSize]
+  );
 
   const toggleBook = useCallback(
     (book) => {
@@ -216,20 +262,16 @@ export default function BookChapterPicker({ onSelectChapter, onClose, onOpenHist
         stickySectionHeadersEnabled={false}
         contentContainerStyle={{ paddingBottom: 32 }}
         removeClippedSubviews={false}
-        onScrollToIndexFailed={() => {
-          // If the item isn't measured yet, retry after a short delay
-          setTimeout(() => {
-            let sectionIndex = -1;
-            let itemIndex = -1;
-            for (let s = 0; s < SECTIONS.length; s++) {
-              const idx = SECTIONS[s].data.findIndex((b) => b.id === currentBookId);
-              if (idx !== -1) { sectionIndex = s; itemIndex = idx; break; }
-            }
-            if (sectionIndex !== -1) {
-              listRef.current?.scrollToLocation({ sectionIndex, itemIndex, viewOffset: 16, animated: false });
-            }
-          }, 200);
+        getItemLayout={getItemLayout}
+        onLayout={() => {
+          // Fire scroll on the very first layout pass. getItemLayout means the
+          // list already knows all offsets, so this always succeeds immediately.
+          if (!listLaidOut.current) {
+            listLaidOut.current = true;
+            scrollToCurrentBook();
+          }
         }}
+        onScrollToIndexFailed={scrollToCurrentBook}
       />
     </SafeAreaView>
   );
