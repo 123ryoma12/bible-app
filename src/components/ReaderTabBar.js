@@ -11,7 +11,7 @@
 //   onAddTab      – () => void
 //   maxTabs       – number (default 5)
 
-import React from "react";
+import React, { useRef, useCallback, useState } from "react";
 import {
   View,
   Text,
@@ -29,30 +29,92 @@ export default function ReaderTabBar({
   onSelectTab,
   onCloseTab,
   onAddTab,
+  // scrollX / onScrollX are owned by App.js so the value survives the
+  // ReaderScreen remounts that happen on every tab switch (key prop change).
+  // scrollX       – the x offset to restore on mount (a plain number, not a ref)
+  // onScrollX     – callback(x) to persist the latest offset back to App.js
+  // scrollToActive – when true, scroll so the active tab is visible on mount
+  //                  (set by App.js only when returning from Stats/Memory/Settings)
+  // onScrollToActiveConsumed – called after scrollToActive has been handled
+  scrollX = 0,
+  onScrollX,
+  scrollToActive = false,
+  onScrollToActiveConsumed,
 }) {
   const { colors } = useTheme();
   const canClose = tabs.length > 1;
   const canAdd = tabs.length < MAX_TABS;
 
+  const scrollViewRef = useRef(null);
+  // Whether the strip should scroll to make the active tab visible as soon as
+  // the active tab's onLayout fires. Only true when explicitly requested by
+  // App.js (returning from Stats/Memory/Settings).
+  const pendingScrollToActiveRef = useRef(scrollToActive);
+  // Whether we still need to restore a saved x offset. Set on mount when
+  // scrollX > 0 (tab switches). Consumed on the ScrollView's first onLayout.
+  const pendingRestoreXRef = useRef(scrollX > 0 ? scrollX : 0);
+
+  // Hidden until the scroll position has been applied, so the user never sees
+  // the strip flash from x=0 to wherever it should be.
+  const needsPositioning = pendingScrollToActiveRef.current || pendingRestoreXRef.current > 0;
+  const [stripReady, setStripReady] = useState(!needsPositioning);
+
+  // Called from the active tab's onLayout. If a scroll-to-active is pending,
+  // jump to make the active tab visible now that we know its position.
+  const handleActiveTabLayout = useCallback((x, width) => {
+    if (!pendingScrollToActiveRef.current) return;
+    pendingScrollToActiveRef.current = false;
+    const targetX = Math.max(0, x - 8);
+    scrollViewRef.current?.scrollTo({ x: targetX, animated: false });
+    onScrollToActiveConsumed?.();
+    setStripReady(true);
+  }, [onScrollToActiveConsumed]);
+
+  // Called when the ScrollView itself lays out. If a saved x restore is
+  // pending, apply it now — this reliably fires before the user sees anything.
+  const handleScrollViewLayout = useCallback(() => {
+    if (pendingRestoreXRef.current > 0) {
+      scrollViewRef.current?.scrollTo({ x: pendingRestoreXRef.current, animated: false });
+      pendingRestoreXRef.current = 0;
+      setStripReady(true);
+    }
+  }, []);
+
+  const handleScroll = useCallback((e) => {
+    onScrollX?.(e.nativeEvent.contentOffset.x);
+  }, [onScrollX]);
+
   return (
     <View
       style={[
         styles.container,
-        { backgroundColor: colors.surface, borderTopColor: colors.border },
+        { backgroundColor: colors.surface, borderTopColor: colors.border, opacity: stripReady ? 1 : 0 },
       ]}
     >
       {/* Scrollable tab list so many tabs don't overflow */}
       <ScrollView
+        ref={scrollViewRef}
         horizontal
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={styles.tabList}
         style={{ flex: 1 }}
+        onLayout={handleScrollViewLayout}
+        onScroll={handleScroll}
+        scrollEventThrottle={16}
       >
         {tabs.map((tab) => {
           const isActive = tab.id === activeTabId;
           return (
             <TouchableOpacity
               key={tab.id}
+              onLayout={(e) => {
+                if (isActive) {
+                  handleActiveTabLayout(
+                    e.nativeEvent.layout.x,
+                    e.nativeEvent.layout.width
+                  );
+                }
+              }}
               style={[
                 styles.tab,
                 {

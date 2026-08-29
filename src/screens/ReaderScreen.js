@@ -48,6 +48,14 @@ export default function ReaderScreen({
   onSelectTab,
   onCloseTab,
   onAddTab,
+  // Tab bar strip scroll position — persisted in App.js so it survives the
+  // ReaderScreen remounts that happen on every tab switch (key prop).
+  tabBarScrollX = 0,
+  onTabBarScrollX,
+  // When true, ReaderTabBar should scroll to make the active tab visible
+  // (used when returning from Stats/Memory/Settings). Consumed after use.
+  tabBarScrollToActive = false,
+  onTabBarScrollToActiveConsumed,
 }) {
   const { colors, readingFontKey } = useTheme();
   // Read in the user's selected translation. The active version is a synchronous
@@ -327,6 +335,10 @@ export default function ReaderScreen({
             onSelectTab={onSelectTab}
             onCloseTab={onCloseTab}
             onAddTab={onAddTab}
+            scrollX={tabBarScrollX}
+            onScrollX={onTabBarScrollX}
+            scrollToActive={tabBarScrollToActive}
+            onScrollToActiveConsumed={onTabBarScrollToActiveConsumed}
           />
         )}
 

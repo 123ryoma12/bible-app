@@ -157,6 +157,14 @@ function AppContent() {
   // Per-tab scroll offsets: { [tabId]: number }. Populated as the user scrolls
   // within each tab so switching back to a tab restores the exact position.
   const tabScrollPositions = useRef({});
+  // The horizontal scroll offset of the ReaderTabBar strip. Stored here so it
+  // survives ReaderScreen remounts (which happen on every tab switch due to the
+  // key prop) and can be restored correctly.
+  const tabBarScrollX = useRef(0);
+  // True only when returning to the Bible reader from another bottom tab
+  // (Stats/Memory/Settings). Tells ReaderTabBar to scroll the active tab into
+  // view rather than just restoring the strip's last x position.
+  const tabBarScrollToActive = useRef(false);
 
   /** Persist tabs and update local state in one call. */
   function applyTabs(tabs, tabId) {
@@ -298,6 +306,8 @@ function AppContent() {
   function handleSelectTab(id) {
     const tab = readerTabs.find((t) => t.id === id);
     if (!tab || id === activeTabId) return;
+    // Do NOT reset tabBarScrollX here — the strip should stay exactly where
+    // the user left it when switching tabs.
     setActiveTabId(id);
     syncReaderFromTab(tab);
     setScreen("reader");
@@ -414,6 +424,7 @@ function AppContent() {
       }
 
       // 3. Any other tab returns to the Bible tab.
+      tabBarScrollToActive.current = true;
       setActiveTab("bible");
       return true;
     }
@@ -486,6 +497,10 @@ function AppContent() {
             onSelectTab={handleSelectTab}
             onCloseTab={handleCloseTab}
             onAddTab={handleAddTab}
+            tabBarScrollX={tabBarScrollX.current}
+            onTabBarScrollX={(x) => { tabBarScrollX.current = x; }}
+            tabBarScrollToActive={tabBarScrollToActive.current}
+            onTabBarScrollToActiveConsumed={() => { tabBarScrollToActive.current = false; }}
           />
         )}
 
@@ -498,7 +513,16 @@ function AppContent() {
         {activeTab === "settings" && <SettingsScreen />}
       </View>
 
-      <BottomTabBar active={activeTab} onChange={setActiveTab} visible={chromeVisible} />
+      <BottomTabBar
+        active={activeTab}
+        onChange={(tab) => {
+          if (tab === "bible" && activeTab !== "bible") {
+            tabBarScrollToActive.current = true;
+          }
+          setActiveTab(tab);
+        }}
+        visible={chromeVisible}
+      />
     </View>
   );
 }
