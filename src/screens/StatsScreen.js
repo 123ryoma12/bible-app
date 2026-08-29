@@ -8,6 +8,7 @@ import {
   ActivityIndicator,
   Modal,
   Platform,
+  Pressable,
   TextInput,
 } from "react-native";
 import { uiFont } from "../theme/fonts";
@@ -675,8 +676,8 @@ function FilterModal({ visible, currentMax, onClose, onApply, onClear }) {
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <View style={styles.modalBackdrop}>
-        <View style={[styles.modalCard, { backgroundColor: colors.surface }]}>
+      <Pressable style={styles.modalBackdrop} onPress={onClose}>
+        <Pressable style={[styles.modalCard, { backgroundColor: colors.surface }]} onPress={() => {}}>
           <Text style={[styles.modalTitle, { color: colors.text }]}>Filter by Reads</Text>
           <Text style={[styles.filterModalHint, { color: colors.mutedText }]}>
             Show only chapters read fewer than N times. Enter a number (2 or more).
@@ -732,8 +733,8 @@ function FilterModal({ visible, currentMax, onClose, onApply, onClear }) {
               </Text>
             </TouchableOpacity>
           </View>
-        </View>
-      </View>
+        </Pressable>
+      </Pressable>
     </Modal>
   );
 }
