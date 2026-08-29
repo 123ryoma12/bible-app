@@ -149,9 +149,10 @@ export default function StatsScreen({ onOpenChapter, isActive = true }) {
   const [scrollY, setScrollY] = useState(0);
   // Read-count filter. `filterMax` is the exclusive upper bound: a chapter is
   // shown when its read count < filterMax. Infinity = show all; 1 = unread only
-  // (0 reads); any N = fewer than N reads. `customText` backs the "< N" input.
+  // (0 reads); any N = fewer than N reads. `filterModalOpen` controls the
+  // "< N reads" picker modal.
   const [filterMax, setFilterMax] = useState(Infinity);
-  const [customText, setCustomText] = useState("");
+  const [filterModalOpen, setFilterModalOpen] = useState(false);
 
   const handleScroll = useCallback((e) => {
     setScrollY(e.nativeEvent.contentOffset.y);
@@ -483,10 +484,7 @@ export default function StatsScreen({ onOpenChapter, isActive = true }) {
           A chapter is shown when its read count is below the active bound. */}
       <View style={styles.filterRow}>
         <TouchableOpacity
-          onPress={() => {
-            setFilterMax(Infinity);
-            setCustomText("");
-          }}
+          onPress={() => setFilterMax(Infinity)}
           style={[
             styles.filterPill,
             { borderColor: colors.border },
@@ -504,10 +502,7 @@ export default function StatsScreen({ onOpenChapter, isActive = true }) {
         </TouchableOpacity>
 
         <TouchableOpacity
-          onPress={() => {
-            setFilterMax(1);
-            setCustomText("");
-          }}
+          onPress={() => setFilterMax(1)}
           style={[
             styles.filterPill,
             { borderColor: colors.border },
@@ -524,12 +519,12 @@ export default function StatsScreen({ onOpenChapter, isActive = true }) {
           </Text>
         </TouchableOpacity>
 
-        <View
+        {/* Tapping this pill opens the FilterModal to enter a custom threshold. */}
+        <TouchableOpacity
+          onPress={() => setFilterModalOpen(true)}
           style={[
             styles.filterPill,
-            styles.filterCustom,
             { borderColor: colors.border },
-            // Highlight when a custom (non-Infinity, non-Unread) threshold is active.
             filterMax !== Infinity && filterMax !== 1 && {
               backgroundColor: colors.accent,
               borderColor: colors.accent,
@@ -547,49 +542,11 @@ export default function StatsScreen({ onOpenChapter, isActive = true }) {
               },
             ]}
           >
-            {"< "}
+            {filterMax !== Infinity && filterMax !== 1
+              ? `< ${filterMax} reads`
+              : "< N reads"}
           </Text>
-          <TextInput
-            value={customText}
-            onChangeText={(t) => {
-              // Keep digits only. Empty input reverts to "All".
-              const digits = t.replace(/[^0-9]/g, "");
-              setCustomText(digits);
-              if (digits === "") {
-                setFilterMax(Infinity);
-              } else {
-                const n = parseInt(digits, 10);
-                // "< N reads": N must be at least 1 to show anything (< 1 = unread).
-                setFilterMax(n >= 1 ? n : Infinity);
-              }
-            }}
-            keyboardType="number-pad"
-            placeholder="N"
-            placeholderTextColor={colors.mutedText}
-            style={[
-              styles.filterInput,
-              {
-                color:
-                  filterMax !== Infinity && filterMax !== 1
-                    ? colors.accentContrast
-                    : colors.text,
-              },
-            ]}
-          />
-          <Text
-            style={[
-              styles.filterPillText,
-              {
-                color:
-                  filterMax !== Infinity && filterMax !== 1
-                    ? colors.accentContrast
-                    : colors.mutedText,
-              },
-            ]}
-          >
-            {" reads"}
-          </Text>
-        </View>
+        </TouchableOpacity>
       </View>
 
       <View style={styles.listWrap}>
@@ -680,6 +637,20 @@ export default function StatsScreen({ onOpenChapter, isActive = true }) {
           setGoalModalOpen(false);
         }}
       />
+
+      <FilterModal
+        visible={filterModalOpen}
+        currentMax={filterMax !== Infinity && filterMax !== 1 ? filterMax : null}
+        onClose={() => setFilterModalOpen(false)}
+        onApply={(n) => {
+          setFilterMax(n);
+          setFilterModalOpen(false);
+        }}
+        onClear={() => {
+          setFilterMax(Infinity);
+          setFilterModalOpen(false);
+        }}
+      />
     </SafeAreaView>
   );
 }
@@ -687,6 +658,86 @@ export default function StatsScreen({ onOpenChapter, isActive = true }) {
 // Lets the user pick (or clear) a single "finish the whole Bible by" date. The
 // goal date is required to be in the future (a past date makes the whole target
 // "due now"), so the picker's minimum is tomorrow.
+function FilterModal({ visible, currentMax, onClose, onApply, onClear }) {
+  const { colors } = useTheme();
+  const [draftText, setDraftText] = useState("");
+
+  // Re-sync draft whenever the modal opens.
+  useEffect(() => {
+    if (visible) {
+      setDraftText(currentMax != null ? String(currentMax) : "");
+    }
+  }, [visible, currentMax]);
+
+  const draftN = draftText === "" ? null : parseInt(draftText, 10);
+  // Valid when it's a whole number >= 2 (< 1 is meaningless; Unread covers that).
+  const canApply = draftN != null && Number.isFinite(draftN) && draftN >= 2;
+
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <View style={styles.modalBackdrop}>
+        <View style={[styles.modalCard, { backgroundColor: colors.surface }]}>
+          <Text style={[styles.modalTitle, { color: colors.text }]}>Filter by Reads</Text>
+          <Text style={[styles.filterModalHint, { color: colors.mutedText }]}>
+            Show only chapters read fewer than N times. Enter a number (2 or more).
+          </Text>
+
+          <View style={styles.fieldRow}>
+            <Text style={[styles.fieldLabel, { color: colors.mutedText }]}>Fewer than</Text>
+            <View
+              style={[
+                styles.fieldBtn,
+                styles.filterModalInputRow,
+                { borderColor: colors.border, backgroundColor: colors.background },
+              ]}
+            >
+              <TextInput
+                value={draftText}
+                onChangeText={(t) => setDraftText(t.replace(/[^0-9]/g, ""))}
+                keyboardType="number-pad"
+                placeholder="e.g. 3"
+                placeholderTextColor={colors.mutedText}
+                autoFocus
+                style={[styles.filterModalInput, { color: colors.text }]}
+              />
+              <Text style={[styles.filterModalUnit, { color: colors.mutedText }]}>reads</Text>
+            </View>
+          </View>
+
+          <View style={styles.modalActions}>
+            {currentMax != null && (
+              <TouchableOpacity
+                onPress={onClear}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                style={[styles.modalActionBtn, { marginRight: "auto" }]}
+              >
+                <Text style={[styles.modalCancel, { color: colors.accent }]}>Clear</Text>
+              </TouchableOpacity>
+            )}
+            <TouchableOpacity
+              onPress={onClose}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              style={styles.modalActionBtn}
+            >
+              <Text style={[styles.modalCancel, { color: colors.mutedText }]}>Cancel</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => canApply && onApply(draftN)}
+              disabled={!canApply}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              style={[styles.modalActionBtn, styles.modalApplyBtn]}
+            >
+              <Text style={[styles.modalApply, { color: canApply ? colors.accent : colors.mutedText }]}>
+                Apply
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
 function GoalModal({ visible, goalDate, onClose, onApply }) {
   const { colors } = useTheme();
   const [draft, setDraft] = useState(goalDate);
@@ -1038,17 +1089,26 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontFamily: uiFont(600),
   },
-  filterCustom: {
-    // Keep the base filterPill vertical padding so this pill is the SAME height
-    // as All/Unread; only trim the right padding a touch for the input.
-    paddingRight: 10,
+  filterModalHint: {
+    fontSize: 13,
+    fontFamily: uiFont(400),
+    lineHeight: 19,
+    marginBottom: 12,
   },
-  filterInput: {
-    minWidth: 22,
-    padding: 0, // no extra box so the pill height matches the others
-    fontSize: 12,
-    fontFamily: uiFont(600),
-    textAlign: "center",
+  filterModalInputRow: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  filterModalInput: {
+    flex: 1,
+    fontSize: 15,
+    fontFamily: uiFont(400),
+    padding: 0,
+  },
+  filterModalUnit: {
+    fontSize: 15,
+    fontFamily: uiFont(400),
+    marginLeft: 6,
   },
   emptyFilter: {
     textAlign: "center",
