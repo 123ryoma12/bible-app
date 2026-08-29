@@ -518,6 +518,13 @@ function AppContent() {
         onChange={(tab) => {
           if (tab === "bible" && activeTab !== "bible") {
             tabBarScrollToActive.current = true;
+            // Restore the exact scroll position the user was at before leaving
+            // the Bible tab. tabScrollPositions is kept up-to-date by
+            // handleScrollPositionChange on every debounced scroll event, so
+            // this always reflects where the user actually left off.
+            if (activeTabId) {
+              setInitialScrollY(tabScrollPositions.current[activeTabId] ?? 0);
+            }
           }
           setActiveTab(tab);
         }}
