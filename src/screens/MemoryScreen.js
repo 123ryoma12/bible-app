@@ -205,27 +205,69 @@ export default function MemoryScreen() {
   }
 
   return (
-    <SafeAreaView
-      style={[styles.safe, { backgroundColor: colors.background }]}
-      edges={["top", "left", "right"]}
-    >
-      <View style={styles.headerRow}>
-        <Text style={[styles.title, { color: colors.text }]}>Memory</Text>
-        <View style={styles.headerActions}>
-          <TouchableOpacity
-            onPress={() => setShowPriority(true)}
-            hitSlop={hit}
-            accessibilityLabel="Prioritisation settings"
-          >
-            <Ionicons name="settings-outline" size={22} color={colors.mutedText} />
-          </TouchableOpacity>
-          <TouchableOpacity onPress={() => setView("add")} hitSlop={hit}>
-            <Text style={[styles.addLink, { color: colors.accent }]}>+ Add</Text>
-          </TouchableOpacity>
+    <View style={styles.root}>
+      <SafeAreaView
+        style={[styles.safe, { backgroundColor: colors.background }]}
+        edges={["top", "left", "right"]}
+      >
+        <View style={styles.headerRow}>
+          <Text style={[styles.title, { color: colors.text }]}>Memory</Text>
+          <View style={styles.headerActions}>
+            <TouchableOpacity
+              onPress={() => setShowPriority(true)}
+              hitSlop={hit}
+              accessibilityLabel="Prioritisation settings"
+            >
+              <Ionicons name="settings-outline" size={22} color={colors.mutedText} />
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => setView("add")} hitSlop={hit}>
+              <Text style={[styles.addLink, { color: colors.accent }]}>+ Add</Text>
+            </TouchableOpacity>
+          </View>
         </View>
-      </View>
 
-      {/* Prioritisation overlay — plain Views so it works on web too */}
+        {loading ? null : entries.length === 0 ? (
+          <View style={styles.empty}>
+            <Text style={[styles.emptyHeading, { color: colors.text }]}>
+              No memory verses yet
+            </Text>
+            <Text style={[styles.emptySub, { color: colors.secondaryText }]}>
+              Tap "+ Add" to choose a verse or a range of consecutive verses to
+              start memorising.
+            </Text>
+          </View>
+        ) : (
+          <SectionList
+            sections={sections}
+            keyExtractor={(row) => row.entry.id}
+            contentContainerStyle={{ paddingBottom: 24 }}
+            stickySectionHeadersEnabled={false}
+            renderSectionHeader={({ section }) => (
+              <SectionHeader
+                title={section.title}
+                count={section.verseCount != null ? section.verseCount : section.data.length}
+                label={section.verseCount != null ? "verse" : null}
+                colors={colors}
+              />
+            )}
+            renderItem={({ item }) => (
+              <MemoryRow
+                entry={item.entry}
+                colors={colors}
+                onPress={() => {
+                  setDrillList(entries);
+                  setDrillStartIndex(item.flatIndex);
+                  setView("drill");
+                }}
+                onLongPress={() => confirmDelete(item.entry)}
+                onDelete={() => confirmDelete(item.entry)}
+              />
+            )}
+          />
+        )}
+      </SafeAreaView>
+
+      {/* Prioritisation overlay — rendered outside SafeAreaView, covers full screen on web */}
       {showPriority && (
         <TouchableOpacity
           style={styles.modalBackdrop}
@@ -347,64 +389,6 @@ export default function MemoryScreen() {
           </TouchableOpacity>
         </TouchableOpacity>
       )}
-
-      {loading ? null : entries.length === 0 ? (
-        <View style={styles.empty}>
-          <Text style={[styles.emptyHeading, { color: colors.text }]}>
-            No memory verses yet
-          </Text>
-          <Text style={[styles.emptySub, { color: colors.secondaryText }]}>
-            Tap “+ Add” to choose a verse or a range of consecutive verses to
-            start memorising.
-          </Text>
-        </View>
-      ) : (
-        <SectionList
-          sections={sections}
-          keyExtractor={(row) => row.entry.id}
-          contentContainerStyle={{ paddingBottom: 24 }}
-          stickySectionHeadersEnabled={false}
-          renderSectionHeader={({ section }) => (
-            <SectionHeader
-              title={section.title}
-              count={section.verseCount != null ? section.verseCount : section.data.length}
-              label={section.verseCount != null ? "verse" : null}
-              colors={colors}
-            />
-          )}
-          renderItem={({ item }) => (
-            <MemoryRow
-              entry={item.entry}
-              colors={colors}
-              onPress={() => {
-                // Snapshot the current order and start where the user tapped
-                // (using the flat index so the drill can auto-advance through
-                // the rest of the list regardless of section boundaries).
-                setDrillList(entries);
-                setDrillStartIndex(item.flatIndex);
-                setView("drill");
-              }}
-              onLongPress={() => confirmDelete(item.entry)}
-              onDelete={() => confirmDelete(item.entry)}
-            />
-          )}
-        />
-      )}
-    </SafeAreaView>
-  );
-}
-
-function SectionHeader({ title, count, label, colors }) {
-  const countLabel = count != null
-    ? label
-      ? ` (${count} ${label}${count === 1 ? "" : "s"} memorised)`
-      : ` (${count})`
-    : "";
-  return (
-    <View style={[styles.sectionHeader, { backgroundColor: colors.background }]}>
-      <Text style={[styles.sectionHeaderText, { color: colors.secondaryText }]}>
-        {title}{countLabel}
-      </Text>
     </View>
   );
 }
@@ -463,6 +447,7 @@ function formatLastDone(entry) {
 const hit = { top: 10, bottom: 10, left: 10, right: 10 };
 
 const styles = StyleSheet.create({
+  root: { flex: 1 },
   safe: { flex: 1 },
   headerRow: {
     flexDirection: "row",
