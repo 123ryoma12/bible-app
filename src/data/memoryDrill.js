@@ -22,7 +22,8 @@
 // has no alphabetic character (e.g. stray "—") get expected: null and are
 // auto-skipped during checking so they never block progress.
 export function tokenize(text) {
-  const raw = (text || "").split(/\s+/).filter(Boolean);
+  // Split on whitespace OR em/en dashes, keeping the dash itself as a token.
+  const raw = (text || "").split(/(\s+|[—–])/).filter((s) => s && s.trim() !== "");
   return raw.map((word, i) => {
     const match = word.match(/[A-Za-z]/);
     return {
