@@ -12,6 +12,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { uiFont, readingFont } from "../theme/fonts";
 import ChapterView from "../components/ChapterView";
 import ReaderTabBar from "../components/ReaderTabBar";
+import ReaderTopBar from "../components/ReaderTopBar";
 import { getChapter } from "../data/bibleData";
 import { incrementReadCount } from "../data/progressStore";
 import { addToHistory } from "../data/historyStore";
@@ -62,7 +63,12 @@ export default function ReaderScreen({
   // cached value (primed at startup, updated when changed in Settings); the
   // Reader re-reads it on each render, so switching versions then returning here
   // shows the new translation. Unbundled versions fall back to NIV in getChapter.
+  // versionKey is bumped when the user picks a new translation in the top bar,
+  // forcing a re-read of the (synchronously cached) active version.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   const version = getActiveReadingVersion();
+  // Re-derive chapter whenever book, chapter number, or version changes.
+  // versionKey is listed to force re-evaluation after a top-bar version switch.
   const chapter = getChapter(book.id, chapterNumber, version);
   const scrollRef = useRef(null);
 
@@ -70,11 +76,16 @@ export default function ReaderScreen({
   // in sync with the app-level tab bar.
   const [chromeVisible, setChromeVisible] = useState(true);
   const footerAnim = useRef(new Animated.Value(0)).current; // 0 shown, 1 hidden
+  const topBarAnim = useRef(new Animated.Value(0)).current;  // 0 shown, 1 hidden
   const lastOffset = useRef(0);
   // Measured footer height so the scroll content can reserve space for it -
   // this keeps the "Mark as Read" button clear of the footer at the end of
   // the chapter (the footer sits waiting below it, never overlapping).
   const [footerHeight, setFooterHeight] = useState(0);
+  const [topBarHeight, setTopBarHeight] = useState(0);
+  // Bump this to force a re-render (and re-read of getActiveReadingVersion)
+  // when the user picks a new translation from the top bar.
+  const [versionKey, setVersionKey] = useState(0);
 
   // Scroll-position restore/persist. `pendingScrollY` is the offset we still
   // want to jump to once the content has grown tall enough to reach it; it is
@@ -158,13 +169,20 @@ export default function ReaderScreen({
   );
 
   useEffect(() => {
-    Animated.timing(footerAnim, {
-      toValue: chromeVisible ? 0 : 1,
-      // Reveal quickly so the chrome feels responsive; hide a touch slower.
-      duration: chromeVisible ? 120 : 160,
-      useNativeDriver: true,
-    }).start();
-  }, [chromeVisible, footerAnim]);
+    const duration = chromeVisible ? 120 : 160;
+    Animated.parallel([
+      Animated.timing(footerAnim, {
+        toValue: chromeVisible ? 0 : 1,
+        duration,
+        useNativeDriver: true,
+      }),
+      Animated.timing(topBarAnim, {
+        toValue: chromeVisible ? 0 : 1,
+        duration,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }, [chromeVisible, footerAnim, topBarAnim]);
 
   const handleScroll = useCallback(
     (e) => {
@@ -250,8 +268,12 @@ export default function ReaderScreen({
         style={{ flex: 1, opacity: scrollReady ? 1 : 0 }}
         contentContainerStyle={[
           styles.scrollContent,
-          // Reserve room so the last content (Mark as Read) clears the footer.
-          { paddingBottom: 24 + footerHeight },
+          {
+            // Reserve room so the last content (Mark as Read) clears the footer.
+            paddingBottom: 24 + footerHeight,
+            // Push content below the top bar.
+            paddingTop: topBarHeight,
+          },
         ]}
         onScroll={handleScroll}
         scrollEventThrottle={16}
@@ -299,6 +321,17 @@ export default function ReaderScreen({
           </Text>
         </TouchableOpacity>
       </ScrollView>
+
+      {/* Reading appearance + version selector. Slides up out of view while
+          scrolling down, reveals on scroll-up / at top / at bottom — same
+          trigger as the footer so both chrome bars move together. */}
+      <ReaderTopBar
+        barAnim={topBarAnim}
+        barHeight={topBarHeight}
+        onHeightChange={setTopBarHeight}
+        activeVersion={version}
+        onVersionChange={() => setVersionKey((k) => k + 1)}
+      />
 
       {/* Persistent chapter navigator: ‹  [ Book Chapter ]  ›. The center pill
           is a button that returns to book selection; the arrows move between
