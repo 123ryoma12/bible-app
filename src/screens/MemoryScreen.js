@@ -6,8 +6,6 @@ import {
   TouchableOpacity,
   StyleSheet,
   Alert,
-  Modal,
-  Pressable,
   ScrollView,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -227,19 +225,16 @@ export default function MemoryScreen() {
         </View>
       </View>
 
-      {/* Prioritisation modal */}
-      <Modal
-        visible={showPriority}
-        transparent
-        animationType="fade"
-        onRequestClose={() => { setShowPriority(false); setShowAdvanced(false); }}
-      >
-        <Pressable
-          style={[styles.modalBackdrop]}
+      {/* Prioritisation overlay — plain Views so it works on web too */}
+      {showPriority && (
+        <TouchableOpacity
+          style={styles.modalBackdrop}
+          activeOpacity={1}
           onPress={() => { setShowPriority(false); setShowAdvanced(false); }}
         >
-          <Pressable
+          <TouchableOpacity
             style={[styles.modalCard, { backgroundColor: colors.surface }]}
+            activeOpacity={1}
             onPress={() => {}}
           >
             <Text style={[styles.modalTitle, { color: colors.surfaceText }]}>
@@ -349,9 +344,9 @@ export default function MemoryScreen() {
             >
               <Text style={[styles.modalCancelText, { color: colors.accent }]}>Close</Text>
             </TouchableOpacity>
-          </Pressable>
-        </Pressable>
-      </Modal>
+          </TouchableOpacity>
+        </TouchableOpacity>
+      )}
 
       {loading ? null : entries.length === 0 ? (
         <View style={styles.empty}>
@@ -484,13 +479,18 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 16,
   },
-  // Modal
+  // Overlay (web-compatible — no Modal)
   modalBackdrop: {
-    flex: 1,
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
     backgroundColor: "rgba(0,0,0,0.45)",
     alignItems: "center",
     justifyContent: "center",
     padding: 24,
+    zIndex: 100,
   },
   modalCard: {
     width: "100%",
