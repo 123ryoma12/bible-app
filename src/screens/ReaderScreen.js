@@ -8,7 +8,7 @@ import {
   PanResponder,
   Animated,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { uiFont, readingFont } from "../theme/fonts";
 import ChapterView from "../components/ChapterView";
 import ReaderTabBar from "../components/ReaderTabBar";
@@ -59,6 +59,7 @@ export default function ReaderScreen({
   onTabBarScrollToActiveConsumed,
 }) {
   const { colors, readingFontKey } = useTheme();
+  const insets = useSafeAreaInsets();
   // Read in the user's selected translation. The active version is a synchronous
   // cached value (primed at startup, updated when changed in Settings); the
   // Reader re-reads it on each render, so switching versions then returning here
@@ -261,20 +262,21 @@ export default function ReaderScreen({
   return (
     <SafeAreaView
       style={[styles.safe, { backgroundColor: colors.background }]}
-      edges={["top", "left", "right"]}
+      edges={["left", "right"]}
     >
       <ScrollView
         ref={scrollRef}
         style={{ flex: 1, opacity: scrollReady ? 1 : 0 }}
+        contentInsetAdjustmentBehavior="never"
         contentContainerStyle={[
           styles.scrollContent,
           {
-            // When the footer is visible, reserve its full height so "Mark as
-            // Read" is never obscured. When hidden, just leave a small gap so
-            // the last line of text doesn't sit flush at the very bottom edge.
-            paddingBottom: chromeVisible ? footerHeight : 24,
-            // Push content below the top bar.
-            paddingTop: topBarHeight,
+            // Reserve footer height at the bottom so "Mark as Read" is never
+            // obscured when the footer is shown. No padding when hidden so the
+            // content runs fully to the screen edge while reading.
+            paddingBottom: chromeVisible ? footerHeight : 0,
+            // Push content below the top bar (which itself includes insets.top).
+            paddingTop: topBarHeight || insets.top,
           },
         ]}
         onScroll={handleScroll}
@@ -350,6 +352,7 @@ export default function ReaderScreen({
           {
             borderTopColor: colors.border,
             backgroundColor: colors.background,
+            paddingBottom: insets.bottom,
             opacity: footerAnim.interpolate({ inputRange: [0, 1], outputRange: [1, 0] }),
             transform: [
               {

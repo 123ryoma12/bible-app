@@ -9,6 +9,7 @@
 // footer so they always move together.
 
 import React, { useState, useCallback } from "react";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   View,
   Text,
@@ -213,6 +214,7 @@ function VersionMenu({ visible, onClose, onSelect, activeVersion, colors, dropdo
 
 export default function ReaderTopBar({ barAnim, barHeight, onHeightChange, activeVersion, onVersionChange }) {
   const { colors } = useTheme();
+  const insets = useSafeAreaInsets();
   // dropdownTop: position menus just below the bar. barHeight is measured after
   // first layout; fall back to 56 so it doesn't sit at y=0 on first render.
   const dropdownTop = (barHeight || 56) + 4;
@@ -240,6 +242,7 @@ export default function ReaderTopBar({ barAnim, barHeight, onHeightChange, activ
           styles.bar,
           {
             backgroundColor: colors.background,
+            paddingTop: insets.top,
             opacity: barAnim.interpolate({ inputRange: [0, 1], outputRange: [1, 0] }),
             transform: [
               {
