@@ -274,7 +274,7 @@ export default function ReaderScreen({
             // Reserve footer height at the bottom so "Mark as Read" is never
             // obscured when the footer is shown. No padding when hidden so the
             // content runs fully to the screen edge while reading.
-            paddingBottom: chromeVisible ? footerHeight : 0,
+            paddingBottom: footerHeight + 16,
             // Push content below the top bar (which itself includes insets.top).
             paddingTop: topBarHeight || insets.top,
           },
@@ -467,7 +467,7 @@ const styles = StyleSheet.create({
     marginTop: 14,
   },
   markReadBtn: {
-    marginTop: 24,
+    marginTop: 12,
     marginHorizontal: 24,
     paddingVertical: 15,
     borderRadius: 10,
