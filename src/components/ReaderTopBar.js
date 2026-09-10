@@ -253,6 +253,9 @@ export default function ReaderTopBar({ barAnim, barHeight, onHeightChange, activ
           },
         ]}
       >
+        {/* Spacer pushes both controls to the right */}
+        <View style={{ flex: 1 }} />
+
         {/* ··· Appearance button */}
         <TouchableOpacity
           style={styles.dotsBtn}
@@ -265,9 +268,6 @@ export default function ReaderTopBar({ barAnim, barHeight, onHeightChange, activ
         >
           <Text style={[styles.dotsBtnText, { color: colors.text }]}>{"···"}</Text>
         </TouchableOpacity>
-
-        {/* Spacer */}
-        <View style={{ flex: 1 }} />
 
         {/* Version pill */}
         <TouchableOpacity
