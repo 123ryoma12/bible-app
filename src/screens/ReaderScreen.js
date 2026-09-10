@@ -269,8 +269,10 @@ export default function ReaderScreen({
         contentContainerStyle={[
           styles.scrollContent,
           {
-            // Reserve room so the last content (Mark as Read) clears the footer.
-            paddingBottom: 24 + footerHeight,
+            // When the footer is visible, reserve its full height so "Mark as
+            // Read" is never obscured. When hidden, just leave a small gap so
+            // the last line of text doesn't sit flush at the very bottom edge.
+            paddingBottom: chromeVisible ? footerHeight : 24,
             // Push content below the top bar.
             paddingTop: topBarHeight,
           },
@@ -437,9 +439,7 @@ export default function ReaderScreen({
 
 const styles = StyleSheet.create({
   safe: { flex: 1 },
-  scrollContent: {
-    paddingBottom: 24,
-  },
+  scrollContent: {},
   chapterHeading: {
     alignItems: "center",
     paddingTop: 28,
