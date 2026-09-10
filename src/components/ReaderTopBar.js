@@ -239,8 +239,7 @@ export default function ReaderTopBar({ barAnim, barHeight, onHeightChange, activ
         style={[
           styles.bar,
           {
-            borderBottomColor: colors.border,
-            backgroundColor: colors.background,
+            backgroundColor: "transparent",
             opacity: barAnim.interpolate({ inputRange: [0, 1], outputRange: [1, 0] }),
             transform: [
               {
@@ -314,7 +313,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     paddingHorizontal: 14,
     paddingBottom: 8,
-    borderBottomWidth: StyleSheet.hairlineWidth,
     zIndex: 10,
   },
 
