@@ -239,7 +239,7 @@ export default function ReaderTopBar({ barAnim, barHeight, onHeightChange, activ
         style={[
           styles.bar,
           {
-            backgroundColor: "transparent",
+            backgroundColor: colors.background,
             opacity: barAnim.interpolate({ inputRange: [0, 1], outputRange: [1, 0] }),
             transform: [
               {
