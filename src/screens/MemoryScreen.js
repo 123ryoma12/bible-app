@@ -9,7 +9,6 @@ import {
   ScrollView,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { Ionicons } from "@expo/vector-icons";
 import { useTheme } from "../theme/ThemeContext";
 import { uiFont } from "../theme/fonts";
 import { useScreenBackHandler } from "../navigation/BackHandlerRegistry";
@@ -217,8 +216,9 @@ export default function MemoryScreen() {
               onPress={() => setShowPriority(true)}
               hitSlop={hit}
               accessibilityLabel="Prioritisation settings"
+              style={styles.cogBtn}
             >
-              <Ionicons name="settings-outline" size={22} color={colors.mutedText} />
+              <Text style={[styles.cogBtnText, { color: colors.mutedText }]}>⚙</Text>
             </TouchableOpacity>
             <TouchableOpacity onPress={() => setView("add")} hitSlop={hit}>
               <Text style={[styles.addLink, { color: colors.accent }]}>+ Add</Text>
@@ -459,6 +459,8 @@ const styles = StyleSheet.create({
   },
   title: { fontSize: 28, fontFamily: uiFont(700) },
   addLink: { fontSize: 16, fontFamily: uiFont(600) },
+  cogBtn: { justifyContent: "center", alignItems: "center" },
+  cogBtnText: { fontSize: 22, lineHeight: 26 },
   headerActions: {
     flexDirection: "row",
     alignItems: "center",
