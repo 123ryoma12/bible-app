@@ -340,6 +340,7 @@ function normaliseSermon(raw) {
     passage,
     // A hint only; playback re-checks by parsing the page (header note 5).
     hasAudio: Array.isArray(raw.format) ? raw.format.includes(AUDIO_FORMAT_TERM_ID) : true,
+    source: "gospel-in-life",
   };
 }
 

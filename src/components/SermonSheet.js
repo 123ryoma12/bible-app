@@ -33,6 +33,7 @@ import { useTheme } from "../theme/ThemeContext";
 import {
   fetchSermonsForChapter,
   fetchMoreBookSermons,
+  clearSermonCache,
   isAbortError,
   ErrorKind,
   BOOK_PAGE_SIZE,
@@ -42,8 +43,6 @@ import {
   useSermonSources,
   toggleSource,
   toggleCongregation,
-  GOSPEL_IN_LIFE_SOURCE_ID,
-  CORNERSTONE_SOURCE_ID,
 } from "../data/sermonSourcesStore";
 import {
   useSermonDownloads,
@@ -118,9 +117,19 @@ export default function SermonSheet({
   const abortRef = useRef(null);
   const bookName = book?.name;
 
+  // Stable string keys for source selection — React compares these as effect
+  // dependencies, so any change triggers a re-fetch automatically.
+  const enabledSourcesKey = sources.enabledSources.slice().sort().join(",");
+  const congregationsKey = sources.cornerstoneCongregations.slice().sort().join(",");
+
+  // Refs updated synchronously on every render so the async load closure
+  // always reads the latest values without being in the dependency array.
+  const enabledSourcesRef = useRef(sources.enabledSources);
+  const congregationsRef = useRef(sources.cornerstoneCongregations);
+  enabledSourcesRef.current = sources.enabledSources;
+  congregationsRef.current = sources.cornerstoneCongregations;
+
   const load = useCallback(async () => {
-    // Supersede any previous attempt so a slow first request can't overwrite
-    // the results of a retry.
     abortRef.current?.abort();
     const controller = new AbortController();
     abortRef.current = controller;
@@ -128,9 +137,15 @@ export default function SermonSheet({
     setStatus("loading");
     setFailureKind(null);
 
+    // Read prefs synchronously from the ref — always current, never stale.
+    const enabledSources = enabledSourcesRef.current.slice();
+    const cornerstoneCongregations = congregationsRef.current.slice();
+
     try {
       const result = await fetchSermonsForChapter(bookName, chapterNumber, {
         signal: controller.signal,
+        enabledSources,
+        cornerstoneCongregations,
       });
       if (controller.signal.aborted) return;
 
@@ -138,42 +153,29 @@ export default function SermonSheet({
       setBookSermons(result.bookSermons);
       setBookTotal(result.bookTotal);
       setBookTotalPages(result.bookTotalPages);
-      setPage(1);
+      setPage(result.page ?? 1);
       setStatus("ready");
     } catch (err) {
-      // A cancellation is not a failure — the sheet is already closing.
       if (isAbortError(err) || controller.signal.aborted) return;
       setFailureKind(err?.kind ?? ErrorKind.UNKNOWN);
       setStatus("failed");
     }
-  }, [bookName, chapterNumber]);
+  }, [bookName, chapterNumber, enabledSourcesKey, congregationsKey]);
 
-  // Fetch on open, not on chapter change, so simply reading never touches the
-  // network. Aborts on close.
+  const prevSourceKeyRef = useRef(null);
   useEffect(() => {
     if (!visible || !bookName) return undefined;
+
+    const sourceKey = enabledSourcesKey + "|" + congregationsKey;
+    if (prevSourceKeyRef.current !== null && prevSourceKeyRef.current !== sourceKey) {
+      // Source selection changed — invalidate cache so the fetch uses the new config.
+      clearSermonCache();
+    }
+    prevSourceKeyRef.current = sourceKey;
+
     load();
     return () => abortRef.current?.abort();
-  }, [visible, bookName, chapterNumber, load]);
-
-  // Re-fetch when the user changes sources while the sheet is open, so the
-  // browse view immediately reflects the new selection. Sources view changes
-  // don't trigger a fetch themselves — the reload fires when `enabledSources`
-  // or `cornerstoneCongregations` changes, regardless of current view.
-  const enabledSourcesKey = sources.enabledSources.slice().sort().join(",");
-  const congregationsKey = sources.cornerstoneCongregations.slice().sort().join(",");
-  const prevSourcesKey = useRef(null);
-  useEffect(() => {
-    const key = enabledSourcesKey + "|" + congregationsKey;
-    if (prevSourcesKey.current === null) {
-      prevSourcesKey.current = key;
-      return;
-    }
-    if (prevSourcesKey.current !== key) {
-      prevSourcesKey.current = key;
-      if (visible && bookName) load();
-    }
-  }, [enabledSourcesKey, congregationsKey, visible, bookName, load]);
+  }, [visible, bookName, chapterNumber, enabledSourcesKey, congregationsKey, load]);
 
   // Every open starts on the chapter you're reading. Leaving the sheet parked
   // on Downloads would bury the reason it was opened.
@@ -577,9 +579,8 @@ function SourcesPicker({
   onToggleSource,
   onToggleCongregation,
 }) {
-  const csEnabled = sources.enabledSources.includes(CORNERSTONE_SOURCE_ID);
-  const gilEnabled = sources.enabledSources.includes(GOSPEL_IN_LIFE_SOURCE_ID);
-  const onlyOneLeft = sources.enabledSources.length === 1;
+  const csEnabled = sources.enabledSources.includes("cornerstone");
+  const gilEnabled = sources.enabledSources.includes("gospel-in-life");
 
   return (
     <FlatList
@@ -592,12 +593,11 @@ function SourcesPicker({
           <View style={[styles.sourceSection, { borderBottomColor: colors.border }]}>
             <TouchableOpacity
               style={styles.sourceRow}
-              onPress={() => onToggleSource(GOSPEL_IN_LIFE_SOURCE_ID)}
+              onPress={() => onToggleSource("gospel-in-life")}
               activeOpacity={0.7}
               accessibilityRole="switch"
               accessibilityState={{ checked: gilEnabled }}
               accessibilityLabel="Gospel in Life sermons"
-              disabled={gilEnabled && onlyOneLeft}
             >
               <View style={{ flex: 1 }}>
                 <Text style={[styles.sourceLabel, { color: colors.text }]}>
@@ -615,12 +615,11 @@ function SourcesPicker({
           <View style={[styles.sourceSection, { borderBottomColor: colors.border }]}>
             <TouchableOpacity
               style={styles.sourceRow}
-              onPress={() => onToggleSource(CORNERSTONE_SOURCE_ID)}
+              onPress={() => onToggleSource("cornerstone")}
               activeOpacity={0.7}
               accessibilityRole="switch"
               accessibilityState={{ checked: csEnabled }}
               accessibilityLabel="Cornerstone Church sermons"
-              disabled={csEnabled && onlyOneLeft}
             >
               <View style={{ flex: 1 }}>
                 <Text style={[styles.sourceLabel, { color: colors.text }]}>
@@ -641,8 +640,6 @@ function SourcesPicker({
                 </Text>
                 {CONGREGATIONS.map((cong) => {
                   const on = sources.cornerstoneCongregations.includes(cong.id);
-                  const onlyOneCongLeft =
-                    csEnabled && sources.cornerstoneCongregations.length === 1 && on;
                   return (
                     <TouchableOpacity
                       key={cong.id}
@@ -652,7 +649,6 @@ function SourcesPicker({
                       accessibilityRole="switch"
                       accessibilityState={{ checked: on }}
                       accessibilityLabel={cong.label}
-                      disabled={onlyOneCongLeft}
                     >
                       <Text
                         style={[
@@ -813,6 +809,12 @@ function SermonRow({
   progress,
   onDownloadAction,
 }) {
+  const congregationLabel = sermon.congregationId
+    ? (CONGREGATIONS.find(c => c.id === sermon.congregationId)?.label ?? sermon.congregationId)
+    : null;
+  const sourceLabel = sermon.source === "cornerstone"
+    ? `Cornerstone${congregationLabel ? ` ${congregationLabel}` : ""}`
+    : "Gospel in Life";
   const meta = [sermon.speaker, sermon.year].filter(Boolean).join(" · ");
   // The passage is the most useful thing to scan for, so it leads the subtitle
   // and is tinted to stand apart from the speaker and year.
@@ -840,17 +842,17 @@ function SermonRow({
         >
           {sermon.title}
         </Text>
-        {(!!sermon.passage || !!meta) && (
-          <Text style={[styles.rowMeta, { color: colors.mutedText }]} numberOfLines={1}>
-            {!!sermon.passage && (
-              <Text style={[styles.rowPassage, { color: colors.accent }]}>
-                {sermon.passage}
-              </Text>
-            )}
-            {!!sermon.passage && !!meta ? "  ·  " : ""}
-            {meta}
-          </Text>
-        )}
+        <Text style={[styles.rowMeta, { color: colors.mutedText }]} numberOfLines={1}>
+          {!!sermon.passage && (
+            <Text style={[styles.rowPassage, { color: colors.accent }]}>
+              {sermon.passage}
+            </Text>
+          )}
+          {!!sermon.passage && !!meta ? "  ·  " : ""}
+          {meta}
+          {(!!sermon.passage || !!meta) ? "  ·  " : ""}
+          <Text style={styles.rowSource}>{sourceLabel}</Text>
+        </Text>
       </View>
 
       {DOWNLOADS_SUPPORTED && (
@@ -987,6 +989,11 @@ const styles = StyleSheet.create({
   },
   rowPassage: {
     fontFamily: uiFont(600),
+  },
+  rowSource: {
+    fontFamily: uiFont(400),
+    fontSize: 11,
+    opacity: 0.6,
   },
   rowAction: {
     width: 34,

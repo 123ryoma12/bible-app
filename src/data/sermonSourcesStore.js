@@ -132,14 +132,9 @@ export async function toggleSource(sourceId) {
   await ensureLoaded();
   const current = snapshot.enabledSources;
   const isOn = current.includes(sourceId);
-
-  // Don't allow disabling the last source.
-  if (isOn && current.length === 1) return;
-
   const next = isOn
     ? current.filter((id) => id !== sourceId)
     : [...current, sourceId];
-
   publish({ enabledSources: next });
   await persist();
 }
@@ -152,13 +147,9 @@ export async function toggleCongregation(congregationId) {
   await ensureLoaded();
   const current = snapshot.cornerstoneCongregations;
   const isOn = current.includes(congregationId);
-
-  if (isOn && current.length === 1) return;
-
   const next = isOn
     ? current.filter((id) => id !== congregationId)
     : [...current, congregationId];
-
   publish({ cornerstoneCongregations: next });
   await persist();
 }

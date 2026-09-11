@@ -39,6 +39,42 @@ export {
   CORNERSTONE_SOURCE_ID,
 } from "./sermonSourcesStore";
 
+// ── Session cache ─────────────────────────────────────────────────────────────
+//
+// Keyed by `${bookName}|${enabledSources}|${congregations}` so results are
+// automatically invalidated when the user changes their source selection.
+// The cache lives only in memory — it is cleared when the app is restarted,
+// matching the "fresh on each session" expectation.
+//
+// "Load more" pages are appended into the cached entry so infinite scroll also
+// benefits from the cache.
+
+const sessionCache = new Map();
+
+function cacheKey(bookName, enabledSources, cornerstoneCongregations) {
+  const sources = [...enabledSources].sort().join(",");
+  // Only include congregations in the key when Cornerstone is actually enabled —
+  // otherwise the same "CS off" result would be keyed differently depending on
+  // which congregations happen to be selected, causing spurious cache misses.
+  const csOn = enabledSources.includes("cornerstone");
+  const congs = csOn ? [...cornerstoneCongregations].sort().join(",") : "";
+  return `${bookName}|${sources}|${congs}`;
+}
+
+export function clearSermonCache() {
+  sessionCache.clear();
+}
+
+/** Append a new page of book sermons into the cached entry (for load-more). */
+export function appendCachedBookSermons(bookName, enabledSources, cornerstoneCongregations, newSermons) {
+  const key = cacheKey(bookName, enabledSources, cornerstoneCongregations);
+  const entry = sessionCache.get(key);
+  if (!entry) return;
+  const seen = new Set(entry.bookSermons.map((s) => s.id));
+  entry.bookSermons = [...entry.bookSermons, ...newSermons.filter((s) => !seen.has(s.id))];
+  entry.page = (entry.page ?? 1) + 1;
+}
+
 export {
   SOURCE_NAME as GIL_SOURCE_NAME,
   SOURCE_URL as GIL_SOURCE_URL,
@@ -122,11 +158,40 @@ function cornerstoneSermonMatchesChapter(sermon, chapterNumber) {
  *     bookTotalPages: number,     // pages remaining for GiL infinite scroll
  *   }
  */
-export async function fetchSermonsForChapter(bookName, chapterNumber, { signal } = {}) {
-  const { enabledSources, cornerstoneCongregations } = await getEnabledPrefs();
+export async function fetchSermonsForChapter(bookName, chapterNumber, { signal, enabledSources: forcedSources, cornerstoneCongregations: forcedCongs } = {}) {
+  let { enabledSources, cornerstoneCongregations } = forcedSources
+    ? { enabledSources: forcedSources, cornerstoneCongregations: forcedCongs ?? [] }
+    : await getEnabledPrefs();
+
+  // When Cornerstone is disabled, treat congregations as empty so the cache
+  // key is stable regardless of which congregations happen to be selected.
+  const csEnabled = enabledSources.includes("cornerstone");
+  if (!csEnabled) cornerstoneCongregations = [];
+
+  console.log("[combinedSermonApi] fetchSermonsForChapter", { bookName, chapterNumber, enabledSources, cornerstoneCongregations: cornerstoneCongregations.length });
+  const key = cacheKey(bookName, enabledSources, cornerstoneCongregations);
+  const cached = sessionCache.get(key);
+  console.log("[combinedSermonApi] cache", cached ? "HIT" : "MISS", key);
+  if (cached) {
+    // Re-derive chapter sermons from the cached book list so changing chapters
+    // within the same book is instant without re-fetching.
+    const csChapterSermons = cached.csSermons.filter((s) =>
+      cornerstoneSermonMatchesChapter(s, chapterNumber)
+    );
+    const chapterSermons = dedupeById([
+      ...cached.gilChapterSermons,
+      ...csChapterSermons,
+    ]);
+    return {
+      chapterSermons,
+      bookSermons: cached.bookSermons,
+      bookTotal: cached.bookTotal,
+      bookTotalPages: cached.bookTotalPages,
+      page: cached.page ?? 1,
+    };
+  }
 
   const gilEnabled = enabledSources.includes("gospel-in-life");
-  const csEnabled = enabledSources.includes("cornerstone");
 
   // Run enabled sources in parallel.
   const [gilResult, csResult] = await Promise.all([
@@ -163,7 +228,18 @@ export async function fetchSermonsForChapter(bookName, chapterNumber, { signal }
   // Page count is purely GiL's — CS always delivers everything upfront.
   const bookTotalPages = gilResult.bookTotalPages;
 
-  return { chapterSermons, bookSermons, bookTotal, bookTotalPages };
+  // Store in session cache. We keep the raw GiL chapter sermons and CS book
+  // sermons separately so chapter re-derivation on cache hits is accurate.
+  sessionCache.set(key, {
+    gilChapterSermons: gilResult.chapterSermons,
+    csSermons: csResult.sermons,
+    bookSermons,
+    bookTotal,
+    bookTotalPages,
+    page: 1,
+  });
+
+  return { chapterSermons, bookSermons, bookTotal, bookTotalPages, page: 1 };
 }
 
 /**
@@ -174,7 +250,11 @@ export async function fetchSermonsForChapter(bookName, chapterNumber, { signal }
  * list, which already contains the CS results, so there's no duplication risk.
  */
 export async function fetchMoreBookSermons(bookName, page, { signal } = {}) {
-  return gilFetchMore(bookName, page, { signal });
+  const { enabledSources, cornerstoneCongregations } = await getEnabledPrefs();
+  const result = await gilFetchMore(bookName, page, { signal });
+  // Append into cache so re-opens get the full accumulated list.
+  appendCachedBookSermons(bookName, enabledSources, cornerstoneCongregations, result.sermons);
+  return result;
 }
 
 // ── Audio URL dispatch ────────────────────────────────────────────────────────
