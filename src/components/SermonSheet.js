@@ -838,19 +838,17 @@ function SermonRow({
       <View style={{ flex: 1 }}>
         <Text
           style={[styles.rowTitle, { color: isActive ? colors.accent : colors.text }]}
-          numberOfLines={2}
         >
           {sermon.title}
         </Text>
-        <Text style={[styles.rowMeta, { color: colors.mutedText }]} numberOfLines={1}>
-          {!!sermon.passage && (
-            <Text style={[styles.rowPassage, { color: colors.accent }]}>
-              {sermon.passage}
-            </Text>
-          )}
-          {!!sermon.passage && !!meta ? "  ·  " : ""}
+        {!!sermon.passage && (
+          <Text style={[styles.rowPassage, { color: colors.accent }]}>
+            {sermon.passage}
+          </Text>
+        )}
+        <Text style={[styles.rowMeta, { color: colors.mutedText }]}>
           {meta}
-          {(!!sermon.passage || !!meta) ? "  ·  " : ""}
+          {!!meta ? "  ·  " : ""}
           <Text style={styles.rowSource}>{sourceLabel}</Text>
         </Text>
       </View>
