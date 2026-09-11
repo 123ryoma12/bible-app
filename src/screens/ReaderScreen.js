@@ -62,6 +62,11 @@ export default function ReaderScreen({
   // Sermon playback is owned by App.js so it outlives this screen's remounts.
   onPlaySermon,
   activeSermonId,
+  // Height of the app-level bottom chrome (sermon player + tab bar) that this
+  // screen now draws behind. The reader's own footer stacks directly on top of
+  // it, and the scroll content reserves both so the end of a chapter still
+  // comes to rest clear of everything.
+  bottomChromeHeight = 0,
 }) {
   const { colors, readingFontKey } = useTheme();
   const insets = useSafeAreaInsets();
@@ -290,10 +295,12 @@ export default function ReaderScreen({
         contentContainerStyle={[
           styles.scrollContent,
           {
-            // Reserve footer height at the bottom so "Mark as Read" is never
-            // obscured when the footer is shown. No padding when hidden so the
-            // content runs fully to the screen edge while reading.
-            paddingBottom: footerHeight + 16,
+            // Reserve the full chrome stack — the reader's footer plus the
+            // app's player / tab bar it sits on — so scrolling to the end of a
+            // chapter leaves "Mark as Read" clear of all of it. The chrome
+            // overlays the text on the way down, which is fine; this only has
+            // to guarantee somewhere to land at the bottom.
+            paddingBottom: footerHeight + bottomChromeHeight + 16,
             // Push content below the top bar (which itself includes insets.top).
             paddingTop: topBarHeight || insets.top,
           },
@@ -386,16 +393,19 @@ export default function ReaderScreen({
           {
             borderTopColor: colors.border,
             backgroundColor: colors.background,
-            // No bottom inset here. This footer is pinned to the bottom of the
-            // reader, not of the screen — BottomTabBar always sits underneath it
-            // and already clears the gesture pill / home indicator. Padding for
-            // it again left a band of dead background under the chapter pill.
+            // No bottom inset here. This footer rests directly on the app's
+            // bottom chrome, which already clears the gesture pill / home
+            // indicator. Padding for it again left a band of dead background
+            // under the chapter pill.
+            bottom: bottomChromeHeight,
             opacity: footerAnim.interpolate({ inputRange: [0, 1], outputRange: [1, 0] }),
             transform: [
               {
+                // Travel past the chrome below it as well, so the footer clears
+                // the screen entirely rather than parking over the tab bar.
                 translateY: footerAnim.interpolate({
                   inputRange: [0, 1],
-                  outputRange: [0, footerHeight || 80],
+                  outputRange: [0, (footerHeight || 80) + bottomChromeHeight],
                 }),
               },
             ],

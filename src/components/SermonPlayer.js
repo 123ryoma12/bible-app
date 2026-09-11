@@ -23,6 +23,7 @@ import {
   Linking,
   Platform,
   PermissionsAndroid,
+  Animated,
 } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useAudioPlayer, useAudioPlayerStatus, setAudioModeAsync } from "expo-audio";
@@ -86,7 +87,15 @@ function formatTime(seconds) {
   return `${mins}:${String(secs).padStart(2, "0")}`;
 }
 
-export default function SermonPlayer({ sermon, onClose }) {
+export default function SermonPlayer({
+  sermon,
+  onClose,
+  visible = true,
+  // How far to slide down when hiding. Defaults to the bar's own height, but
+  // callers that stack something below it (the tab bar) pass the full distance
+  // needed to clear the screen.
+  hideDistance,
+}) {
   const { colors } = useTheme();
 
   const [audioUrl, setAudioUrl] = useState(null);
@@ -95,8 +104,24 @@ export default function SermonPlayer({ sermon, onClose }) {
   const [failure, setFailure] = useState(null);
   const [speedIndex, setSpeedIndex] = useState(0);
   const [barWidth, setBarWidth] = useState(0);
+  // Measured full height of the bar so it can slide exactly off-screen when the
+  // reader hides its chrome. Only the view is hidden — playback continues.
+  const [playerHeight, setPlayerHeight] = useState(0);
 
   const abortRef = useRef(null);
+
+  // 0 = fully shown, 1 = fully hidden. Driven by `visible`, which the reader
+  // flips as you scroll, so the player tucks away with the rest of the chrome.
+  const chromeAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    Animated.timing(chromeAnim, {
+      toValue: visible ? 0 : 1,
+      // Match BottomTabBar: reveal quickly, hide a touch slower.
+      duration: visible ? 120 : 160,
+      useNativeDriver: true, // sliding + fading only, keeps layout stable
+    }).start();
+  }, [visible, chromeAnim]);
 
   // Created once with no source; each sermon is swapped in via replace().
   const player = useAudioPlayer(null, { updateInterval: 500 });
@@ -302,14 +327,38 @@ export default function SermonPlayer({ sermon, onClose }) {
   const progress = duration > 0 ? Math.min(currentTime / duration, 1) : 0;
   const busy = resolving || (!!audioUrl && !status?.isLoaded) || !!status?.isBuffering;
   const playbackError = !!status?.error;
+  // Fall back to the bar's own height until the caller has measured the stack.
+  const slideDistance = hideDistance > 0 ? hideDistance : playerHeight;
 
   return (
-    <View
+    <Animated.View
+      onLayout={(e) => {
+        const h = e.nativeEvent.layout.height;
+        if (h > 0 && Math.abs(h - playerHeight) > 0.5) setPlayerHeight(h);
+      }}
+      pointerEvents={visible ? "auto" : "none"}
       style={[
         styles.container,
         {
           backgroundColor: colors.surface,
           borderTopColor: colors.border,
+          // Slide clear off the bottom of the screen (never resize the layout,
+          // so the reader behind it doesn't jump) and fade out.
+          transform: [
+            {
+              translateY:
+                slideDistance > 0
+                  ? chromeAnim.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [0, slideDistance],
+                    })
+                  : 0,
+            },
+          ],
+          opacity: chromeAnim.interpolate({
+            inputRange: [0, 1],
+            outputRange: [1, 0],
+          }),
         },
       ]}
     >
@@ -432,7 +481,7 @@ export default function SermonPlayer({ sermon, onClose }) {
           <MaterialCommunityIcons name="close" size={20} color={colors.mutedText} />
         </TouchableOpacity>
       </View>
-    </View>
+    </Animated.View>
   );
 }
 

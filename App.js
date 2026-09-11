@@ -152,6 +152,11 @@ function AppContent() {
   // The sermon currently loaded into the player, or null when nothing is
   // playing. Held at this level so audio survives chapter and tab changes.
   const [activeSermon, setActiveSermon] = useState(null);
+  // Measured height of the bottom chrome stack (sermon player + tab bar). The
+  // stack is an absolute overlay rather than a column sibling, so that hiding
+  // it doesn't leave an empty band of background behind. Screens that shouldn't
+  // scroll underneath it reserve this much padding instead.
+  const [bottomChromeHeight, setBottomChromeHeight] = useState(0);
 
   // ── Reader tabs ────────────────────────────────────────────────────────────
   // Each tab: { id: string, bookId: string, chapterNumber: number }
@@ -465,11 +470,17 @@ function AppContent() {
     );
   }
 
+  const isReader = activeTab === "bible" && screen === "reader";
+
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <StatusBar style={mode === "dark" ? "light" : "dark"} />
 
-      <View style={{ flex: 1 }}>
+      {/* Only the reader runs full-bleed under the bottom chrome — it reserves
+          the space itself in its scroll content, so there is no dead band left
+          behind when the chrome slides away. Every other screen keeps the
+          chrome's footprint reserved here. */}
+      <View style={{ flex: 1, paddingBottom: isReader ? 0 : bottomChromeHeight }}>
         {activeTab === "bible" && (screen === "books" || screen === "picker") && (
           <BookChapterPicker
             currentBookId={screen === "picker" ? book.id : null}
@@ -527,6 +538,9 @@ function AppContent() {
             onTabBarScrollToActiveConsumed={() => { tabBarScrollToActive.current = false; }}
             onPlaySermon={setActiveSermon}
             activeSermonId={activeSermon?.id}
+            // The reader draws behind the bottom chrome, so it needs the height
+            // to sit its own footer above it and to pad the end of the chapter.
+            bottomChromeHeight={bottomChromeHeight}
           />
         )}
 
@@ -539,30 +553,52 @@ function AppContent() {
         {activeTab === "settings" && <SettingsScreen />}
       </View>
 
-      {/* Sermon playback lives here, above the tab bar, so it keeps playing
-          while you turn chapters or move between tabs. ReaderScreen is keyed on
-          the chapter and would tear the player down on every page turn. */}
-      {activeSermon && (
-        <SermonPlayer sermon={activeSermon} onClose={() => setActiveSermon(null)} />
-      )}
-
-      <BottomTabBar
-        active={activeTab}
-        onChange={(tab) => {
-          if (tab === "bible" && activeTab !== "bible") {
-            tabBarScrollToActive.current = true;
-            // Restore the exact scroll position the user was at before leaving
-            // the Bible tab. tabScrollPositions is kept up-to-date by
-            // handleScrollPositionChange on every debounced scroll event, so
-            // this always reflects where the user actually left off.
-            if (activeTabId) {
-              setInitialScrollY(tabScrollPositions.current[activeTabId] ?? 0);
-            }
-          }
-          setActiveTab(tab);
+      {/* Bottom chrome stack: sermon player above the tab bar. Absolutely
+          positioned so the reader can run full-bleed behind it — as a column
+          sibling its slot stayed reserved (and empty) once the bars slid away,
+          leaving a permanent band of background across the bottom. */}
+      <View
+        style={styles.bottomChrome}
+        pointerEvents="box-none"
+        onLayout={(e) => {
+          const h = e.nativeEvent.layout.height;
+          if (h > 0 && Math.abs(h - bottomChromeHeight) > 0.5) setBottomChromeHeight(h);
         }}
-        visible={chromeVisible}
-      />
+      >
+        {/* Sermon playback lives here, above the tab bar, so it keeps playing
+            while you turn chapters or move between tabs. ReaderScreen is keyed
+            on the chapter and would tear the player down on every page turn. */}
+        {activeSermon && (
+          <SermonPlayer
+            sermon={activeSermon}
+            onClose={() => setActiveSermon(null)}
+            // Tucks away with the rest of the chrome while scrolling down. The
+            // component only hides its view — playback is unaffected.
+            visible={chromeVisible}
+            // Clear the tab bar below it as well, or the player would stall
+            // over the tab bar's vacated space instead of leaving the screen.
+            hideDistance={bottomChromeHeight}
+          />
+        )}
+
+        <BottomTabBar
+          active={activeTab}
+          onChange={(tab) => {
+            if (tab === "bible" && activeTab !== "bible") {
+              tabBarScrollToActive.current = true;
+              // Restore the exact scroll position the user was at before
+              // leaving the Bible tab. tabScrollPositions is kept up-to-date by
+              // handleScrollPositionChange on every debounced scroll event, so
+              // this always reflects where the user actually left off.
+              if (activeTabId) {
+                setInitialScrollY(tabScrollPositions.current[activeTabId] ?? 0);
+              }
+            }
+            setActiveTab(tab);
+          }}
+          visible={chromeVisible}
+        />
+      </View>
     </View>
   );
 }
@@ -574,5 +610,11 @@ const styles = StyleSheet.create({
   center: {
     alignItems: "center",
     justifyContent: "center",
+  },
+  bottomChrome: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: 0,
   },
 });
