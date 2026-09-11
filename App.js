@@ -10,6 +10,7 @@ import StatsScreen from "./src/screens/StatsScreen";
 import MemoryScreen from "./src/screens/MemoryScreen";
 import SettingsScreen from "./src/screens/SettingsScreen";
 import BottomTabBar from "./src/components/BottomTabBar";
+import SermonPlayer from "./src/components/SermonPlayer";
 import * as SplashScreen from "expo-splash-screen";
 import { useFonts } from "@expo-google-fonts/lora/useFonts";
 import { Lora_400Regular } from "@expo-google-fonts/lora/400Regular";
@@ -146,6 +147,9 @@ function AppContent() {
   // immersive reading experience while scrolling down; everything else keeps
   // it visible.
   const [chromeVisible, setChromeVisible] = useState(true);
+  // The sermon currently loaded into the player, or null when nothing is
+  // playing. Held at this level so audio survives chapter and tab changes.
+  const [activeSermon, setActiveSermon] = useState(null);
 
   // ── Reader tabs ────────────────────────────────────────────────────────────
   // Each tab: { id: string, bookId: string, chapterNumber: number }
@@ -501,6 +505,8 @@ function AppContent() {
             onTabBarScrollX={(x) => { tabBarScrollX.current = x; }}
             tabBarScrollToActive={tabBarScrollToActive.current}
             onTabBarScrollToActiveConsumed={() => { tabBarScrollToActive.current = false; }}
+            onPlaySermon={setActiveSermon}
+            activeSermonId={activeSermon?.id}
           />
         )}
 
@@ -512,6 +518,13 @@ function AppContent() {
 
         {activeTab === "settings" && <SettingsScreen />}
       </View>
+
+      {/* Sermon playback lives here, above the tab bar, so it keeps playing
+          while you turn chapters or move between tabs. ReaderScreen is keyed on
+          the chapter and would tear the player down on every page turn. */}
+      {activeSermon && (
+        <SermonPlayer sermon={activeSermon} onClose={() => setActiveSermon(null)} />
+      )}
 
       <BottomTabBar
         active={activeTab}

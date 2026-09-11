@@ -13,6 +13,7 @@ import { uiFont, readingFont } from "../theme/fonts";
 import ChapterView from "../components/ChapterView";
 import ReaderTabBar from "../components/ReaderTabBar";
 import ReaderTopBar from "../components/ReaderTopBar";
+import SermonSheet from "../components/SermonSheet";
 import { getChapter } from "../data/bibleData";
 import { incrementReadCount } from "../data/progressStore";
 import { addToHistory } from "../data/historyStore";
@@ -57,6 +58,9 @@ export default function ReaderScreen({
   // (used when returning from Stats/Memory/Settings). Consumed after use.
   tabBarScrollToActive = false,
   onTabBarScrollToActiveConsumed,
+  // Sermon playback is owned by App.js so it outlives this screen's remounts.
+  onPlaySermon,
+  activeSermonId,
 }) {
   const { colors, readingFontKey } = useTheme();
   const insets = useSafeAreaInsets();
@@ -87,6 +91,20 @@ export default function ReaderScreen({
   // Bump this to force a re-render (and re-read of getActiveReadingVersion)
   // when the user picks a new translation from the top bar.
   const [versionKey, setVersionKey] = useState(0);
+
+  // Sermon sheet visibility. Transient by design: this screen is remounted on
+  // every chapter change (see the `key` in App.js), so the sheet closes when
+  // you move on. Playback deliberately does NOT live here for that same
+  // reason — the player is hosted in App.js so audio survives navigation.
+  const [sermonsOpen, setSermonsOpen] = useState(false);
+
+  const handleSelectSermon = useCallback(
+    (sermon) => {
+      setSermonsOpen(false);
+      onPlaySermon?.(sermon);
+    },
+    [onPlaySermon]
+  );
 
   // Scroll-position restore/persist. `pendingScrollY` is the offset we still
   // want to jump to once the content has grown tall enough to reach it; it is
@@ -335,7 +353,21 @@ export default function ReaderScreen({
         onHeightChange={setTopBarHeight}
         activeVersion={version}
         onVersionChange={() => setVersionKey((k) => k + 1)}
+        onOpenSermons={() => setSermonsOpen(true)}
       />
+
+      {/* Sermons for the current book / chapter. Mounted only while open so
+          that nothing is fetched until the Listen button is actually tapped. */}
+      {sermonsOpen && (
+        <SermonSheet
+          visible={sermonsOpen}
+          onClose={() => setSermonsOpen(false)}
+          book={book}
+          chapterNumber={chapterNumber}
+          onSelectSermon={handleSelectSermon}
+          activeSermonId={activeSermonId}
+        />
+      )}
 
       {/* Persistent chapter navigator: ‹  [ Book Chapter ]  ›. The center pill
           is a button that returns to book selection; the arrows move between

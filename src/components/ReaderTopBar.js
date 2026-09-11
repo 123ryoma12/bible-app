@@ -1,7 +1,8 @@
 // Top chrome bar for the reader. Mirrors the footer's show/hide animation but
-// slides down from the top. Contains two controls:
+// slides down from the top. Contains three controls:
 //
-//   ···  – Appearance menu: font typeface picker + font-size stepper
+//   🎧   – Listen: sermons for the book / chapter currently open
+//   Aa   – Appearance menu: font typeface picker + font-size stepper
 //   NIV  – Version pill: cycles through / picks the reading translation
 //
 // Both open lightweight inline dropdowns (no full-screen modal) to stay
@@ -18,6 +19,7 @@ import {
   StyleSheet,
   Modal,
 } from "react-native";
+import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { uiFont, readingFont, READING_FONT_OPTIONS } from "../theme/fonts";
 import { BIBLE_VERSIONS } from "../data/bibleVersions";
 import {
@@ -189,7 +191,14 @@ function VersionMenu({ visible, onClose, onSelect, activeVersion, colors, dropdo
 // Main export
 // ─────────────────────────────────────────────────────────────────────────────
 
-export default function ReaderTopBar({ barAnim, barHeight, onHeightChange, activeVersion, onVersionChange }) {
+export default function ReaderTopBar({
+  barAnim,
+  barHeight,
+  onHeightChange,
+  activeVersion,
+  onVersionChange,
+  onOpenSermons,
+}) {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
   // dropdownTop: position menus just below the bar. barHeight is measured after
@@ -232,20 +241,42 @@ export default function ReaderTopBar({ barAnim, barHeight, onHeightChange, activ
           },
         ]}
       >
-        {/* Spacer pushes both controls to the right */}
+        {/* Spacer pushes the controls to the right */}
         <View style={{ flex: 1 }} />
 
-        {/* ··· Appearance button */}
+        {/* Listen button — opens the sermon sheet for the current book/chapter.
+            Sized to match the appearance icon so the two sit evenly. */}
         <TouchableOpacity
-          style={styles.dotsBtn}
+          style={styles.listenBtn}
+          onPress={() => {
+            setAppearanceOpen(false);
+            setVersionOpen(false);
+            onOpenSermons?.();
+          }}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          accessibilityRole="button"
+          accessibilityLabel="Listen to sermons"
+          accessibilityHint="Opens sermons for this book"
+        >
+          <MaterialCommunityIcons name="headphones" size={24} color={colors.text} />
+        </TouchableOpacity>
+
+        {/* Aa Appearance button — "format-size" renders a large A beside a small a,
+            the conventional affordance for text size + typeface (cf. Apple Books,
+            Kindle). Preferred over "format-font", which reads as typeface-only. */}
+        <TouchableOpacity
+          style={styles.appearanceBtn}
           onPress={() => {
             setVersionOpen(false);
             setAppearanceOpen((o) => !o);
           }}
           hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-          accessibilityLabel="Reading appearance"
+          accessibilityRole="button"
+          accessibilityLabel="Text size and font"
+          accessibilityHint="Opens reading appearance options"
+          accessibilityState={{ expanded: appearanceOpen }}
         >
-          <Text style={[styles.dotsBtnText, { color: colors.text }]}>{"···"}</Text>
+          <MaterialCommunityIcons name="format-size" size={24} color={colors.text} />
         </TouchableOpacity>
 
         {/* Version pill */}
@@ -296,18 +327,22 @@ const styles = StyleSheet.create({
     zIndex: 10,
   },
 
-  // ··· button
-  dotsBtn: {
+  // Listen (sermons) button
+  listenBtn: {
     paddingVertical: 6,
-    paddingHorizontal: 4,
+    paddingHorizontal: 6,
+    marginRight: 4,
     justifyContent: "center",
     alignItems: "center",
   },
-  dotsBtnText: {
-    fontSize: 22,
-    fontFamily: uiFont(700),
-    letterSpacing: 2,
-    lineHeight: 26,
+
+  // Aa (appearance) button
+  appearanceBtn: {
+    paddingVertical: 6,
+    paddingHorizontal: 6,
+    marginRight: 2,
+    justifyContent: "center",
+    alignItems: "center",
   },
 
   // Version pill
