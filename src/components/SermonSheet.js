@@ -24,7 +24,6 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   StyleSheet,
-  Linking,
   Alert,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -37,10 +36,6 @@ import {
   isAbortError,
   ErrorKind,
   BOOK_PAGE_SIZE,
-  GIL_SOURCE_NAME,
-  GIL_SOURCE_URL,
-  CS_SOURCE_NAME,
-  CS_SOURCE_URL,
   CONGREGATIONS,
 } from "../data/combinedSermonApi";
 import {
@@ -363,8 +358,6 @@ export default function SermonSheet({
         colors={colors}
         onToggleSource={toggleSource}
         onToggleCongregation={toggleCongregation}
-        gilSourceName={GIL_SOURCE_NAME}
-        csSourceName={CS_SOURCE_NAME}
       />
     );
   };
@@ -570,72 +563,9 @@ export default function SermonSheet({
 
           <View style={styles.body}>{renderBody()}</View>
 
-          {/* Attribution footer — shows the active sources, links to their sites.
-              Hidden on the Sources view since that's where you manage them. */}
-          {view !== "sources" && (
-            <AttributionFooter
-              enabledSources={sources.enabledSources}
-              gilSourceName={GIL_SOURCE_NAME}
-              gilSourceUrl={GIL_SOURCE_URL}
-              csSourceName={CS_SOURCE_NAME}
-              csSourceUrl={CS_SOURCE_URL}
-              colors={colors}
-            />
-          )}
         </View>
       </View>
     </Modal>
-  );
-}
-
-// ── Attribution footer ────────────────────────────────────────────────────────
-
-function AttributionFooter({
-  enabledSources,
-  gilSourceName,
-  gilSourceUrl,
-  csSourceName,
-  csSourceUrl,
-  colors,
-}) {
-  const items = [
-    enabledSources.includes(GOSPEL_IN_LIFE_SOURCE_ID) && {
-      name: gilSourceName,
-      url: gilSourceUrl,
-    },
-    enabledSources.includes(CORNERSTONE_SOURCE_ID) && {
-      name: csSourceName,
-      url: csSourceUrl,
-    },
-  ].filter(Boolean);
-
-  if (!items.length) return null;
-
-  return (
-    <View style={[styles.attribution, { borderTopColor: colors.border }]}>
-      <Text style={[styles.attributionText, { color: colors.mutedText }]}>
-        Sermons from{" "}
-      </Text>
-      {items.map((item, i) => (
-        <React.Fragment key={item.url}>
-          {i > 0 && (
-            <Text style={[styles.attributionText, { color: colors.mutedText }]}>
-              {" & "}
-            </Text>
-          )}
-          <TouchableOpacity
-            onPress={() => Linking.openURL(item.url)}
-            accessibilityRole="link"
-            accessibilityLabel={`${item.name}. Opens their website.`}
-          >
-            <Text style={[styles.attributionLink, { color: colors.mutedText }]}>
-              {item.name}
-            </Text>
-          </TouchableOpacity>
-        </React.Fragment>
-      ))}
-      <MaterialCommunityIcons name="open-in-new" size={13} color={colors.mutedText} style={{ marginLeft: 3 }} />
-    </View>
   );
 }
 
@@ -646,8 +576,6 @@ function SourcesPicker({
   colors,
   onToggleSource,
   onToggleCongregation,
-  gilSourceName,
-  csSourceName,
 }) {
   const csEnabled = sources.enabledSources.includes(CORNERSTONE_SOURCE_ID);
   const gilEnabled = sources.enabledSources.includes(GOSPEL_IN_LIFE_SOURCE_ID);
@@ -668,12 +596,12 @@ function SourcesPicker({
               activeOpacity={0.7}
               accessibilityRole="switch"
               accessibilityState={{ checked: gilEnabled }}
-              accessibilityLabel={`${gilSourceName} sermons`}
+              accessibilityLabel="Gospel in Life sermons"
               disabled={gilEnabled && onlyOneLeft}
             >
               <View style={{ flex: 1 }}>
                 <Text style={[styles.sourceLabel, { color: colors.text }]}>
-                  {gilSourceName}
+                  Gospel in Life
                 </Text>
                 <Text style={[styles.sourceDesc, { color: colors.mutedText }]}>
                   Expository sermon library by Tim Keller and others
@@ -691,12 +619,12 @@ function SourcesPicker({
               activeOpacity={0.7}
               accessibilityRole="switch"
               accessibilityState={{ checked: csEnabled }}
-              accessibilityLabel={`${csSourceName} sermons`}
+              accessibilityLabel="Cornerstone Church sermons"
               disabled={csEnabled && onlyOneLeft}
             >
               <View style={{ flex: 1 }}>
                 <Text style={[styles.sourceLabel, { color: colors.text }]}>
-                  {csSourceName}
+                  Cornerstone Church
                 </Text>
                 <Text style={[styles.sourceDesc, { color: colors.mutedText }]}>
                   Sermons from Cornerstone Presbyterian churches in Sydney
@@ -1117,25 +1045,6 @@ const styles = StyleSheet.create({
   centredLinkText: {
     fontSize: 13,
     fontFamily: uiFont(600),
-  },
-
-  attribution: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    flexWrap: "wrap",
-    paddingVertical: 11,
-    paddingHorizontal: 12,
-    borderTopWidth: StyleSheet.hairlineWidth,
-  },
-  attributionText: {
-    fontSize: 12,
-    fontFamily: uiFont(400),
-  },
-  attributionLink: {
-    fontSize: 12,
-    fontFamily: uiFont(500),
-    textDecorationLine: "underline",
   },
 
   // Sources picker
