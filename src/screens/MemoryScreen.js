@@ -6,6 +6,7 @@ import {
   TouchableOpacity,
   StyleSheet,
   Alert,
+  Modal,
   ScrollView,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -48,7 +49,7 @@ export default function MemoryScreen() {
   const [entries, setEntries] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  // --- Prioritisation modal ---
+  // Prioritisation modal
   const [showPriority, setShowPriority] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [prefs, setPrefs] = useState(null);
@@ -205,70 +206,32 @@ export default function MemoryScreen() {
   }
 
   return (
-    <>
-      <SafeAreaView
-        style={[styles.safe, { backgroundColor: colors.background }]}
-        edges={["top", "left", "right"]}
-      >
-        <View style={styles.headerRow}>
-          <Text style={[styles.title, { color: colors.text }]}>Memory</Text>
-          <View style={styles.headerActions}>
-            <TouchableOpacity
-              onPress={() => setShowPriority(true)}
-              hitSlop={hit}
-              accessibilityLabel="Prioritisation settings"
-            >
-              <Ionicons name="settings-outline" size={22} color={colors.mutedText} />
-            </TouchableOpacity>
-            <TouchableOpacity onPress={() => setView("add")} hitSlop={hit}>
-              <Text style={[styles.addLink, { color: colors.accent }]}>+ Add</Text>
-            </TouchableOpacity>
-          </View>
+    <SafeAreaView
+      style={[styles.safe, { backgroundColor: colors.background }]}
+      edges={["top", "left", "right"]}
+    >
+      <View style={styles.headerRow}>
+        <Text style={[styles.title, { color: colors.text }]}>Memory</Text>
+        <View style={styles.headerActions}>
+          <TouchableOpacity
+            onPress={() => setShowPriority(true)}
+            hitSlop={hit}
+            accessibilityLabel="Prioritisation settings"
+          >
+            <Ionicons name="settings-outline" size={22} color={colors.mutedText} />
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => setView("add")} hitSlop={hit}>
+            <Text style={[styles.addLink, { color: colors.accent }]}>+ Add</Text>
+          </TouchableOpacity>
         </View>
+      </View>
 
-        {loading ? null : entries.length === 0 ? (
-          <View style={styles.empty}>
-            <Text style={[styles.emptyHeading, { color: colors.text }]}>
-              No memory verses yet
-            </Text>
-            <Text style={[styles.emptySub, { color: colors.secondaryText }]}>
-              Tap "+ Add" to choose a verse or a range of consecutive verses to
-              start memorising.
-            </Text>
-          </View>
-        ) : (
-          <SectionList
-            sections={sections}
-            keyExtractor={(row) => row.entry.id}
-            contentContainerStyle={{ paddingBottom: 24 }}
-            stickySectionHeadersEnabled={false}
-            renderSectionHeader={({ section }) => (
-              <SectionHeader
-                title={section.title}
-                count={section.verseCount != null ? section.verseCount : section.data.length}
-                label={section.verseCount != null ? "verse" : null}
-                colors={colors}
-              />
-            )}
-            renderItem={({ item }) => (
-              <MemoryRow
-                entry={item.entry}
-                colors={colors}
-                onPress={() => {
-                  setDrillList(entries);
-                  setDrillStartIndex(item.flatIndex);
-                  setView("drill");
-                }}
-                onLongPress={() => confirmDelete(item.entry)}
-                onDelete={() => confirmDelete(item.entry)}
-              />
-            )}
-          />
-        )}
-      </SafeAreaView>
-
-      {/* Prioritisation overlay — absolute, covers full screen */}
-      {showPriority && (
+      <Modal
+        visible={showPriority}
+        transparent
+        animationType="fade"
+        onRequestClose={() => { setShowPriority(false); setShowAdvanced(false); }}
+      >
         <TouchableOpacity
           style={styles.modalBackdrop}
           activeOpacity={1}
@@ -282,7 +245,7 @@ export default function MemoryScreen() {
             <Text style={[styles.modalTitle, { color: colors.surfaceText }]}>
               Memory Prioritisation
             </Text>
-            <ScrollView style={styles.modalOptions} bounces={false}>
+            <ScrollView bounces={false}>
               <Text style={[styles.modalNote, { color: colors.mutedText }]}>
                 Choose how the Memory tab decides which verses to practise first.
               </Text>
@@ -294,8 +257,6 @@ export default function MemoryScreen() {
                     style={[styles.modalRow, { borderBottomColor: colors.border }]}
                     onPress={() => handlePreset(key)}
                     disabled={!prefs}
-                    accessibilityRole="radio"
-                    accessibilityState={{ selected: isActive }}
                   >
                     <View style={styles.modalRowText}>
                       <Text style={[styles.modalRowLabel, { color: colors.text }]}>
@@ -327,8 +288,6 @@ export default function MemoryScreen() {
               <TouchableOpacity
                 style={[styles.modalRow, { borderBottomColor: colors.border, marginTop: 8 }]}
                 onPress={() => setShowAdvanced((v) => !v)}
-                accessibilityRole="button"
-                accessibilityState={{ expanded: showAdvanced }}
               >
                 <Text style={[styles.modalRowLabel, { color: colors.text }]}>Advanced tuning</Text>
                 <Text style={[styles.chevron, { color: colors.mutedText }]}>{showAdvanced ? "⌃" : "›"}</Text>
@@ -371,11 +330,8 @@ export default function MemoryScreen() {
                 <TouchableOpacity
                   style={[styles.modalRow, { borderBottomColor: colors.border }]}
                   onPress={handleResetPrefs}
-                  accessibilityRole="button"
                 >
-                  <Text style={[styles.modalRowLabel, { color: colors.danger || "#c0392b" }]}>
-                    Reset to Defaults
-                  </Text>
+                  <Text style={[styles.modalRowLabel, { color: colors.danger }]}>Reset to Defaults</Text>
                   <Text style={[styles.chevron, { color: colors.mutedText }]}>↺</Text>
                 </TouchableOpacity>
               )}
@@ -388,8 +344,66 @@ export default function MemoryScreen() {
             </TouchableOpacity>
           </TouchableOpacity>
         </TouchableOpacity>
+      </Modal>
+
+      {loading ? null : entries.length === 0 ? (
+        <View style={styles.empty}>
+          <Text style={[styles.emptyHeading, { color: colors.text }]}>
+            No memory verses yet
+          </Text>
+          <Text style={[styles.emptySub, { color: colors.secondaryText }]}>
+            Tap “+ Add” to choose a verse or a range of consecutive verses to
+            start memorising.
+          </Text>
+        </View>
+      ) : (
+        <SectionList
+          sections={sections}
+          keyExtractor={(row) => row.entry.id}
+          contentContainerStyle={{ paddingBottom: 24 }}
+          stickySectionHeadersEnabled={false}
+          renderSectionHeader={({ section }) => (
+            <SectionHeader
+              title={section.title}
+              count={section.verseCount != null ? section.verseCount : section.data.length}
+              label={section.verseCount != null ? "verse" : null}
+              colors={colors}
+            />
+          )}
+          renderItem={({ item }) => (
+            <MemoryRow
+              entry={item.entry}
+              colors={colors}
+              onPress={() => {
+                // Snapshot the current order and start where the user tapped
+                // (using the flat index so the drill can auto-advance through
+                // the rest of the list regardless of section boundaries).
+                setDrillList(entries);
+                setDrillStartIndex(item.flatIndex);
+                setView("drill");
+              }}
+              onLongPress={() => confirmDelete(item.entry)}
+              onDelete={() => confirmDelete(item.entry)}
+            />
+          )}
+        />
       )}
-    </>
+    </SafeAreaView>
+  );
+}
+
+function SectionHeader({ title, count, label, colors }) {
+  const countLabel = count != null
+    ? label
+      ? ` (${count} ${label}${count === 1 ? "" : "s"} memorised)`
+      : ` (${count})`
+    : "";
+  return (
+    <View style={[styles.sectionHeader, { backgroundColor: colors.background }]}>
+      <Text style={[styles.sectionHeaderText, { color: colors.secondaryText }]}>
+        {title}{countLabel}
+      </Text>
+    </View>
   );
 }
 
@@ -458,24 +472,13 @@ const styles = StyleSheet.create({
   },
   title: { fontSize: 28, fontFamily: uiFont(700) },
   addLink: { fontSize: 16, fontFamily: uiFont(600) },
-  headerActions: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 16,
-  },
-  // Overlay (web + Android compatible — no Modal)
+  headerActions: { flexDirection: "row", alignItems: "center", gap: 16 },
   modalBackdrop: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
+    flex: 1,
     backgroundColor: "rgba(0,0,0,0.45)",
     alignItems: "center",
     justifyContent: "center",
     padding: 24,
-    zIndex: 100,
-    elevation: 20,
   },
   modalCard: {
     width: "100%",
@@ -491,7 +494,6 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
     paddingHorizontal: 20,
   },
-  modalOptions: { flexGrow: 0 },
   modalNote: {
     fontSize: 13,
     fontFamily: uiFont(400),
@@ -510,47 +512,29 @@ const styles = StyleSheet.create({
   modalRowText: { flex: 1, paddingRight: 12 },
   modalRowLabel: { fontSize: 16, fontFamily: uiFont(500) },
   modalRowSub: { fontSize: 12, fontFamily: uiFont(400), marginTop: 2 },
-  modalCancel: {
-    borderTopWidth: 1,
-    paddingVertical: 14,
-    alignItems: "center",
-  },
+  modalCancel: { borderTopWidth: 1, paddingVertical: 14, alignItems: "center" },
   modalCancelText: { fontSize: 15, fontFamily: uiFont(600) },
   chevron: { fontSize: 22, fontFamily: uiFont(400) },
   radioOuter: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    borderWidth: 2,
-    alignItems: "center",
-    justifyContent: "center",
+    width: 22, height: 22, borderRadius: 11, borderWidth: 2,
+    alignItems: "center", justifyContent: "center",
   },
   radioInner: { width: 12, height: 12, borderRadius: 6 },
   prefRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 20,
-    paddingVertical: 14,
+    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
+    paddingHorizontal: 20, paddingVertical: 14,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
   prefText: { flex: 1, paddingRight: 12 },
   stepper: { flexDirection: "row", alignItems: "center" },
   stepBtn: {
-    width: 34,
-    height: 34,
-    borderRadius: 8,
-    borderWidth: 1.5,
-    alignItems: "center",
-    justifyContent: "center",
+    width: 34, height: 34, borderRadius: 8, borderWidth: 1.5,
+    alignItems: "center", justifyContent: "center",
   },
   stepBtnText: { fontSize: 20, fontFamily: uiFont(600), lineHeight: 22 },
   stepValue: {
-    minWidth: 74,
-    textAlign: "center",
-    fontSize: 14,
-    fontFamily: uiFont(600),
-    paddingHorizontal: 6,
+    minWidth: 74, textAlign: "center", fontSize: 14,
+    fontFamily: uiFont(600), paddingHorizontal: 6,
   },
   empty: {
     flex: 1,
