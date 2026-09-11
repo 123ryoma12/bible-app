@@ -30,12 +30,11 @@ import { useAudioPlayer, useAudioPlayerStatus, setAudioModeAsync } from "expo-au
 import { uiFont } from "../theme/fonts";
 import { useTheme } from "../theme/ThemeContext";
 import {
-  fetchAudioUrl,
   isAbortError,
   ErrorKind,
   AUDIO_EXTRACTION_SUPPORTED,
-  SOURCE_NAME,
 } from "../data/sermonApi";
+import { fetchAudioUrl } from "../data/combinedSermonApi";
 import { getDownloadedUri } from "../data/sermonDownloads";
 
 const SKIP_SECONDS = 15;
@@ -74,8 +73,8 @@ async function ensureNotificationPermission() {
 function lockScreenMetadata(sermon) {
   return {
     title: sermon.title,
-    artist: sermon.speaker || SOURCE_NAME,
-    albumTitle: sermon.passage || SOURCE_NAME,
+    artist: sermon.speaker || "Sermon",
+    albumTitle: sermon.passage || sermon.title,
   };
 }
 
@@ -177,7 +176,7 @@ export default function SermonPlayer({
           return;
         }
 
-        const url = await fetchAudioUrl(sermon.link, { signal: controller.signal });
+        const url = await fetchAudioUrl(sermon, { signal: controller.signal });
         if (controller.signal.aborted) return;
         if (!url) {
           // Reachable, but no audio in the page. Offer the browser instead.

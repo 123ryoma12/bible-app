@@ -36,10 +36,20 @@ import {
   fetchMoreBookSermons,
   isAbortError,
   ErrorKind,
-  SOURCE_NAME,
-  SOURCE_URL,
   BOOK_PAGE_SIZE,
-} from "../data/sermonApi";
+  GIL_SOURCE_NAME,
+  GIL_SOURCE_URL,
+  CS_SOURCE_NAME,
+  CS_SOURCE_URL,
+  CONGREGATIONS,
+} from "../data/combinedSermonApi";
+import {
+  useSermonSources,
+  toggleSource,
+  toggleCongregation,
+  GOSPEL_IN_LIFE_SOURCE_ID,
+  CORNERSTONE_SOURCE_ID,
+} from "../data/sermonSourcesStore";
 import {
   useSermonDownloads,
   downloadSermon,
@@ -64,17 +74,17 @@ const FAILURE_COPY = {
   [ErrorKind.BLOCKED]: {
     icon: "shield-alert-outline",
     title: "Blocked by your browser",
-    body: `The browser wouldn't allow a request to ${SOURCE_NAME}. This doesn't happen in the mobile app.`,
+    body: "The browser wouldn't allow the request. This doesn't happen in the mobile app.",
   },
   [ErrorKind.TIMEOUT]: {
     icon: "timer-sand",
     title: "Taking too long",
-    body: `${SOURCE_NAME} is slow to respond right now.`,
+    body: "One or more sermon sources is slow to respond right now.",
   },
   [ErrorKind.SERVER]: {
     icon: "cloud-off-outline",
-    title: `Couldn't reach ${SOURCE_NAME}`,
-    body: "Their site may be down for a moment. Try again shortly.",
+    title: "Couldn't reach sermon source",
+    body: "A sermon site may be down for a moment. Try again shortly.",
   },
   [ErrorKind.UNKNOWN]: {
     icon: "alert-circle-outline",
@@ -94,9 +104,11 @@ export default function SermonSheet({
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
   const downloads = useSermonDownloads();
+  const sources = useSermonSources();
 
-  // browse | downloads. Browsing is the default because the sheet was opened
-  // from a chapter, and that chapter's sermons are the reason for the tap.
+  // browse | downloads | sources. Browsing is the default because the sheet
+  // was opened from a chapter, and that chapter's sermons are the reason for
+  // the tap.
   const [view, setView] = useState("browse");
 
   const [status, setStatus] = useState("loading"); // loading | ready | failed
@@ -148,6 +160,25 @@ export default function SermonSheet({
     load();
     return () => abortRef.current?.abort();
   }, [visible, bookName, chapterNumber, load]);
+
+  // Re-fetch when the user changes sources while the sheet is open, so the
+  // browse view immediately reflects the new selection. Sources view changes
+  // don't trigger a fetch themselves — the reload fires when `enabledSources`
+  // or `cornerstoneCongregations` changes, regardless of current view.
+  const enabledSourcesKey = sources.enabledSources.slice().sort().join(",");
+  const congregationsKey = sources.cornerstoneCongregations.slice().sort().join(",");
+  const prevSourcesKey = useRef(null);
+  useEffect(() => {
+    const key = enabledSourcesKey + "|" + congregationsKey;
+    if (prevSourcesKey.current === null) {
+      prevSourcesKey.current = key;
+      return;
+    }
+    if (prevSourcesKey.current !== key) {
+      prevSourcesKey.current = key;
+      if (visible && bookName) load();
+    }
+  }, [enabledSourcesKey, congregationsKey, visible, bookName, load]);
 
   // Every open starts on the chapter you're reading. Leaving the sheet parked
   // on Downloads would bury the reason it was opened.
@@ -325,8 +356,22 @@ export default function SermonSheet({
     );
   };
 
+  const renderSources = () => {
+    return (
+      <SourcesPicker
+        sources={sources}
+        colors={colors}
+        onToggleSource={toggleSource}
+        onToggleCongregation={toggleCongregation}
+        gilSourceName={GIL_SOURCE_NAME}
+        csSourceName={CS_SOURCE_NAME}
+      />
+    );
+  };
+
   const renderBody = () => {
     if (view === "downloads") return renderDownloads();
+    if (view === "sources") return renderSources();
 
     if (status === "loading") {
       return (
@@ -387,7 +432,7 @@ export default function SermonSheet({
             No sermons for {bookName}
           </Text>
           <Text style={[styles.centredBody, { color: colors.mutedText }]}>
-            {SOURCE_NAME} doesn't have any sermons on this book yet.
+            None of your selected sources have sermons on this book yet.
           </Text>
         </View>
       );
@@ -435,8 +480,7 @@ export default function SermonSheet({
     );
   };
 
-  // The subtitle answers "what am I looking at" for whichever view is showing:
-  // where you are in the Bible, or how much of your phone this is using.
+  // The subtitle answers "what am I looking at" for whichever view is showing.
   const downloadedSize = formatDownloadSize(totalDownloadedBytes(downloads.entries));
   const headerSub =
     view === "downloads"
@@ -450,7 +494,9 @@ export default function SermonSheet({
             .filter(Boolean)
             .join(" · ")
         : "Available offline"
-      : `${bookName} ${chapterNumber}`;
+      : view === "sources"
+        ? "Choose your sermon sources"
+        : `${bookName} ${chapterNumber}`;
 
   return (
     <Modal
@@ -495,16 +541,15 @@ export default function SermonSheet({
             </TouchableOpacity>
           </View>
 
-          {/* Hidden where downloading isn't possible (the web build can't reach
-              the audio), since a tab that can only ever be empty is noise. */}
-          {DOWNLOADS_SUPPORTED && (
-            <View style={styles.tabs}>
-              <SheetTab
-                label="Browse"
-                colors={colors}
-                active={view === "browse"}
-                onPress={() => setView("browse")}
-              />
+          <View style={styles.tabs}>
+            <SheetTab
+              label="Browse"
+              colors={colors}
+              active={view === "browse"}
+              onPress={() => setView("browse")}
+            />
+            {/* Hidden where downloading isn't possible (web build). */}
+            {DOWNLOADS_SUPPORTED && (
               <SheetTab
                 label="Downloaded"
                 count={downloads.entries.length}
@@ -512,31 +557,224 @@ export default function SermonSheet({
                 active={view === "downloads"}
                 onPress={() => setView("downloads")}
               />
-            </View>
-          )}
+            )}
+            <SheetTab
+              label="Sources"
+              colors={colors}
+              active={view === "sources"}
+              onPress={() => setView("sources")}
+            />
+          </View>
 
           <View style={[styles.divider, { backgroundColor: colors.border }]} />
 
           <View style={styles.body}>{renderBody()}</View>
 
-          {/* Attribution: these are someone else's sermons, and it gives a way
-              through to the site if anything here ever falls short. */}
-          <TouchableOpacity
-            style={[styles.attribution, { borderTopColor: colors.border }]}
-            onPress={() => Linking.openURL(SOURCE_URL)}
-            accessibilityRole="link"
-            accessibilityLabel={`Sermons from ${SOURCE_NAME}. Opens their website.`}
-          >
-            <Text style={[styles.attributionText, { color: colors.mutedText }]}>
-              Sermons from {SOURCE_NAME}
-            </Text>
-            <MaterialCommunityIcons name="open-in-new" size={13} color={colors.mutedText} />
-          </TouchableOpacity>
+          {/* Attribution footer — shows the active sources, links to their sites.
+              Hidden on the Sources view since that's where you manage them. */}
+          {view !== "sources" && (
+            <AttributionFooter
+              enabledSources={sources.enabledSources}
+              gilSourceName={GIL_SOURCE_NAME}
+              gilSourceUrl={GIL_SOURCE_URL}
+              csSourceName={CS_SOURCE_NAME}
+              csSourceUrl={CS_SOURCE_URL}
+              colors={colors}
+            />
+          )}
         </View>
       </View>
     </Modal>
   );
 }
+
+// ── Attribution footer ────────────────────────────────────────────────────────
+
+function AttributionFooter({
+  enabledSources,
+  gilSourceName,
+  gilSourceUrl,
+  csSourceName,
+  csSourceUrl,
+  colors,
+}) {
+  const items = [
+    enabledSources.includes(GOSPEL_IN_LIFE_SOURCE_ID) && {
+      name: gilSourceName,
+      url: gilSourceUrl,
+    },
+    enabledSources.includes(CORNERSTONE_SOURCE_ID) && {
+      name: csSourceName,
+      url: csSourceUrl,
+    },
+  ].filter(Boolean);
+
+  if (!items.length) return null;
+
+  return (
+    <View style={[styles.attribution, { borderTopColor: colors.border }]}>
+      <Text style={[styles.attributionText, { color: colors.mutedText }]}>
+        Sermons from{" "}
+      </Text>
+      {items.map((item, i) => (
+        <React.Fragment key={item.url}>
+          {i > 0 && (
+            <Text style={[styles.attributionText, { color: colors.mutedText }]}>
+              {" & "}
+            </Text>
+          )}
+          <TouchableOpacity
+            onPress={() => Linking.openURL(item.url)}
+            accessibilityRole="link"
+            accessibilityLabel={`${item.name}. Opens their website.`}
+          >
+            <Text style={[styles.attributionLink, { color: colors.mutedText }]}>
+              {item.name}
+            </Text>
+          </TouchableOpacity>
+        </React.Fragment>
+      ))}
+      <MaterialCommunityIcons name="open-in-new" size={13} color={colors.mutedText} style={{ marginLeft: 3 }} />
+    </View>
+  );
+}
+
+// ── Sources picker ────────────────────────────────────────────────────────────
+
+function SourcesPicker({
+  sources,
+  colors,
+  onToggleSource,
+  onToggleCongregation,
+  gilSourceName,
+  csSourceName,
+}) {
+  const csEnabled = sources.enabledSources.includes(CORNERSTONE_SOURCE_ID);
+  const gilEnabled = sources.enabledSources.includes(GOSPEL_IN_LIFE_SOURCE_ID);
+  const onlyOneLeft = sources.enabledSources.length === 1;
+
+  return (
+    <FlatList
+      data={[{ key: "content" }]}
+      keyExtractor={(item) => item.key}
+      contentContainerStyle={{ paddingBottom: 24 }}
+      renderItem={() => (
+        <View>
+          {/* Gospel in Life */}
+          <View style={[styles.sourceSection, { borderBottomColor: colors.border }]}>
+            <TouchableOpacity
+              style={styles.sourceRow}
+              onPress={() => onToggleSource(GOSPEL_IN_LIFE_SOURCE_ID)}
+              activeOpacity={0.7}
+              accessibilityRole="switch"
+              accessibilityState={{ checked: gilEnabled }}
+              accessibilityLabel={`${gilSourceName} sermons`}
+              disabled={gilEnabled && onlyOneLeft}
+            >
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.sourceLabel, { color: colors.text }]}>
+                  {gilSourceName}
+                </Text>
+                <Text style={[styles.sourceDesc, { color: colors.mutedText }]}>
+                  Expository sermon library by Tim Keller and others
+                </Text>
+              </View>
+              <ToggleChip on={gilEnabled} colors={colors} />
+            </TouchableOpacity>
+          </View>
+
+          {/* Cornerstone Church */}
+          <View style={[styles.sourceSection, { borderBottomColor: colors.border }]}>
+            <TouchableOpacity
+              style={styles.sourceRow}
+              onPress={() => onToggleSource(CORNERSTONE_SOURCE_ID)}
+              activeOpacity={0.7}
+              accessibilityRole="switch"
+              accessibilityState={{ checked: csEnabled }}
+              accessibilityLabel={`${csSourceName} sermons`}
+              disabled={csEnabled && onlyOneLeft}
+            >
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.sourceLabel, { color: colors.text }]}>
+                  {csSourceName}
+                </Text>
+                <Text style={[styles.sourceDesc, { color: colors.mutedText }]}>
+                  Sermons from Cornerstone Presbyterian churches in Sydney
+                </Text>
+              </View>
+              <ToggleChip on={csEnabled} colors={colors} />
+            </TouchableOpacity>
+
+            {/* Congregation picker — only shown when Cornerstone is enabled */}
+            {csEnabled && (
+              <View style={[styles.congregationList, { borderTopColor: colors.border }]}>
+                <Text style={[styles.congregationHeader, { color: colors.mutedText }]}>
+                  CONGREGATIONS
+                </Text>
+                {CONGREGATIONS.map((cong) => {
+                  const on = sources.cornerstoneCongregations.includes(cong.id);
+                  const onlyOneCongLeft =
+                    csEnabled && sources.cornerstoneCongregations.length === 1 && on;
+                  return (
+                    <TouchableOpacity
+                      key={cong.id}
+                      style={styles.congregationRow}
+                      onPress={() => onToggleCongregation(cong.id)}
+                      activeOpacity={0.7}
+                      accessibilityRole="switch"
+                      accessibilityState={{ checked: on }}
+                      accessibilityLabel={cong.label}
+                      disabled={onlyOneCongLeft}
+                    >
+                      <Text
+                        style={[
+                          styles.congregationLabel,
+                          { color: on ? colors.text : colors.mutedText },
+                        ]}
+                      >
+                        {cong.label}
+                      </Text>
+                      <MaterialCommunityIcons
+                        name={on ? "check-circle" : "circle-outline"}
+                        size={20}
+                        color={on ? colors.accent : colors.border}
+                      />
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            )}
+          </View>
+        </View>
+      )}
+    />
+  );
+}
+
+function ToggleChip({ on, colors }) {
+  return (
+    <View
+      style={[
+        styles.toggleChip,
+        {
+          backgroundColor: on ? colors.accent : colors.border,
+        },
+      ]}
+    >
+      <View
+        style={[
+          styles.toggleThumb,
+          {
+            backgroundColor: colors.background,
+            transform: [{ translateX: on ? 16 : 0 }],
+          },
+        ]}
+      />
+    </View>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 function SheetTab({ label, count, colors, active, onPress }) {
   return (
@@ -885,12 +1123,77 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    gap: 5,
+    flexWrap: "wrap",
     paddingVertical: 11,
+    paddingHorizontal: 12,
     borderTopWidth: StyleSheet.hairlineWidth,
   },
   attributionText: {
     fontSize: 12,
     fontFamily: uiFont(400),
+  },
+  attributionLink: {
+    fontSize: 12,
+    fontFamily: uiFont(500),
+    textDecorationLine: "underline",
+  },
+
+  // Sources picker
+  sourceSection: {
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  sourceRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 18,
+    paddingVertical: 14,
+    gap: 12,
+  },
+  sourceLabel: {
+    fontSize: 15,
+    fontFamily: uiFont(600),
+    marginBottom: 2,
+  },
+  sourceDesc: {
+    fontSize: 12,
+    fontFamily: uiFont(400),
+    lineHeight: 17,
+  },
+  congregationList: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    paddingBottom: 8,
+  },
+  congregationHeader: {
+    fontSize: 10,
+    fontFamily: uiFont(600),
+    letterSpacing: 0.8,
+    paddingHorizontal: 18,
+    paddingTop: 12,
+    paddingBottom: 4,
+  },
+  congregationRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 18,
+    paddingVertical: 10,
+  },
+  congregationLabel: {
+    fontSize: 14,
+    fontFamily: uiFont(400),
+  },
+
+  // Toggle switch
+  toggleChip: {
+    width: 40,
+    height: 24,
+    borderRadius: 12,
+    padding: 2,
+    justifyContent: "center",
+  },
+  toggleThumb: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
   },
 });

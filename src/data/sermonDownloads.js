@@ -24,7 +24,8 @@
 import { useEffect, useSyncExternalStore } from "react";
 import { Directory, File, Paths } from "expo-file-system";
 import { backend } from "./storageBackend";
-import { fetchAudioUrl, isAbortError, AUDIO_EXTRACTION_SUPPORTED } from "./sermonApi";
+import { isAbortError, AUDIO_EXTRACTION_SUPPORTED } from "./sermonApi";
+import { fetchAudioUrl } from "./combinedSermonApi";
 
 const INDEX_KEY = "sermons:downloads:index";
 const ENTRY_PREFIX = "sermons:downloads:entry:";
@@ -249,7 +250,7 @@ export async function downloadSermon(sermon) {
   publishActive(id, { progress: null, failed: false });
 
   try {
-    const url = await fetchAudioUrl(sermon.link, { signal: controller.signal });
+    const url = await fetchAudioUrl(sermon, { signal: controller.signal });
     if (controller.signal.aborted) return;
     if (!url) throw new Error("No audio on the sermon page");
 
