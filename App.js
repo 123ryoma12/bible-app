@@ -136,6 +136,8 @@ function AppContent() {
 
   // Bible tab's own internal screen: "books" | "chapters" | "reader" | "history"
   const [screen, setScreen] = useState("books");
+  // Where to return to when leaving the history screen: "books" | "reader".
+  const [historyReturnScreen, setHistoryReturnScreen] = useState("books");
   const [bookIndex, setBookIndex] = useState(0);
   const [chapterNumber, setChapterNumber] = useState(1);
   // The scroll offset to restore into the Reader. Non-zero only for the chapter
@@ -274,8 +276,25 @@ function AppContent() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [book?.id, chapterNumber]);
 
-  function openHistory() {
+  // History can be reached from the book/chapter picker or from the reader's
+  // top bar. Remember which so Back (both the on-screen arrow and Android's
+  // hardware button) returns to where the user actually came from.
+  function openHistory(returnTo) {
+    setHistoryReturnScreen(returnTo === "reader" ? "reader" : "books");
     setScreen("history");
+  }
+
+  function closeHistory() {
+    if (historyReturnScreen === "reader" && readerTabs.length > 0) {
+      // ReaderScreen unmounted while history was open, so hand it back the
+      // scroll offset the user was last at instead of jumping to the top.
+      if (activeTabId) {
+        setInitialScrollY(tabScrollPositions.current[activeTabId] ?? 0);
+      }
+      setScreen("reader");
+      return;
+    }
+    setScreen("books");
   }
 
   // Jumps straight into the Reader for an arbitrary book/chapter, switching
@@ -416,7 +435,7 @@ function AppContent() {
           return true;
         }
         if (screen === "history") {
-          setScreen("books");
+          closeHistory();
           return true;
         }
         if (screen === "books" && readerTabs.length > 0) {
@@ -435,7 +454,7 @@ function AppContent() {
 
     const subscription = BackHandler.addEventListener("hardwareBackPress", onBackPress);
     return () => subscription.remove();
-  }, [activeTab, screen, backRegistry]);
+  }, [activeTab, screen, backRegistry, historyReturnScreen, readerTabs.length, activeTabId]);
 
   if (isRestoring) {
     return (
@@ -455,7 +474,7 @@ function AppContent() {
           <BookChapterPicker
             currentBookId={screen === "picker" ? book.id : null}
             currentChapter={screen === "picker" ? chapterNumber : null}
-            onOpenHistory={openHistory}
+            onOpenHistory={() => openHistory("books")}
             onSelectChapter={(selectedBook, selectedChapter) => {
               const idx = BOOKS.findIndex((b) => b.id === selectedBook.id);
               if (idx === -1) return;
@@ -480,7 +499,7 @@ function AppContent() {
           />
         )}
         {activeTab === "bible" && screen === "history" && (
-          <HistoryScreen onSelectEntry={openChapterDirect} onBack={() => setScreen("books")} />
+          <HistoryScreen onSelectEntry={openChapterDirect} onBack={closeHistory} />
         )}
         {activeTab === "bible" && screen === "reader" && (
           <ReaderScreen
@@ -493,6 +512,7 @@ function AppContent() {
             onNext={goNext}
             onBack={() => setScreen("chapters")}
             onOpenBooks={() => setScreen("picker")}
+            onOpenHistory={() => openHistory("reader")}
             onChromeChange={setChromeVisible}
             hasPrev={hasPrev}
             hasNext={hasNext}

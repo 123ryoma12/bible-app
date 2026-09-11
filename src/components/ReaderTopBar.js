@@ -3,6 +3,7 @@
 //
 //   🎧   – Listen: sermons for the book / chapter currently open
 //   Aa   – Appearance menu: font typeface picker + font-size stepper
+//   ↺    – History: recently read chapters (same list as the picker's History)
 //   NIV  – Version pill: cycles through / picks the reading translation
 //
 // Both open lightweight inline dropdowns (no full-screen modal) to stay
@@ -198,6 +199,7 @@ export default function ReaderTopBar({
   activeVersion,
   onVersionChange,
   onOpenSermons,
+  onOpenHistory,
 }) {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
@@ -279,6 +281,27 @@ export default function ReaderTopBar({
           <MaterialCommunityIcons name="format-size" size={24} color={colors.text} />
         </TouchableOpacity>
 
+        {/* History button — "history" (a clock face with a counter-clockwise
+            arrow) is the platform-conventional "recently viewed" glyph, and
+            reads unambiguously next to the version pill. Opens the same list
+            as the History link in the book/chapter picker. */}
+        {onOpenHistory && (
+          <TouchableOpacity
+            style={styles.historyBtn}
+            onPress={() => {
+              setAppearanceOpen(false);
+              setVersionOpen(false);
+              onOpenHistory();
+            }}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            accessibilityRole="button"
+            accessibilityLabel="Reading history"
+            accessibilityHint="Opens the chapters you have recently read"
+          >
+            <MaterialCommunityIcons name="history" size={24} color={colors.text} />
+          </TouchableOpacity>
+        )}
+
         {/* Version pill */}
         <TouchableOpacity
           style={[styles.versionPill, { borderColor: colors.accent, backgroundColor: colors.surface }]}
@@ -341,6 +364,15 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     paddingHorizontal: 6,
     marginRight: 2,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+
+  // History button
+  historyBtn: {
+    paddingVertical: 6,
+    paddingHorizontal: 6,
+    marginRight: 6,
     justifyContent: "center",
     alignItems: "center",
   },

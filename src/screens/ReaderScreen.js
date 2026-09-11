@@ -41,6 +41,7 @@ export default function ReaderScreen({
   onNext,
   onBack,
   onOpenBooks,
+  onOpenHistory,
   onChromeChange,
   hasPrev,
   hasNext,
@@ -354,6 +355,7 @@ export default function ReaderScreen({
         activeVersion={version}
         onVersionChange={() => setVersionKey((k) => k + 1)}
         onOpenSermons={() => setSermonsOpen(true)}
+        onOpenHistory={onOpenHistory}
       />
 
       {/* Sermons for the current book / chapter. Mounted only while open so
