@@ -205,7 +205,7 @@ export default function MemoryScreen() {
   }
 
   return (
-    <View style={styles.root}>
+    <>
       <SafeAreaView
         style={[styles.safe, { backgroundColor: colors.background }]}
         edges={["top", "left", "right"]}
@@ -267,7 +267,7 @@ export default function MemoryScreen() {
         )}
       </SafeAreaView>
 
-      {/* Prioritisation overlay — rendered outside SafeAreaView, covers full screen on web */}
+      {/* Prioritisation overlay — absolute, covers full screen */}
       {showPriority && (
         <TouchableOpacity
           style={styles.modalBackdrop}
@@ -389,7 +389,7 @@ export default function MemoryScreen() {
           </TouchableOpacity>
         </TouchableOpacity>
       )}
-    </View>
+    </>
   );
 }
 
@@ -447,7 +447,6 @@ function formatLastDone(entry) {
 const hit = { top: 10, bottom: 10, left: 10, right: 10 };
 
 const styles = StyleSheet.create({
-  root: { flex: 1, position: "relative" },
   safe: { flex: 1 },
   headerRow: {
     flexDirection: "row",
@@ -464,7 +463,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 16,
   },
-  // Overlay (web-compatible — no Modal)
+  // Overlay (web + Android compatible — no Modal)
   modalBackdrop: {
     position: "absolute",
     top: 0,
@@ -476,6 +475,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     padding: 24,
     zIndex: 100,
+    elevation: 20,
   },
   modalCard: {
     width: "100%",
