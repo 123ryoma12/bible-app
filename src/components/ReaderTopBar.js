@@ -17,7 +17,6 @@ import {
   Animated,
   StyleSheet,
   Modal,
-  Pressable,
 } from "react-native";
 import { uiFont, readingFont, READING_FONT_OPTIONS } from "../theme/fonts";
 import { BIBLE_VERSIONS } from "../data/bibleVersions";
@@ -46,7 +45,7 @@ function AppearanceMenu({ visible, onClose, colors, dropdownTop }) {
       onRequestClose={onClose}
       statusBarTranslucent
     >
-      <Pressable style={styles.menuOverlay} onPress={onClose} />
+      <TouchableOpacity style={styles.menuOverlay} onPress={onClose} activeOpacity={1} />
       <View
         style={[
           styles.menuCard,
@@ -154,7 +153,7 @@ function VersionMenu({ visible, onClose, onSelect, activeVersion, colors, dropdo
       onRequestClose={onClose}
       statusBarTranslucent
     >
-      <Pressable style={styles.menuOverlay} onPress={onClose} />
+      <TouchableOpacity style={styles.menuOverlay} onPress={onClose} activeOpacity={1} />
       <View
         style={[
           styles.menuCard,
