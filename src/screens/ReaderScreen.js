@@ -384,7 +384,10 @@ export default function ReaderScreen({
           {
             borderTopColor: colors.border,
             backgroundColor: colors.background,
-            paddingBottom: insets.bottom,
+            // No bottom inset here. This footer is pinned to the bottom of the
+            // reader, not of the screen — BottomTabBar always sits underneath it
+            // and already clears the gesture pill / home indicator. Padding for
+            // it again left a band of dead background under the chapter pill.
             opacity: footerAnim.interpolate({ inputRange: [0, 1], outputRange: [1, 0] }),
             transform: [
               {
