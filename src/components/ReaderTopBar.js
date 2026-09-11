@@ -45,19 +45,8 @@ function AppearanceMenu({ visible, onClose, colors, dropdownTop }) {
       onRequestClose={onClose}
       statusBarTranslucent
     >
-      <TouchableOpacity style={styles.menuOverlay} onPress={onClose} activeOpacity={1} />
-      <View
-        style={[
-          styles.menuCard,
-          {
-            backgroundColor: colors.surface,
-            borderColor: colors.border,
-            top: dropdownTop,
-            left: 12,
-            right: 12,
-          },
-        ]}
-      >
+      <TouchableOpacity style={styles.fullScreen} activeOpacity={1} onPress={onClose}>
+        <TouchableOpacity activeOpacity={1} onPress={() => {}} style={[styles.menuCard, { backgroundColor: colors.surface, borderColor: colors.border, top: dropdownTop, left: 12, right: 12 }]}>
         {/* Font size row */}
         <View style={styles.menuSection}>
           <Text style={[styles.menuLabel, { color: colors.mutedText }]}>Font size</Text>
@@ -131,7 +120,8 @@ function AppearanceMenu({ visible, onClose, colors, dropdownTop }) {
             );
           })}
         </View>
-      </View>
+        </TouchableOpacity>
+      </TouchableOpacity>
     </Modal>
   );
 }
@@ -153,21 +143,8 @@ function VersionMenu({ visible, onClose, onSelect, activeVersion, colors, dropdo
       onRequestClose={onClose}
       statusBarTranslucent
     >
-      <TouchableOpacity style={styles.menuOverlay} onPress={onClose} activeOpacity={1} />
-      <View
-        style={[
-          styles.menuCard,
-          {
-            backgroundColor: colors.surface,
-            borderColor: colors.border,
-            top: dropdownTop,
-            right: 12,
-            // Don't stretch full width — hug the right side under the button.
-            left: undefined,
-            minWidth: 220,
-          },
-        ]}
-      >
+      <TouchableOpacity style={styles.fullScreen} activeOpacity={1} onPress={onClose}>
+        <TouchableOpacity activeOpacity={1} onPress={() => {}} style={[styles.menuCard, { backgroundColor: colors.surface, borderColor: colors.border, top: dropdownTop, right: 12, left: undefined, minWidth: 220 }]}>
         <View style={styles.menuSection}>
           <Text style={[styles.menuLabel, { color: colors.mutedText }]}>Translation</Text>
           {available.map((v) => {
@@ -202,7 +179,8 @@ function VersionMenu({ visible, onClose, onSelect, activeVersion, colors, dropdo
             );
           })}
         </View>
-      </View>
+        </TouchableOpacity>
+      </TouchableOpacity>
     </Modal>
   );
 }
@@ -348,8 +326,8 @@ const styles = StyleSheet.create({
   },
 
   // Dropdown card
-  menuOverlay: {
-    ...StyleSheet.absoluteFillObject,
+  fullScreen: {
+    flex: 1,
   },
   menuCard: {
     position: "absolute",
