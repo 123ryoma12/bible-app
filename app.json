@@ -15,7 +15,8 @@
         "foregroundImage": "./assets/logo.png"
       },
       "package": "pnunag.bibleapp",
-      "edgeToEdgeEnabled": true
+      "edgeToEdgeEnabled": true,
+      "permissions": ["android.permission.POST_NOTIFICATIONS"]
     },
     "web": {
       "favicon": "./assets/logo.png"
@@ -29,7 +30,8 @@
         "expo-audio",
         {
           "enableBackgroundPlayback": true,
-          "enableBackgroundRecording": false
+          "enableBackgroundRecording": false,
+          "recordAudioAndroid": false
         }
       ]
     ],

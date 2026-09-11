@@ -1,13 +1,18 @@
 // Bottom sheet listing sermons for the book (and chapter) currently open in the
 // reader, sourced from Gospel in Life.
 //
-// Fetching is deliberately lazy: nothing is requested until the sheet is
-// opened, and nothing is cached to disk, so every open is a fresh look at the
-// site. Closing the sheet aborts any request still in flight.
+// Fetching is deliberately lazy: the listing is not requested until the sheet
+// is opened and is never cached, so every open is a fresh look at the site.
+// Closing the sheet aborts any request still in flight.
 //
 // The list is split into two sections — the exact chapter first, then the whole
 // book — because the chapter is the reason you tapped, but the book is where
 // you browse.
+//
+// A second view lists sermons whose audio has been downloaded (see
+// sermonDownloads). It deliberately shares the same row, so downloading,
+// removing and playing work identically wherever a sermon appears, and it is
+// readable with no connection at all — which is when it earns its keep.
 
 import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import {
@@ -15,10 +20,12 @@ import {
   Text,
   Modal,
   SectionList,
+  FlatList,
   TouchableOpacity,
   ActivityIndicator,
   StyleSheet,
   Linking,
+  Alert,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
@@ -33,6 +40,15 @@ import {
   SOURCE_URL,
   BOOK_PAGE_SIZE,
 } from "../data/sermonApi";
+import {
+  useSermonDownloads,
+  downloadSermon,
+  cancelDownload,
+  removeDownload,
+  formatDownloadSize,
+  totalDownloadedBytes,
+  DOWNLOADS_SUPPORTED,
+} from "../data/sermonDownloads";
 
 // Copy for each failure. Only transient problems offer a retry — showing one on
 // a book that simply has no sermons would be a lie, since retrying can never
@@ -77,6 +93,11 @@ export default function SermonSheet({
 }) {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
+  const downloads = useSermonDownloads();
+
+  // browse | downloads. Browsing is the default because the sheet was opened
+  // from a chapter, and that chapter's sermons are the reason for the tap.
+  const [view, setView] = useState("browse");
 
   const [status, setStatus] = useState("loading"); // loading | ready | failed
   const [failureKind, setFailureKind] = useState(null);
@@ -127,6 +148,41 @@ export default function SermonSheet({
     load();
     return () => abortRef.current?.abort();
   }, [visible, bookName, chapterNumber, load]);
+
+  // Every open starts on the chapter you're reading. Leaving the sheet parked
+  // on Downloads would bury the reason it was opened.
+  useEffect(() => {
+    if (visible) setView("browse");
+  }, [visible]);
+
+  // Tapping the trailing control means different things depending on where the
+  // sermon has got to, so the row asks for an action and this decides.
+  const handleDownloadAction = useCallback(
+    (sermon, state) => {
+      if (state === "downloaded" || state === "remove") {
+        Alert.alert(
+          "Remove download?",
+          `"${sermon.title}" will need to be downloaded again to play offline.`,
+          [
+            { text: "Cancel", style: "cancel" },
+            {
+              text: "Remove",
+              style: "destructive",
+              onPress: () => removeDownload(sermon.id),
+            },
+          ]
+        );
+        return;
+      }
+      if (state === "downloading") {
+        cancelDownload(sermon.id);
+        return;
+      }
+      // Idle or previously failed — either way, try.
+      downloadSermon(sermon);
+    },
+    []
+  );
 
   const loadMore = useCallback(async () => {
     if (status !== "ready" || loadingMore) return;
@@ -199,7 +255,79 @@ export default function SermonSheet({
     return built;
   }, [status, bookIsEmpty, bookName, chapterNumber, chapterSermons, bookSermons, bookTotal]);
 
+  // Both views render the same row, and each row needs the same download
+  // wiring, so it's assembled in one place.
+  const renderSermonRow = useCallback(
+    (sermon, { inDownloads = false } = {}) => {
+      const id = String(sermon.id);
+      const inFlight = downloads.active[id];
+      const downloadState = downloads.byId[id]
+        ? inDownloads
+          ? "remove"
+          : "downloaded"
+        : inFlight?.failed
+          ? "failed"
+          : inFlight
+            ? "downloading"
+            : "idle";
+
+      return (
+        <SermonRow
+          sermon={sermon}
+          colors={colors}
+          isActive={id === String(activeSermonId)}
+          onPress={() => onSelectSermon?.(sermon)}
+          downloadState={downloadState}
+          progress={inFlight?.progress ?? null}
+          onDownloadAction={() => handleDownloadAction(sermon, downloadState)}
+        />
+      );
+    },
+    [colors, downloads, activeSermonId, onSelectSermon, handleDownloadAction]
+  );
+
+  const renderDownloads = () => {
+    if (!downloads.ready) {
+      return (
+        <View style={styles.centred}>
+          <ActivityIndicator color={colors.accent} />
+        </View>
+      );
+    }
+
+    if (!downloads.entries.length) {
+      return (
+        <View style={styles.centred}>
+          <MaterialCommunityIcons
+            name="tray-arrow-down"
+            size={40}
+            color={colors.mutedText}
+          />
+          <Text style={[styles.centredTitle, { color: colors.text }]}>
+            Nothing downloaded yet
+          </Text>
+          <Text style={[styles.centredBody, { color: colors.mutedText }]}>
+            Tap the download icon beside any sermon to keep a copy on your phone.
+            Downloads play without a connection.
+          </Text>
+        </View>
+      );
+    }
+
+    return (
+      <FlatList
+        data={downloads.entries}
+        keyExtractor={(item) => item.id}
+        extraData={downloads}
+        contentContainerStyle={{ paddingTop: 8, paddingBottom: 12 }}
+        renderItem={({ item }) => renderSermonRow(item, { inDownloads: true })}
+      />
+    );
+  };
+
   const renderBody = () => {
+    if (view === "downloads") return renderDownloads();
+
     if (status === "loading") {
       return (
         <View style={styles.centred}>
@@ -226,6 +354,22 @@ export default function SermonSheet({
           >
             <Text style={[styles.retryText, { color: colors.accent }]}>Try again</Text>
           </TouchableOpacity>
+
+          {/* Being offline is exactly when downloads matter, so say so instead
+              of leaving them behind a tab the user may not think to check. */}
+          {downloads.entries.length > 0 && (
+            <TouchableOpacity
+              style={styles.centredLink}
+              onPress={() => setView("downloads")}
+              accessibilityRole="button"
+              accessibilityLabel={`Play your ${downloads.entries.length} downloaded sermons`}
+            >
+              <Text style={[styles.centredLinkText, { color: colors.accent }]}>
+                Play your {downloads.entries.length} downloaded{" "}
+                {downloads.entries.length === 1 ? "sermon" : "sermons"}
+              </Text>
+            </TouchableOpacity>
+          )}
         </View>
       );
     }
@@ -255,6 +399,7 @@ export default function SermonSheet({
         keyExtractor={(item, index) =>
           item.__placeholder ? `placeholder-${index}` : String(item.id)
         }
+        extraData={downloads}
         stickySectionHeadersEnabled={false}
         onEndReached={loadMore}
         onEndReachedThreshold={0.6}
@@ -279,14 +424,7 @@ export default function SermonSheet({
               </Text>
             );
           }
-          return (
-            <SermonRow
-              sermon={item}
-              colors={colors}
-              isActive={item.id === activeSermonId}
-              onPress={() => onSelectSermon?.(item)}
-            />
-          );
+          return renderSermonRow(item);
         }}
         ListFooterComponent={
           loadingMore ? (
@@ -296,6 +434,23 @@ export default function SermonSheet({
       />
     );
   };
+
+  // The subtitle answers "what am I looking at" for whichever view is showing:
+  // where you are in the Bible, or how much of your phone this is using.
+  const downloadedSize = formatDownloadSize(totalDownloadedBytes(downloads.entries));
+  const headerSub =
+    view === "downloads"
+      ? downloads.entries.length
+        ? [
+            `${downloads.entries.length} ${
+              downloads.entries.length === 1 ? "sermon" : "sermons"
+            }`,
+            downloadedSize,
+          ]
+            .filter(Boolean)
+            .join(" · ")
+        : "Available offline"
+      : `${bookName} ${chapterNumber}`;
 
   return (
     <Modal
@@ -327,7 +482,7 @@ export default function SermonSheet({
             <View style={{ flex: 1 }}>
               <Text style={[styles.headerTitle, { color: colors.text }]}>Sermons</Text>
               <Text style={[styles.headerSub, { color: colors.mutedText }]}>
-                {bookName} {chapterNumber}
+                {headerSub}
               </Text>
             </View>
             <TouchableOpacity
@@ -339,6 +494,26 @@ export default function SermonSheet({
               <MaterialCommunityIcons name="close" size={24} color={colors.mutedText} />
             </TouchableOpacity>
           </View>
+
+          {/* Hidden where downloading isn't possible (the web build can't reach
+              the audio), since a tab that can only ever be empty is noise. */}
+          {DOWNLOADS_SUPPORTED && (
+            <View style={styles.tabs}>
+              <SheetTab
+                label="Browse"
+                colors={colors}
+                active={view === "browse"}
+                onPress={() => setView("browse")}
+              />
+              <SheetTab
+                label="Downloaded"
+                count={downloads.entries.length}
+                colors={colors}
+                active={view === "downloads"}
+                onPress={() => setView("downloads")}
+              />
+            </View>
+          )}
 
           <View style={[styles.divider, { backgroundColor: colors.border }]} />
 
@@ -363,7 +538,115 @@ export default function SermonSheet({
   );
 }
 
-function SermonRow({ sermon, colors, isActive, onPress }) {
+function SheetTab({ label, count, colors, active, onPress }) {
+  return (
+    <TouchableOpacity
+      style={[
+        styles.tab,
+        active && { backgroundColor: colors.accent + "1F" },
+      ]}
+      onPress={onPress}
+      activeOpacity={0.7}
+      accessibilityRole="tab"
+      accessibilityLabel={count > 0 ? `${label}, ${count}` : label}
+      accessibilityState={{ selected: active }}
+    >
+      <Text
+        style={[
+          styles.tabText,
+          { color: active ? colors.accent : colors.mutedText },
+        ]}
+      >
+        {label}
+      </Text>
+      {count > 0 && (
+        <View
+          style={[
+            styles.tabBadge,
+            { backgroundColor: active ? colors.accent : colors.border },
+          ]}
+        >
+          <Text
+            style={[
+              styles.tabBadgeText,
+              { color: active ? colors.accentContrast : colors.mutedText },
+            ]}
+          >
+            {count}
+          </Text>
+        </View>
+      )}
+    </TouchableOpacity>
+  );
+}
+
+// Copy and iconography for the trailing control, keyed by how far the sermon
+// has got. Downloaded and failed are both tappable in place — one removes, the
+// other retries — so the row never needs a second gesture to learn.
+//
+// `remove` is the Downloads tab's version of `downloaded`: everything in that
+// list is downloaded, so a check against every row states the obvious. The slot
+// is worth more as the action you actually came there for.
+const DOWNLOAD_CONTROL = {
+  idle: { icon: "tray-arrow-down", label: "Download for offline listening" },
+  downloaded: { icon: "check-circle", label: "Downloaded. Tap to remove." },
+  remove: { icon: "trash-can-outline", label: "Remove download" },
+  failed: { icon: "alert-circle-outline", label: "Download failed. Tap to retry." },
+};
+
+function DownloadButton({ state, progress, colors, onPress }) {
+  const isDownloading = state === "downloading";
+  const control = DOWNLOAD_CONTROL[state] ?? DOWNLOAD_CONTROL.idle;
+
+  // The trash stays muted rather than red: a list of twenty red icons reads as
+  // alarm, and the destructive weight belongs on the confirmation instead.
+  const tint =
+    state === "downloaded"
+      ? colors.accent
+      : state === "failed"
+        ? colors.danger
+        : colors.mutedText;
+
+  return (
+    <TouchableOpacity
+      onPress={onPress}
+      style={styles.rowAction}
+      hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+      accessibilityRole="button"
+      accessibilityLabel={
+        isDownloading
+          ? progress != null
+            ? `Downloading, ${Math.round(progress * 100)} percent. Tap to cancel.`
+            : "Downloading. Tap to cancel."
+          : control.label
+      }
+    >
+      {isDownloading ? (
+        // A percentage where the server told us the size, a spinner where it
+        // didn't. Either way the same tap cancels.
+        progress != null ? (
+          <Text style={[styles.rowProgress, { color: colors.accent }]}>
+            {Math.round(progress * 100)}%
+          </Text>
+        ) : (
+          <ActivityIndicator size="small" color={colors.accent} />
+        )
+      ) : (
+        <MaterialCommunityIcons name={control.icon} size={21} color={tint} />
+      )}
+    </TouchableOpacity>
+  );
+}
+
+function SermonRow({
+  sermon,
+  colors,
+  isActive,
+  onPress,
+  downloadState,
+  progress,
+  onDownloadAction,
+}) {
   const meta = [sermon.speaker, sermon.year].filter(Boolean).join(" · ");
   // The passage is the most useful thing to scan for, so it leads the subtitle
   // and is tinted to stand apart from the speaker and year.
@@ -403,6 +686,15 @@ function SermonRow({ sermon, colors, isActive, onPress }) {
           </Text>
         )}
       </View>
+
+      {DOWNLOADS_SUPPORTED && (
+        <DownloadButton
+          state={downloadState}
+          progress={progress}
+          colors={colors}
+          onPress={onDownloadAction}
+        />
+      )}
     </TouchableOpacity>
   );
 }
@@ -456,6 +748,37 @@ const styles = StyleSheet.create({
     flex: 1,
   },
 
+  // Browse / Downloaded switch
+  tabs: {
+    flexDirection: "row",
+    gap: 8,
+    paddingHorizontal: 18,
+    paddingBottom: 12,
+  },
+  tab: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 16,
+  },
+  tabText: {
+    fontSize: 13,
+    fontFamily: uiFont(600),
+  },
+  tabBadge: {
+    minWidth: 18,
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+    borderRadius: 9,
+    alignItems: "center",
+  },
+  tabBadgeText: {
+    fontSize: 11,
+    fontFamily: uiFont(600),
+  },
+
   // Section headers
   sectionHeader: {
     flexDirection: "row",
@@ -499,6 +822,16 @@ const styles = StyleSheet.create({
   rowPassage: {
     fontFamily: uiFont(600),
   },
+  rowAction: {
+    width: 34,
+    alignItems: "center",
+    justifyContent: "center",
+    marginLeft: 6,
+  },
+  rowProgress: {
+    fontSize: 11,
+    fontFamily: uiFont(600),
+  },
   inlineNote: {
     fontSize: 13,
     fontFamily: uiFont(400),
@@ -536,6 +869,15 @@ const styles = StyleSheet.create({
   },
   retryText: {
     fontSize: 14,
+    fontFamily: uiFont(600),
+  },
+  centredLink: {
+    marginTop: 14,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+  },
+  centredLinkText: {
+    fontSize: 13,
     fontFamily: uiFont(600),
   },
 

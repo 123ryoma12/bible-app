@@ -4,6 +4,10 @@
 // every chapter change and tab switch — anchoring playback there would cut the
 // audio off the moment you turned the page.
 //
+// Playback is meant to outlive the screen: the audio session is configured for
+// background use and the sermon is published to the OS as now-playing media, so
+// it keeps going when the phone is locked and can be driven from there.
+//
 // The MP3 is not published through the REST API, so it has to be resolved from
 // the sermon page when a sermon is chosen (see `fetchAudioUrl`). If that ever
 // fails — their markup changing is the likely cause — the player degrades to
@@ -17,8 +21,9 @@ import {
   ActivityIndicator,
   StyleSheet,
   Linking,
+  Platform,
+  PermissionsAndroid,
 } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useAudioPlayer, useAudioPlayerStatus, setAudioModeAsync } from "expo-audio";
 import { uiFont } from "../theme/fonts";
@@ -28,10 +33,50 @@ import {
   isAbortError,
   ErrorKind,
   AUDIO_EXTRACTION_SUPPORTED,
+  SOURCE_NAME,
 } from "../data/sermonApi";
+import { getDownloadedUri } from "../data/sermonDownloads";
 
 const SKIP_SECONDS = 15;
 const SPEEDS = [1, 1.25, 1.5, 2];
+
+// Show the scrub bar and the two seek buttons alongside play/pause on the
+// lock screen and in the notification shade.
+const LOCK_SCREEN_OPTIONS = {
+  showSeekForward: true,
+  showSeekBackward: true,
+  isLiveStream: false,
+};
+
+// Android 13+ gates the media notification behind the notification permission,
+// and the lock screen controls are that notification. Without it playback still
+// works, but there is nothing to tap. Asked for once, the first time a sermon
+// actually starts, so it never greets someone who only reads.
+const NEEDS_NOTIFICATION_PERMISSION =
+  Platform.OS === "android" && Number(Platform.Version) >= 33;
+
+let notificationPermissionAsked = false;
+
+async function ensureNotificationPermission() {
+  if (!NEEDS_NOTIFICATION_PERMISSION || notificationPermissionAsked) return;
+  notificationPermissionAsked = true;
+  try {
+    await PermissionsAndroid.request(
+      PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS
+    );
+  } catch {
+    /* denied or unavailable — playback continues without the controls */
+  }
+}
+
+/** What the OS shows on the lock screen for the sermon being played. */
+function lockScreenMetadata(sermon) {
+  return {
+    title: sermon.title,
+    artist: sermon.speaker || SOURCE_NAME,
+    albumTitle: sermon.passage || SOURCE_NAME,
+  };
+}
 
 function formatTime(seconds) {
   if (!Number.isFinite(seconds) || seconds < 0) return "0:00";
@@ -43,7 +88,6 @@ function formatTime(seconds) {
 
 export default function SermonPlayer({ sermon, onClose }) {
   const { colors } = useTheme();
-  const insets = useSafeAreaInsets();
 
   const [audioUrl, setAudioUrl] = useState(null);
   const [resolving, setResolving] = useState(false);
@@ -58,9 +102,20 @@ export default function SermonPlayer({ sermon, onClose }) {
   const player = useAudioPlayer(null, { updateInterval: 500 });
   const status = useAudioPlayerStatus(player);
 
-  // Play through the iOS silent switch — a muted sermon would look like a bug.
+  // Audio session: a sermon is long-form listening, so it has to survive the
+  // screen locking or the app being backgrounded.
+  //
+  // - playsInSilentMode: play through the iOS silent switch — a muted sermon
+  //   would look like a bug.
+  // - shouldPlayInBackground: keep the session alive off-screen.
+  // - doNotMix: required for setActiveForLockScreen; without exclusive focus
+  //   the OS won't attach the lock screen controls to this player.
   useEffect(() => {
-    setAudioModeAsync({ playsInSilentMode: true }).catch(() => {});
+    setAudioModeAsync({
+      playsInSilentMode: true,
+      shouldPlayInBackground: true,
+      interruptionMode: "doNotMix",
+    }).catch(() => {});
   }, []);
 
   // Resolve the MP3 whenever a new sermon is chosen.
@@ -87,6 +142,16 @@ export default function SermonPlayer({ sermon, onClose }) {
 
     (async () => {
       try {
+        // A downloaded copy short-circuits everything: no page scrape, no
+        // network, and it plays on a train. This is the whole point of the
+        // download, so it is checked before anything else is attempted.
+        const localUri = await getDownloadedUri(sermon.id);
+        if (controller.signal.aborted) return;
+        if (localUri) {
+          setAudioUrl(localUri);
+          return;
+        }
+
         const url = await fetchAudioUrl(sermon.link, { signal: controller.signal });
         if (controller.signal.aborted) return;
         if (!url) {
@@ -106,16 +171,72 @@ export default function SermonPlayer({ sermon, onClose }) {
     return () => controller.abort();
   }, [sermon]);
 
+  // Keep the current sermon reachable from the playback effect without adding
+  // it as a dependency — a re-render must never restart the audio.
+  const sermonRef = useRef(sermon);
+  useEffect(() => {
+    sermonRef.current = sermon;
+  }, [sermon]);
+
   // Load and start once the URL is known.
   useEffect(() => {
-    if (!audioUrl) return;
-    try {
-      player.replace(audioUrl);
-      player.play();
-    } catch {
-      setFailure("unavailable");
-    }
+    if (!audioUrl) return undefined;
+
+    let cancelled = false;
+
+    (async () => {
+      // Asked before the media service starts, so the notification carrying the
+      // lock screen controls can be posted from the outset.
+      await ensureNotificationPermission();
+      if (cancelled) return;
+
+      try {
+        player.replace(audioUrl);
+      } catch {
+        setFailure("unavailable");
+        return;
+      }
+
+      // Hand the OS the now-playing info. On Android this is also what keeps
+      // playback alive: without it the system stops background audio after a
+      // few minutes.
+      const current = sermonRef.current;
+      if (current) {
+        try {
+          player.setActiveForLockScreen(
+            true,
+            lockScreenMetadata(current),
+            LOCK_SCREEN_OPTIONS
+          );
+        } catch {
+          /* no lock screen controls on this platform — playback is unaffected */
+        }
+      }
+
+      try {
+        player.play();
+      } catch {
+        setFailure("unavailable");
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
   }, [audioUrl, player]);
+
+  // Drop the now-playing info when the player goes away, so no stale sermon is
+  // left sitting on the lock screen.
+  useEffect(
+    () => () => {
+      try {
+        player.clearLockScreenControls();
+      } catch {
+        /* player may already be released */
+      }
+    },
+    [player]
+  );
 
   // Reset the rate for each new sermon so a previous 2x doesn't carry over.
   useEffect(() => {
@@ -126,6 +247,9 @@ export default function SermonPlayer({ sermon, onClose }) {
     abortRef.current?.abort();
     try {
       player.pause();
+      // Closing the bar is a deliberate "I'm done", so tear the notification
+      // down with it rather than leaving a paused sermon on the lock screen.
+      player.clearLockScreenControls();
     } catch {
       /* player may already be released */
     }
@@ -186,7 +310,6 @@ export default function SermonPlayer({ sermon, onClose }) {
         {
           backgroundColor: colors.surface,
           borderTopColor: colors.border,
-          paddingBottom: insets.bottom > 0 ? 6 : 10,
         },
       ]}
     >
@@ -316,6 +439,9 @@ export default function SermonPlayer({ sermon, onClose }) {
 const styles = StyleSheet.create({
   container: {
     borderTopWidth: StyleSheet.hairlineWidth,
+    // A fixed inset, not a safe-area one: BottomTabBar sits below this bar and
+    // already clears the gesture pill / home indicator.
+    paddingBottom: 6,
   },
   progressHit: {
     paddingVertical: 6,
