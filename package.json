@@ -29,7 +29,9 @@
     "start": "expo start",
     "android": "expo run:android",
     "ios": "expo run:ios",
-    "web": "expo start --web"
+    "web": "expo start --web",
+    "stamp-build": "node scripts/stamp-build.js",
+    "prebuild": "node scripts/stamp-build.js"
   },
   "private": true
 }

@@ -12,6 +12,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useTheme } from "../theme/ThemeContext";
 import { uiFont } from "../theme/fonts";
 import { exportBackup, importBackup } from "../data/backupStore";
+import { BUILD_DATE, BUILD_COMMIT, APP_VERSION } from "../data/buildInfo";
 
 const APPEARANCE_OPTIONS = [
   { key: "light", label: "Light Mode" },
@@ -171,6 +172,16 @@ export default function SettingsScreen() {
           Your data is stored only on this device. Back it up regularly so you don't
           lose your progress if you change or reset your phone.
         </Text>
+        <SectionHeader title="About" colors={colors} />
+        <View style={styles.buildInfo}>
+          <Text style={[styles.buildInfoRow, { color: colors.mutedText }]}>
+            Version {APP_VERSION}
+          </Text>
+          <Text style={[styles.buildInfoRow, { color: colors.mutedText }]}>
+            Built {BUILD_DATE} · {BUILD_COMMIT}
+          </Text>
+        </View>
+
       </ScrollView>
     </SafeAreaView>
   );
@@ -235,6 +246,16 @@ const styles = StyleSheet.create({
   actionRowText: { flex: 1, paddingRight: 12 },
   actionSubtext: { fontSize: 13, fontFamily: uiFont(400), marginTop: 2 },
   chevron: { fontSize: 22, fontFamily: uiFont(400) },
+  buildInfo: {
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    gap: 4,
+  },
+  buildInfoRow: {
+    fontSize: 13,
+    fontFamily: uiFont(400),
+    lineHeight: 18,
+  },
   dataNote: {
     fontSize: 12,
     fontFamily: uiFont(400),
