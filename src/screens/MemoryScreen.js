@@ -447,7 +447,7 @@ function formatLastDone(entry) {
 const hit = { top: 10, bottom: 10, left: 10, right: 10 };
 
 const styles = StyleSheet.create({
-  root: { flex: 1 },
+  root: { flex: 1, position: "relative" },
   safe: { flex: 1 },
   headerRow: {
     flexDirection: "row",
@@ -480,7 +480,7 @@ const styles = StyleSheet.create({
   modalCard: {
     width: "100%",
     maxWidth: 420,
-    maxHeight: "80%",
+    maxHeight: 560,
     borderRadius: 16,
     overflow: "hidden",
   },

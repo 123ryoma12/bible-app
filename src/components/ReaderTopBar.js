@@ -4,9 +4,8 @@
 //   ···  – Appearance menu: font typeface picker + font-size stepper
 //   NIV  – Version pill: cycles through / picks the reading translation
 //
-// Both open lightweight inline dropdowns (no full-screen modal) to stay
-// uncluttered. The bar is driven by the same `chromeVisible` flag as the
-// footer so they always move together.
+// Dropdowns use plain View-based absolute overlays (no Modal/Pressable) so
+// they work correctly on web as well as native.
 
 import React, { useState, useCallback } from "react";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -16,8 +15,7 @@ import {
   TouchableOpacity,
   Animated,
   StyleSheet,
-  Modal,
-  Pressable,
+  ScrollView,
 } from "react-native";
 import { uiFont, readingFont, READING_FONT_OPTIONS } from "../theme/fonts";
 import { BIBLE_VERSIONS } from "../data/bibleVersions";
@@ -30,7 +28,21 @@ import {
 import { setReadingVersion } from "../data/bibleVersionStore";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Sub-component: Appearance dropdown (font typeface + size)
+// Shared dismiss overlay — tapping anywhere outside the card closes it
+// ─────────────────────────────────────────────────────────────────────────────
+
+function DismissOverlay({ onDismiss }) {
+  return (
+    <TouchableOpacity
+      style={StyleSheet.absoluteFillObject}
+      activeOpacity={1}
+      onPress={onDismiss}
+    />
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Appearance dropdown (font typeface + size)
 // ─────────────────────────────────────────────────────────────────────────────
 
 function AppearanceMenu({ visible, onClose, colors, dropdownTop }) {
@@ -39,14 +51,8 @@ function AppearanceMenu({ visible, onClose, colors, dropdownTop }) {
   if (!visible) return null;
 
   return (
-    <Modal
-      transparent
-      animationType="none"
-      visible={visible}
-      onRequestClose={onClose}
-      statusBarTranslucent
-    >
-      <Pressable style={styles.menuOverlay} onPress={onClose} />
+    <View style={[StyleSheet.absoluteFillObject, { zIndex: 20 }]} pointerEvents="box-none">
+      <DismissOverlay onDismiss={onClose} />
       <View
         style={[
           styles.menuCard,
@@ -109,9 +115,7 @@ function AppearanceMenu({ visible, onClose, colors, dropdownTop }) {
                   styles.fontRow,
                   isActive && { backgroundColor: colors.accent + "18" },
                 ]}
-                onPress={() => {
-                  setReadingFontKey(opt.key);
-                }}
+                onPress={() => setReadingFontKey(opt.key)}
                 activeOpacity={0.7}
               >
                 <Text
@@ -133,12 +137,12 @@ function AppearanceMenu({ visible, onClose, colors, dropdownTop }) {
           })}
         </View>
       </View>
-    </Modal>
+    </View>
   );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Sub-component: Version picker dropdown
+// Version picker dropdown
 // ─────────────────────────────────────────────────────────────────────────────
 
 function VersionMenu({ visible, onClose, onSelect, activeVersion, colors, dropdownTop }) {
@@ -147,14 +151,8 @@ function VersionMenu({ visible, onClose, onSelect, activeVersion, colors, dropdo
   const available = BIBLE_VERSIONS.filter((v) => v.available);
 
   return (
-    <Modal
-      transparent
-      animationType="none"
-      visible={visible}
-      onRequestClose={onClose}
-      statusBarTranslucent
-    >
-      <Pressable style={styles.menuOverlay} onPress={onClose} />
+    <View style={[StyleSheet.absoluteFillObject, { zIndex: 20 }]} pointerEvents="box-none">
+      <DismissOverlay onDismiss={onClose} />
       <View
         style={[
           styles.menuCard,
@@ -163,9 +161,7 @@ function VersionMenu({ visible, onClose, onSelect, activeVersion, colors, dropdo
             borderColor: colors.border,
             top: dropdownTop,
             right: 12,
-            // Don't stretch full width — hug the right side under the button.
-            left: undefined,
-            minWidth: 200,
+            minWidth: 220,
           },
         ]}
       >
@@ -184,12 +180,7 @@ function VersionMenu({ visible, onClose, onSelect, activeVersion, colors, dropdo
                 activeOpacity={0.7}
               >
                 <View style={{ flex: 1 }}>
-                  <Text
-                    style={[
-                      styles.versionAbbr,
-                      { color: isActive ? colors.accent : colors.text },
-                    ]}
-                  >
+                  <Text style={[styles.versionAbbr, { color: isActive ? colors.accent : colors.text }]}>
                     {v.abbr}
                   </Text>
                   <Text style={[styles.versionName, { color: colors.mutedText }]}>
@@ -204,7 +195,7 @@ function VersionMenu({ visible, onClose, onSelect, activeVersion, colors, dropdo
           })}
         </View>
       </View>
-    </Modal>
+    </View>
   );
 }
 
@@ -215,8 +206,6 @@ function VersionMenu({ visible, onClose, onSelect, activeVersion, colors, dropdo
 export default function ReaderTopBar({ barAnim, barHeight, onHeightChange, activeVersion, onVersionChange }) {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
-  // dropdownTop: position menus just below the bar. barHeight is measured after
-  // first layout; fall back to 56 so it doesn't sit at y=0 on first render.
   const dropdownTop = (barHeight || 56) + 4;
 
   const [appearanceOpen, setAppearanceOpen] = useState(false);
@@ -232,6 +221,8 @@ export default function ReaderTopBar({ barAnim, barHeight, onHeightChange, activ
   );
 
   return (
+    // The fragment + sibling Views let the dropdowns escape the Animated bar's
+    // overflow clipping by being siblings rather than children of it.
     <>
       <Animated.View
         onLayout={(e) => {
@@ -243,6 +234,7 @@ export default function ReaderTopBar({ barAnim, barHeight, onHeightChange, activ
           {
             backgroundColor: colors.background,
             paddingTop: insets.top,
+            zIndex: 10,
             opacity: barAnim.interpolate({ inputRange: [0, 1], outputRange: [1, 0] }),
             transform: [
               {
@@ -255,7 +247,6 @@ export default function ReaderTopBar({ barAnim, barHeight, onHeightChange, activ
           },
         ]}
       >
-        {/* Spacer pushes both controls to the right */}
         <View style={{ flex: 1 }} />
 
         {/* ··· Appearance button */}
@@ -316,10 +307,8 @@ const styles = StyleSheet.create({
     alignItems: "center",
     paddingHorizontal: 14,
     paddingBottom: 8,
-    zIndex: 10,
   },
 
-  // ··· button
   dotsBtn: {
     paddingVertical: 6,
     paddingHorizontal: 4,
@@ -333,7 +322,6 @@ const styles = StyleSheet.create({
     lineHeight: 26,
   },
 
-  // Version pill
   versionPill: {
     borderWidth: 1.5,
     borderRadius: 999,
@@ -348,10 +336,6 @@ const styles = StyleSheet.create({
     letterSpacing: 0.6,
   },
 
-  // Dropdown card
-  menuOverlay: {
-    ...StyleSheet.absoluteFillObject,
-  },
   menuCard: {
     position: "absolute",
     borderWidth: StyleSheet.hairlineWidth,
@@ -369,7 +353,6 @@ const styles = StyleSheet.create({
   },
   menuDivider: {
     height: StyleSheet.hairlineWidth,
-    marginHorizontal: 0,
   },
   menuLabel: {
     fontSize: 11,
@@ -379,7 +362,6 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
 
-  // Font size row
   sizeRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -393,9 +375,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  sizeBtnDisabled: {
-    opacity: 0.35,
-  },
+  sizeBtnDisabled: { opacity: 0.35 },
   sizeBtnText: {
     fontFamily: uiFont(600),
     lineHeight: 24,
@@ -407,7 +387,6 @@ const styles = StyleSheet.create({
     fontFamily: uiFont(500),
   },
 
-  // Font typeface rows
   fontRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -427,7 +406,6 @@ const styles = StyleSheet.create({
     marginLeft: 8,
   },
 
-  // Version rows
   versionAbbr: {
     fontSize: 15,
     fontFamily: uiFont(700),
