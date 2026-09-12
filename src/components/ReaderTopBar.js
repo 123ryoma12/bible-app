@@ -200,6 +200,8 @@ export default function ReaderTopBar({
   onVersionChange,
   onOpenSermons,
   onOpenHistory,
+  notesOpen,
+  onToggleNotes,
 }) {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
@@ -245,6 +247,28 @@ export default function ReaderTopBar({
       >
         {/* Spacer pushes the controls to the right */}
         <View style={{ flex: 1 }} />
+
+        {/* Study notes toggle — opens/closes the bottom notes panel. */}
+        {onToggleNotes && (
+          <TouchableOpacity
+            style={styles.notesBtn}
+            onPress={() => {
+              setAppearanceOpen(false);
+              setVersionOpen(false);
+              onToggleNotes();
+            }}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            accessibilityRole="button"
+            accessibilityLabel={notesOpen ? "Close study notes" : "Open study notes"}
+            accessibilityState={{ expanded: notesOpen }}
+          >
+            <MaterialCommunityIcons
+              name="book-open-page-variant"
+              size={22}
+              color={notesOpen ? colors.accent : colors.text}
+            />
+          </TouchableOpacity>
+        )}
 
         {/* Listen button — opens the sermon sheet for the current book/chapter.
             Sized to match the appearance icon so the two sit evenly. */}
@@ -348,6 +372,15 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingBottom: 8,
     zIndex: 10,
+  },
+
+  // Study notes toggle button
+  notesBtn: {
+    paddingVertical: 6,
+    paddingHorizontal: 6,
+    marginRight: 4,
+    justifyContent: "center",
+    alignItems: "center",
   },
 
   // Listen (sermons) button

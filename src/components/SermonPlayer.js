@@ -36,6 +36,11 @@ import {
 } from "../data/sermonApi";
 import { fetchAudioUrl } from "../data/combinedSermonApi";
 import { getDownloadedUri } from "../data/sermonDownloads";
+import {
+  saveSermonPlayback,
+  saveSermonPosition,
+  clearSermonPlayback,
+} from "../data/sermonPlaybackStore";
 
 const SKIP_SECONDS = 15;
 const SPEEDS = [1, 1.25, 1.5, 2];
@@ -94,6 +99,10 @@ export default function SermonPlayer({
   // callers that stack something below it (the tab bar) pass the full distance
   // needed to clear the screen.
   hideDistance,
+  // Pre-resolved audio URL from a previous session — skips the page scrape.
+  initialAudioUrl = null,
+  // Position in seconds to seek to after load (for session restore).
+  seekTo = 0,
 }) {
   const { colors } = useTheme();
 
@@ -176,6 +185,13 @@ export default function SermonPlayer({
           return;
         }
 
+        // A pre-resolved URL from the previous session skips the page scrape —
+        // both sermon sources use permanent CDN links that never expire.
+        if (initialAudioUrl) {
+          setAudioUrl(initialAudioUrl);
+          return;
+        }
+
         const url = await fetchAudioUrl(sermon, { signal: controller.signal });
         if (controller.signal.aborted) return;
         if (!url) {
@@ -235,6 +251,10 @@ export default function SermonPlayer({
         } catch {
           /* no lock screen controls on this platform — playback is unaffected */
         }
+
+        // Persist the full state now that we have a resolved URL, so a
+        // force-quit immediately after opening still saves something useful.
+        saveSermonPlayback(current, audioUrl, 0).catch(() => {});
       }
 
       try {
@@ -248,6 +268,30 @@ export default function SermonPlayer({
       cancelled = true;
     };
   }, [audioUrl, player]);
+
+  // Seek to the restored position once the player is loaded and ready.
+  // Only fires on the initial mount when seekTo > 0 (session restore).
+  const hasSeenRef = useRef(false);
+  useEffect(() => {
+    if (hasSeenRef.current) return;
+    if (!status?.isLoaded || !seekTo || seekTo <= 0) return;
+    hasSeenRef.current = true;
+    try {
+      player.seekTo(seekTo);
+    } catch {
+      /* seek failed — playback continues from the start */
+    }
+  }, [status?.isLoaded, seekTo, player]);
+
+  // Save position to AsyncStorage every ~5 s while playing.
+  useEffect(() => {
+    if (!audioUrl || !sermon) return undefined;
+    const interval = setInterval(() => {
+      const pos = status?.currentTime ?? 0;
+      if (pos > 0) saveSermonPosition(pos).catch(() => {});
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [audioUrl, sermon, status?.currentTime]);
 
   // Drop the now-playing info when the player goes away, so no stale sermon is
   // left sitting on the lock screen.
@@ -277,6 +321,9 @@ export default function SermonPlayer({
     } catch {
       /* player may already be released */
     }
+    // Explicit close = user is done. Clear persisted state so reopening the
+    // app doesn't restore a sermon the user intentionally dismissed.
+    clearSermonPlayback().catch(() => {});
     onClose?.();
   }, [player, onClose]);
 

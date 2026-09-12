@@ -1,4 +1,4 @@
-import React, { useRef, useCallback, useEffect, useState } from "react";
+import React, { useRef, useCallback, useEffect, useState, useMemo } from "react";
 import {
   View,
   Text,
@@ -19,6 +19,8 @@ import { incrementReadCount } from "../data/progressStore";
 import { addToHistory } from "../data/historyStore";
 import { useTheme } from "../theme/ThemeContext";
 import { getActiveReadingVersion } from "../data/bibleVersionStore";
+import { getStudyNotes } from "../data/studyNotesData";
+import StudyNotesModal from "../components/StudyNotesModal";
 // lastPositionStore is intentionally not imported here — the global
 // lastPosition record is only needed at cold-launch time (handled in App.js).
 // Per-tab scroll offsets are passed in via the initialScrollY prop so each
@@ -67,6 +69,8 @@ export default function ReaderScreen({
   // it, and the scroll content reserves both so the end of a chapter still
   // comes to rest clear of everything.
   bottomChromeHeight = 0,
+  // Callback so App.js can shift the bottom chrome up when notes are open.
+  onNotesOpenChange,
 }) {
   const { colors, readingFontKey } = useTheme();
   const insets = useSafeAreaInsets();
@@ -103,6 +107,16 @@ export default function ReaderScreen({
   // you move on. Playback deliberately does NOT live here for that same
   // reason — the player is hosted in App.js so audio survives navigation.
   const [sermonsOpen, setSermonsOpen] = useState(false);
+
+  // Study notes panel visibility + notes for the current chapter.
+  const [notesOpen, setNotesOpen] = useState(false);
+  const studyNotes = useMemo(
+    () => getStudyNotes(book.name, chapterNumber),
+    [book.name, chapterNumber]
+  );
+  const handleToggleNotes = useCallback(() => {
+    setNotesOpen((o) => !o);
+  }, []);
 
   const handleSelectSermon = useCallback(
     (sermon) => {
@@ -363,6 +377,8 @@ export default function ReaderScreen({
         onVersionChange={() => setVersionKey((k) => k + 1)}
         onOpenSermons={() => setSermonsOpen(true)}
         onOpenHistory={onOpenHistory}
+        notesOpen={notesOpen}
+        onToggleNotes={handleToggleNotes}
       />
 
       {/* Sermons for the current book / chapter. Mounted only while open so
@@ -377,6 +393,15 @@ export default function ReaderScreen({
           activeSermonId={activeSermonId}
         />
       )}
+
+      {/* Study notes modal — full-screen sheet, same pattern as SermonSheet. */}
+      <StudyNotesModal
+        visible={notesOpen}
+        onClose={() => setNotesOpen(false)}
+        book={book}
+        chapterNumber={chapterNumber}
+        notes={studyNotes}
+      />
 
       {/* Persistent chapter navigator: ‹  [ Book Chapter ]  ›. The center pill
           is a button that returns to book selection; the arrows move between

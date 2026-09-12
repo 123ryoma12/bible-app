@@ -42,6 +42,7 @@ import { SourceSerif4_500Medium } from "@expo-google-fonts/source-serif-4/500Med
 import { SourceSerif4_600SemiBold } from "@expo-google-fonts/source-serif-4/600SemiBold";
 import { SourceSerif4_700Bold } from "@expo-google-fonts/source-serif-4/700Bold";
 import { getLastPosition, setLastPosition, setLastScroll } from "./src/data/lastPositionStore";
+import { getSermonPlayback } from "./src/data/sermonPlaybackStore";
 import { loadMemoryPrefs } from "./src/data/memoryPrefsStore";
 import { loadReadingVersion } from "./src/data/bibleVersionStore";
 import {
@@ -152,6 +153,10 @@ function AppContent() {
   // The sermon currently loaded into the player, or null when nothing is
   // playing. Held at this level so audio survives chapter and tab changes.
   const [activeSermon, setActiveSermon] = useState(null);
+  // Restored from the previous session — pre-resolved URL skips the page scrape
+  // and seekTo resumes from where the user left off.
+  const [restoredAudioUrl, setRestoredAudioUrl] = useState(null);
+  const [restoredSeekTo, setRestoredSeekTo] = useState(0);
   // Measured height of the bottom chrome stack (sermon player + tab bar). The
   // stack is an absolute overlay rather than a column sibling, so that hiding
   // it doesn't leave an empty band of background behind. Screens that shouldn't
@@ -205,9 +210,16 @@ function AppContent() {
   useEffect(() => {
     let cancelled = false;
 
-    Promise.all([getReaderTabs(), getLastPosition()])
-      .then(([savedTabs, position]) => {
+    Promise.all([getReaderTabs(), getLastPosition(), getSermonPlayback()])
+      .then(([savedTabs, position, savedSermon]) => {
         if (cancelled) return;
+
+        // ── Restore sermon player ────────────────────────────────────────────
+        if (savedSermon?.sermon && savedSermon?.audioUrl) {
+          setActiveSermon(savedSermon.sermon);
+          setRestoredAudioUrl(savedSermon.audioUrl);
+          setRestoredSeekTo(savedSermon.positionSecs ?? 0);
+        }
 
         // ── Restore reader tabs ──────────────────────────────────────────────
         if (savedTabs && savedTabs.tabs && savedTabs.tabs.length > 0) {
@@ -571,13 +583,22 @@ function AppContent() {
         {activeSermon && (
           <SermonPlayer
             sermon={activeSermon}
-            onClose={() => setActiveSermon(null)}
+            onClose={() => {
+              setActiveSermon(null);
+              // Clear restored state so a fresh sermon chosen later
+              // doesn't accidentally inherit the old URL or seek position.
+              setRestoredAudioUrl(null);
+              setRestoredSeekTo(0);
+            }}
             // Tucks away with the rest of the chrome while scrolling down. The
             // component only hides its view — playback is unaffected.
             visible={chromeVisible}
             // Clear the tab bar below it as well, or the player would stall
             // over the tab bar's vacated space instead of leaving the screen.
             hideDistance={bottomChromeHeight}
+            // Session restore — skip page scrape and seek to saved position.
+            initialAudioUrl={restoredAudioUrl}
+            seekTo={restoredSeekTo}
           />
         )}
 
