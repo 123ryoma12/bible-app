@@ -17,6 +17,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { uiFont, readingFont } from "../theme/fonts";
 import { useTheme } from "../theme/ThemeContext";
+import NoteText from "./NoteText";
 
 const NOTE_FONT_SIZE = 12.5;
 const REF_FONT_SIZE = 11;
@@ -50,7 +51,8 @@ export default function StudyNotesModal({ visible, onClose, book, chapterNumber,
         >
           {book?.name} {item.verse_ref}
         </Text>
-        <Text
+        <NoteText
+          text={item.note}
           style={[
             styles.noteText,
             {
@@ -58,9 +60,10 @@ export default function StudyNotesModal({ visible, onClose, book, chapterNumber,
               fontFamily: readingFont(readingFontKey, "regular"),
             },
           ]}
-        >
-          {item.note}
-        </Text>
+          boldStyle={{
+            fontFamily: readingFont(readingFontKey, "bold"),
+          }}
+        />
       </View>
     ),
     [colors, readingFontKey, book]

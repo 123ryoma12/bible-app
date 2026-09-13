@@ -22,6 +22,7 @@ import {
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useTheme } from "../theme/ThemeContext";
 import { uiFont, readingFont } from "../theme/fonts";
+import NoteText from "./NoteText";
 
 const PANEL_HEIGHT = 300;
 const NOTE_FONT_SIZE = 12.5;
@@ -60,7 +61,8 @@ export default function StudyNotesPanel({ notes, visible, onClose, bottomOffset 
         >
           {verse_ref}
         </Text>
-        <Text
+        <NoteText
+          text={note}
           style={[
             styles.noteText,
             {
@@ -68,9 +70,10 @@ export default function StudyNotesPanel({ notes, visible, onClose, bottomOffset 
               fontFamily: readingFont(readingFontKey, "regular"),
             },
           ]}
-        >
-          {note}
-        </Text>
+          boldStyle={{
+            fontFamily: readingFont(readingFontKey, "bold"),
+          }}
+        />
       </View>
     ),
     [colors, readingFontKey]
