@@ -7,6 +7,7 @@ import {
   StyleSheet,
   PanResponder,
   Animated,
+  StatusBar,
 } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { uiFont, readingFont } from "../theme/fonts";
@@ -302,6 +303,7 @@ export default function ReaderScreen({
       style={[styles.safe, { backgroundColor: colors.background }]}
       edges={["left", "right"]}
     >
+      <StatusBar hidden={!chromeVisible} animated translucent />
       <ScrollView
         ref={scrollRef}
         style={{ flex: 1, opacity: scrollReady ? 1 : 0 }}
