@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   View,
   Text,
-  FlatList,
+  ScrollView,
   TouchableOpacity,
   StyleSheet,
   ActivityIndicator,
@@ -30,86 +30,35 @@ import {
 } from "../data/statsSettingsStore";
 import { useTheme } from "../theme/ThemeContext";
 
-// Every row (i.e. every chapter's bar) is the same fixed height, so bars
-// stay visually consistent throughout the whole chart - including
-// 1-chapter books like Obadiah or Jude, whose single bar IS the whole book.
-const ROW_HEIGHT = 16;
-const BAR_HEIGHT = 11;
 const SCREEN_PADDING = 20;
-const LABEL_COL_WIDTH = 34; // fits the 3-letter book code (e.g. "GEN", "1CO")
-const CHAPTER_COL_WIDTH = 26; // fits chapter numbers up to 150 (Psalms)
-const MIN_LABEL_GAP = 14; // px - skip a book's label if too close to the previous shown one
 const TOTAL_CHAPTERS = ALL_CHAPTERS.length; // 1,189
+const BOX_SIZE = 36; // width & height of every heat-map cell
+const BOX_GAP = 3;  // gap between cells
 
-function getItemLayout(_, index) {
-  return { length: ROW_HEIGHT, offset: ROW_HEIGHT * index, index };
-}
+// Returns a CSS hex colour for a chapter cell given its read count and the
+// overall maximum count seen. Unread → muted surface; 1 read → yellow/amber;
+// higher counts shift through orange toward red.
+// isDark lets us pick slightly different base tints for legibility.
+// Fixed 10-step scale: 1 read = step 1 (yellow), 10+ reads = step 10 (deep red).
+// Pre-computed so every step is a distinct, visually separable colour.
+const HEAT_STEPS = 10;
+const HEAT_COLORS_LIGHT = Array.from({ length: HEAT_STEPS }, (_, i) => {
+  const t = i / (HEAT_STEPS - 1); // 0..1
+  const hue = Math.round(54 - 54 * t); // 54° yellow → 0° red
+  const lit = Math.round(62 - 20 * t); // 62% → 42%
+  return `hsl(${hue}, 82%, ${lit}%)`;
+});
+const HEAT_COLORS_DARK = Array.from({ length: HEAT_STEPS }, (_, i) => {
+  const t = i / (HEAT_STEPS - 1);
+  const hue = Math.round(54 - 54 * t);
+  const lit = Math.round(55 - 18 * t); // 55% → 37%
+  return `hsl(${hue}, 75%, ${lit}%)`;
+});
 
-// Precomputed once: which books get a visible label (extremely short,
-// back-to-back books could in theory still collide and are skipped - their
-// zebra-striped band still marks the boundary even without text).
-const LABELED_BOOK_IDS = (() => {
-  const shown = new Set();
-  let cumulative = 0;
-  let lastShownY = -Infinity;
-  for (const book of BOOKS) {
-    if (cumulative - lastShownY >= MIN_LABEL_GAP) {
-      shown.add(book.id);
-      lastShownY = cumulative;
-    }
-    cumulative += book.chapterCount * ROW_HEIGHT;
-  }
-  return shown;
-})();
-
-// Precomputed once: the vertical pixel span of each book within the scrolling
-// list (startY inclusive, endY exclusive), in canonical order. Every row is
-// ROW_HEIGHT tall and books are contiguous, so these boundaries are exact and
-// drive the sticky book label (which book is at the top, and how far until the
-// next book pushes it off).
-const BOOK_BOUNDS = (() => {
-  const bounds = [];
-  let y = 0;
-  for (const book of BOOKS) {
-    const height = book.chapterCount * ROW_HEIGHT;
-    bounds.push({ id: book.id, startY: y, endY: y + height });
-    y += height;
-  }
-  return bounds;
-})();
-
-// Height of the sticky label's row (matches a chapter row so the push-off math
-// lines up with the incoming book's inline first-row label).
-const STICKY_LABEL_HEIGHT = ROW_HEIGHT;
-
-// Canonical book index by id, so the sticky label can reproduce the same zebra
-// band parity a row uses (bookIndexParity = canonicalIndex % 2). Deriving from
-// the canonical index — not the (possibly filtered) sticky bounds index — keeps
-// the band correct even when a read-count filter hides some books.
-const BOOK_INDEX_BY_ID = (() => {
-  const map = {};
-  BOOKS.forEach((book, i) => {
-    map[book.id] = i;
-  });
-  return map;
-})();
-
-// Given a scroll offset and a set of book bounds, return { index, current,
-// next } for the book whose span contains the top of the viewport. `next` is
-// the following book (or null at the end). Used to render and push the sticky
-// label. `bounds` defaults to the canonical BOOK_BOUNDS but is passed the
-// filtered bounds when a read-count filter is active.
-function bookAtOffset(scrollY, bounds = BOOK_BOUNDS) {
-  const y = Math.max(0, scrollY);
-  // Linear scan is fine (66 books); could binary-search but not worth it.
-  for (let i = 0; i < bounds.length; i++) {
-    if (y < bounds[i].endY) {
-      return { index: i, current: bounds[i], next: bounds[i + 1] || null };
-    }
-  }
-  const last = bounds.length - 1;
-  if (last < 0) return { index: -1, current: null, next: null };
-  return { index: last, current: bounds[last], next: null };
+function heatColor(count, _maxCount, isDark) {
+  if (count <= 0) return null; // unread — caller uses surface/border style
+  const step = Math.min(count, HEAT_STEPS) - 1; // clamp to 0-indexed 0..9
+  return isDark ? HEAT_COLORS_DARK[step] : HEAT_COLORS_LIGHT[step];
 }
 
 // Turns the range setting into a natural inline phrase for the summary line,
@@ -132,32 +81,18 @@ function rangePhrase(setting) {
 }
 
 export default function StatsScreen({ onOpenChapter, isActive = true }) {
-  const { colors } = useTheme();
+  const { colors, mode } = useTheme();
+  const isDark = mode === "dark";
   const [progressByBook, setProgressByBook] = useState(null); // null = loading
-  // { bookId, chapterNumber, bookName, count } | null - the bar whose info
-  // popup is currently showing (revealed by tapping/clicking that bar).
+  // { bookId, chapterNumber, bookName, count } | null
   const [selected, setSelected] = useState(null);
   const [rangeSetting, setRangeSettingState] = useState(null); // null = loading
   const [rangeModalOpen, setRangeModalOpen] = useState(false);
-  // goalDate is a "YYYY-MM-DD" string or null (no goal). We track load
-  // completion separately because null is a valid loaded value.
   const [goalDate, setGoalDateState] = useState(null);
   const [goalLoaded, setGoalLoaded] = useState(false);
   const [goalModalOpen, setGoalModalOpen] = useState(false);
-  // Current vertical scroll offset of the chapter list, used to drive the
-  // sticky book label pinned to the top-left. Updated on scroll; only the tiny
-  // sticky overlay re-renders (renderItem does not depend on it).
-  const [scrollY, setScrollY] = useState(0);
-  // Read-count filter. `filterMax` is the exclusive upper bound: a chapter is
-  // shown when its read count < filterMax. Infinity = show all; 1 = unread only
-  // (0 reads); any N = fewer than N reads. `filterModalOpen` controls the
-  // "< N reads" picker modal.
   const [filterMax, setFilterMax] = useState(Infinity);
   const [filterModalOpen, setFilterModalOpen] = useState(false);
-
-  const handleScroll = useCallback((e) => {
-    setScrollY(e.nativeEvent.contentOffset.y);
-  }, []);
 
   const reload = useCallback(() => {
     getAllBooksProgress(BOOKS.map((b) => b.id)).then(setProgressByBook);
@@ -172,28 +107,21 @@ export default function StatsScreen({ onOpenChapter, isActive = true }) {
     });
   }, [reload]);
 
-  // Persist and apply a new goal date (or null to clear it).
   const applyGoalDate = useCallback((next) => {
     setGoalDateState(next);
     setGoalDate(next);
   }, []);
 
-  // Re-fetch progress whenever the Stats tab becomes active, so chapters read
-  // elsewhere in the app show up without needing to restart.
   useEffect(() => {
     if (isActive) reload();
   }, [isActive, reload]);
 
-  // Persist and apply a new date-range setting. Clear any open bar tooltip so
-  // it can't keep showing a read count from the previous range.
   const applyRangeSetting = useCallback((next) => {
     setRangeSettingState(next);
     setRangeSetting(next);
     setSelected(null);
   }, []);
 
-  // Count only the reads whose date falls inside the selected range. This is
-  // what makes the range filter affect both the headline numbers and the bars.
   const countsByKey = useMemo(() => {
     const map = {};
     if (!progressByBook || !rangeSetting) return map;
@@ -211,11 +139,6 @@ export default function StatsScreen({ onOpenChapter, isActive = true }) {
 
   const maxCount = useMemo(() => Math.max(1, ...Object.values(countsByKey)), [countsByKey]);
 
-  // The chapters actually shown, after applying the read-count filter. When the
-  // filter hides rows, chapters are no longer contiguous per book, so we
-  // recompute `isFirstOfBook` on the survivors (the first surviving chapter of
-  // each book carries that book's inline label). `bookIndexParity` stays tied
-  // to the canonical book index so zebra striping remains stable per book.
   const visibleChapters = useMemo(() => {
     if (filterMax === Infinity) return ALL_CHAPTERS;
     const out = [];
@@ -231,27 +154,6 @@ export default function StatsScreen({ onOpenChapter, isActive = true }) {
     return out;
   }, [filterMax, countsByKey]);
 
-  // Book pixel spans within the CURRENT (filtered) list, for the sticky label.
-  // Recomputed from visibleChapters so boundaries stay exact when rows hide.
-  const bookBounds = useMemo(() => {
-    if (visibleChapters === ALL_CHAPTERS) return BOOK_BOUNDS;
-    const bounds = [];
-    let y = 0;
-    let curId = null;
-    let start = 0;
-    for (let i = 0; i < visibleChapters.length; i++) {
-      const id = visibleChapters[i].bookId;
-      if (id !== curId) {
-        if (curId != null) bounds.push({ id: curId, startY: start, endY: y });
-        curId = id;
-        start = y;
-      }
-      y += ROW_HEIGHT;
-    }
-    if (curId != null) bounds.push({ id: curId, startY: start, endY: y });
-    return bounds;
-  }, [visibleChapters]);
-
   const readChapterCount = useMemo(
     () => Object.values(countsByKey).filter((c) => c > 0).length,
     [countsByKey]
@@ -264,9 +166,6 @@ export default function StatsScreen({ onOpenChapter, isActive = true }) {
 
   const percent = Math.round((readChapterCount / TOTAL_CHAPTERS) * 100);
 
-  // Goal pace: how many chapters "should" have been read by today given the
-  // goal date, vs how many actually have. Only meaningful for ranges that end
-  // at today (This year / Since); returns applicable:false otherwise.
   const goalPace = useMemo(() => {
     if (!rangeSetting) return null;
     return computeGoalPace({
@@ -276,77 +175,6 @@ export default function StatsScreen({ onOpenChapter, isActive = true }) {
       totalChapters: TOTAL_CHAPTERS,
     });
   }, [rangeSetting, goalDate, readChapterCount]);
-
-  const renderItem = useCallback(
-    ({ item }) => {
-      const count = countsByKey[`${item.bookId}:${item.chapterNumber}`] || 0;
-      const barWidthPct = count > 0 ? Math.max(3, (count / maxCount) * 100) : 0;
-      const bandColor = item.bookIndexParity === 0 ? colors.background : colors.surface;
-      const showLabel = item.isFirstOfBook && LABELED_BOOK_IDS.has(item.bookId);
-      const isSelected =
-        selected &&
-        selected.bookId === item.bookId &&
-        selected.chapterNumber === item.chapterNumber;
-
-      function handlePress() {
-        // Pressing/clicking a bar only reveals the info popup - it never
-        // navigates on its own. Navigation only happens via the popup's
-        // explicit "Open" button.
-        setSelected({
-          bookId: item.bookId,
-          chapterNumber: item.chapterNumber,
-          bookName: item.bookName,
-          count,
-        });
-      }
-
-      return (
-        // The WHOLE row is the tap target (not just the bar), so a chapter with
-        // no reads — and therefore no bar — can still be tapped anywhere along
-        // its row (book code, chapter number, or the empty bar space).
-        <TouchableOpacity
-          onPress={handlePress}
-          activeOpacity={0.6}
-          style={[
-            styles.row,
-            { backgroundColor: bandColor },
-            isSelected && { backgroundColor: colors.border },
-          ]}
-        >
-          <View style={styles.labelCol}>
-            {showLabel && (
-              <Text
-                numberOfLines={1}
-                ellipsizeMode="tail"
-                style={[styles.bookLabel, { color: colors.text }]}
-              >
-                {item.bookId}
-              </Text>
-            )}
-          </View>
-          <View style={styles.chapterCol}>
-            <Text
-              numberOfLines={1}
-              style={[styles.chapterLabel, { color: colors.mutedText }]}
-            >
-              {item.chapterNumber}
-            </Text>
-          </View>
-          <View style={styles.barArea}>
-            {count > 0 && (
-              <View
-                style={[
-                  styles.bar,
-                  { width: `${barWidthPct}%`, backgroundColor: colors.accent },
-                ]}
-              />
-            )}
-          </View>
-        </TouchableOpacity>
-      );
-    },
-    [countsByKey, maxCount, colors, onOpenChapter, selected]
-  );
 
   if (progressByBook === null || rangeSetting === null || !goalLoaded) {
     return (
@@ -397,10 +225,6 @@ export default function StatsScreen({ onOpenChapter, isActive = true }) {
           </TouchableOpacity>
         </View>
 
-        {/* Reading goal, inline: pace/status text on the left with a small
-            "Modify goal" / "Set goal" button on the right (mirrors the range
-            line above). Covers all states: active pace, goal-set-but-not-
-            applicable, and no goal at all. */}
         <View style={styles.goalPaceRow}>
           <Text style={[styles.goalPaceText, { color: colors.mutedText }]}>
             {goalPace && goalPace.applicable ? (
@@ -431,8 +255,8 @@ export default function StatsScreen({ onOpenChapter, isActive = true }) {
               )
             ) : goalPace && goalPace.hasGoal ? (
               <>
-                Goal set for {formatDisplayDate(goalPace.goalDate)} — choose “This year” or
-                “Since a date” to see your pace
+                Goal set for {formatDisplayDate(goalPace.goalDate)} — choose "This year" or
+                "Since a date" to see your pace
               </>
             ) : (
               "No reading goal set"
@@ -481,8 +305,7 @@ export default function StatsScreen({ onOpenChapter, isActive = true }) {
         </View>
       ) : null}
 
-      {/* Read-count filter: All | Unread (0 reads) | "< N" custom threshold.
-          A chapter is shown when its read count is below the active bound. */}
+      {/* Read-count filter pills */}
       <View style={styles.filterRow}>
         <TouchableOpacity
           onPress={() => setFilterMax(Infinity)}
@@ -520,7 +343,6 @@ export default function StatsScreen({ onOpenChapter, isActive = true }) {
           </Text>
         </TouchableOpacity>
 
-        {/* Tapping this pill opens the FilterModal to enter a custom threshold. */}
         <TouchableOpacity
           onPress={() => setFilterModalOpen(true)}
           style={[
@@ -543,81 +365,68 @@ export default function StatsScreen({ onOpenChapter, isActive = true }) {
               },
             ]}
           >
-            {filterMax !== Infinity && filterMax !== 1
-              ? `< ${filterMax} reads`
-              : "< N reads"}
+            {filterMax !== Infinity && filterMax !== 1 ? `< ${filterMax} reads` : "< N reads"}
           </Text>
         </TouchableOpacity>
       </View>
 
-      <View style={styles.listWrap}>
-        <FlatList
-          data={visibleChapters}
-          keyExtractor={(item) => `${item.bookId}-${item.chapterNumber}`}
-          renderItem={renderItem}
-          getItemLayout={getItemLayout}
-          initialNumToRender={120}
-          maxToRenderPerBatch={200}
-          windowSize={9}
-          removeClippedSubviews
-          onScroll={handleScroll}
-          scrollEventThrottle={16}
-          style={{ flex: 1 }}
-          ListEmptyComponent={
-            <Text style={[styles.emptyFilter, { color: colors.mutedText }]}>
-              No chapters match this filter.
-            </Text>
-          }
-        />
+      {/* Heat-map grid — chapters flow freely as equal-size boxes.
+          Books are grouped in tinted wrappers (alternating) so book
+          boundaries are visible without breaking the wrap flow. */}
+      <ScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={styles.heatGrid}
+      >
+        {visibleChapters.length === 0 ? (
+          <Text style={[styles.emptyFilter, { color: colors.mutedText }]}>
+            No chapters match this filter.
+          </Text>
+        ) : (
+          visibleChapters.map((item) => {
+            const count = countsByKey[`${item.bookId}:${item.chapterNumber}`] || 0;
+            const bg = heatColor(count, maxCount, isDark);
+            const isSelected =
+              selected &&
+              selected.bookId === item.bookId &&
+              selected.chapterNumber === item.chapterNumber;
 
-        {/* Sticky book abbreviation pinned to the top-left of the list. It
-            shows the book whose chapters currently occupy the top of the
-            viewport. As the NEXT book's first row approaches the top, the
-            sticky label is pushed up and off (translateY) exactly as that
-            book's own inline first-row label arrives — a seamless handoff.
-            Only shown once the current book's own inline label has scrolled
-            above the top, so the two never appear at once. */}
-        {(() => {
-          const { current, next } = bookAtOffset(scrollY, bookBounds);
-          // No rows (filter hid everything) — nothing to pin.
-          if (!current) return null;
-          // Only show once the book's own first row (which carries the inline
-          // label) has scrolled fully above the top — otherwise the inline
-          // label and the sticky label would both be visible at once.
-          if (scrollY < current.startY + ROW_HEIGHT) return null;
-          // Push-off: distance until the next book reaches the top.
-          let translateY = 0;
-          if (next) {
-            const distanceToNext = next.startY - scrollY;
-            if (distanceToNext < STICKY_LABEL_HEIGHT) {
-              translateY = distanceToNext - STICKY_LABEL_HEIGHT; // negative → slides up
-            }
-          }
-          // Match the sticky label's background to the current book's zebra
-          // band (even index → background, odd index → surface) so it keeps the
-          // darker "yellow-ish" surface band while that book is pinned, instead
-          // of always showing the plain background.
-          const parity = (BOOK_INDEX_BY_ID[current.id] ?? 0) % 2;
-          const bandColor = parity === 0 ? colors.background : colors.surface;
-          return (
-            <View
-              pointerEvents="none"
-              style={[
-                styles.stickyLabelWrap,
-                { backgroundColor: bandColor, transform: [{ translateY }] },
-              ]}
-            >
-              <Text
-                numberOfLines={1}
-                ellipsizeMode="clip"
-                style={[styles.bookLabel, { color: colors.text }]}
+            return (
+              <TouchableOpacity
+                key={`${item.bookId}-${item.chapterNumber}`}
+                onPress={() =>
+                  setSelected({ bookId: item.bookId, chapterNumber: item.chapterNumber, bookName: item.bookName, count })
+                }
+                activeOpacity={0.65}
+                style={[
+                  styles.heatBox,
+                  bg
+                    ? { backgroundColor: bg }
+                    : { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border },
+                  isSelected && { borderWidth: 2, borderColor: colors.text },
+                ]}
               >
-                {current.id}
-              </Text>
-            </View>
-          );
-        })()}
-      </View>
+                <Text
+                  numberOfLines={1}
+                  adjustsFontSizeToFit
+                  minimumFontScale={0.6}
+                  style={[
+                    item.isFirstOfBook ? styles.heatLabelBook : styles.heatLabel,
+                    {
+                      color: bg
+                        ? "#1a1206"
+                        : item.isFirstOfBook
+                          ? colors.text
+                          : colors.mutedText,
+                    },
+                  ]}
+                >
+                  {item.isFirstOfBook ? item.bookId : item.chapterNumber}
+                </Text>
+              </TouchableOpacity>
+            );
+          })
+        )}
+      </ScrollView>
 
       <DateRangeModal
         visible={rangeModalOpen}
@@ -1065,12 +874,6 @@ const styles = StyleSheet.create({
   tooltipActions: { flexDirection: "row", alignItems: "center" },
   tooltipOpen: { fontSize: 13, fontFamily: uiFont(700) },
   tooltipClose: { fontSize: 13, fontFamily: uiFont(400) },
-  row: {
-    height: ROW_HEIGHT,
-    flexDirection: "row",
-    alignItems: "center",
-    paddingLeft: SCREEN_PADDING,
-  },
   filterRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -1117,45 +920,32 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontFamily: uiFont(),
   },
-  listWrap: {
-    flex: 1,
-    position: "relative",
+  heatGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    paddingHorizontal: SCREEN_PADDING - BOX_GAP / 2,
+    paddingTop: BOX_GAP,
+    paddingBottom: 24,
+    gap: BOX_GAP,
   },
-  // Sticky book-code overlay pinned to the top-left of the list. Mirrors a
-  // row's left geometry (screen padding + label column) and row height so it
-  // sits exactly where the inline first-row label would.
-  stickyLabelWrap: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    height: STICKY_LABEL_HEIGHT,
-    width: SCREEN_PADDING + LABEL_COL_WIDTH,
-    paddingLeft: SCREEN_PADDING,
+  heatBox: {
+    width: BOX_SIZE,
+    height: BOX_SIZE,
+    borderRadius: 5,
+    alignItems: "center",
     justifyContent: "center",
   },
-  labelCol: {
-    width: LABEL_COL_WIDTH,
+  heatLabel: {
+    fontSize: 9,
+    fontFamily: uiFont(700),
+    textAlign: "center",
+    letterSpacing: 0,
   },
-  bookLabel: {
+  heatLabelBook: {
     fontSize: 10,
     fontFamily: uiFont(700),
-  },
-  chapterCol: {
-    width: CHAPTER_COL_WIDTH,
-    alignItems: "flex-end",
-    paddingRight: 6,
-  },
-  chapterLabel: {
-    fontSize: 9,
-    fontFamily: uiFont(400),
-  },
-  barArea: {
-    flex: 1,
-    marginRight: SCREEN_PADDING,
-  },
-  bar: {
-    height: BAR_HEIGHT,
-    borderRadius: 2,
+    textAlign: "center",
+    letterSpacing: 0.3,
   },
   modalBackdrop: {
     flex: 1,
