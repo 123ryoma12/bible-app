@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   View,
   Text,
@@ -91,7 +91,7 @@ function rangePhrase(setting) {
   }
 }
 
-export default function StatsScreen({ onOpenChapter, isActive = true }) {
+export default function StatsScreen({ onOpenChapter, isActive = true, initialChapter, currentChapter, onBack, onOpenHistory }) {
   const { colors, mode } = useTheme();
   const isDark = mode === "dark";
   const [progressByBook, setProgressByBook] = useState(null); // null = loading
@@ -106,6 +106,16 @@ export default function StatsScreen({ onOpenChapter, isActive = true }) {
   const [filterModalOpen, setFilterModalOpen] = useState(false);
   const [gridWidth, setGridWidth] = useState(Dimensions.get("window").width);
   const { boxSize, numCols } = computeBoxMetrics(gridWidth);
+
+  // Ref to the heat-map ScrollView for imperative scrolling.
+  const scrollViewRef = useRef(null);
+  // Per-chapter y-offsets, populated as cells lay out.
+  const chapterOffsets = useRef({});
+
+  // When we have an initialChapter target, hide the grid until that cell has
+  // laid out and the scroll has been applied — prevents a flicker of the grid
+  // being visible at the top before jumping to the right position.
+  const [gridReady, setGridReady] = useState(!initialChapter);
 
   const reload = useCallback(() => {
     getAllBooksProgress(BOOKS.map((b) => b.id)).then(setProgressByBook);
@@ -207,7 +217,28 @@ export default function StatsScreen({ onOpenChapter, isActive = true }) {
       style={[styles.safe, { backgroundColor: colors.background }]}
       edges={["top", "left", "right"]}
     >
-      <Text style={[styles.title, { color: colors.text }]}>Stats</Text>
+      {/* Nav bar: back (left) · Bible (center) · History (right) */}
+      <View style={styles.navBar}>
+        {onBack ? (
+          <TouchableOpacity
+            onPress={onBack}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            style={styles.navSide}
+          >
+            <Text style={[styles.navBack, { color: colors.accent }]}>‹ Back</Text>
+          </TouchableOpacity>
+        ) : (
+          <View style={styles.navSide} />
+        )}
+        <Text style={[styles.navTitle, { color: colors.text }]}>Bible</Text>
+        <TouchableOpacity
+          onPress={onOpenHistory}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          style={[styles.navSide, styles.navSideRight]}
+        >
+          <Text style={[styles.navHistory, { color: colors.accent }]}>History</Text>
+        </TouchableOpacity>
+      </View>
 
       <View style={styles.summary}>
         <View style={styles.summaryHeaderRow}>
@@ -387,7 +418,8 @@ export default function StatsScreen({ onOpenChapter, isActive = true }) {
           Books are grouped in tinted wrappers (alternating) so book
           boundaries are visible without breaking the wrap flow. */}
       <ScrollView
-        style={{ flex: 1 }}
+        ref={scrollViewRef}
+        style={{ flex: 1, opacity: gridReady ? 1 : 0 }}
         contentContainerStyle={styles.heatGrid}
         onLayout={(e) => setGridWidth(e.nativeEvent.layout.width)}
       >
@@ -403,6 +435,10 @@ export default function StatsScreen({ onOpenChapter, isActive = true }) {
               selected &&
               selected.bookId === item.bookId &&
               selected.chapterNumber === item.chapterNumber;
+            const isCurrent =
+              currentChapter &&
+              currentChapter.bookId === item.bookId &&
+              currentChapter.chapterNumber === item.chapterNumber;
             const isLastInRow = (idx + 1) % numCols === 0;
 
             return (
@@ -411,6 +447,21 @@ export default function StatsScreen({ onOpenChapter, isActive = true }) {
                 onPress={() =>
                   setSelected({ bookId: item.bookId, chapterNumber: item.chapterNumber, bookName: item.bookName, count })
                 }
+                onLayout={(e) => {
+                  const key = `${item.bookId}:${item.chapterNumber}`;
+                  const y = e.nativeEvent.layout.y;
+                  chapterOffsets.current[key] = y;
+                  // If this is the target cell, scroll to it then reveal the grid.
+                  if (
+                    !gridReady &&
+                    initialChapter &&
+                    initialChapter.bookId === item.bookId &&
+                    initialChapter.chapterNumber === item.chapterNumber
+                  ) {
+                    scrollViewRef.current?.scrollTo({ y, animated: false });
+                    setGridReady(true);
+                  }
+                }}
                 activeOpacity={0.65}
                 style={[
                   styles.heatBox,
@@ -418,6 +469,7 @@ export default function StatsScreen({ onOpenChapter, isActive = true }) {
                   bg
                     ? { backgroundColor: bg }
                     : { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border },
+                  isCurrent && { borderWidth: 2, borderColor: colors.accent },
                   isSelected && { borderWidth: 2, borderColor: colors.text },
                 ]}
               >
@@ -828,12 +880,32 @@ function DateRangeModal({ visible, setting, onClose, onApply }) {
 const styles = StyleSheet.create({
   safe: { flex: 1 },
   loading: { flex: 1, alignItems: "center", justifyContent: "center" },
-  title: {
-    fontSize: 28,
+  navBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 16,
+    paddingTop: 10,
+    paddingBottom: 10,
+  },
+  navSide: {
+    minWidth: 70,
+  },
+  navSideRight: {
+    alignItems: "flex-end",
+  },
+  navBack: {
+    fontSize: 16,
+    fontFamily: uiFont(500),
+  },
+  navTitle: {
+    flex: 1,
+    textAlign: "center",
+    fontSize: 17,
     fontFamily: uiFont(700),
-    paddingHorizontal: 20,
-    paddingTop: 12,
-    paddingBottom: 8,
+  },
+  navHistory: {
+    fontSize: 16,
+    fontFamily: uiFont(500),
   },
   summary: { paddingHorizontal: 20, marginBottom: 14 },
   summaryHeaderRow: {

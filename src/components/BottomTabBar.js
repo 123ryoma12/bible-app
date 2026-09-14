@@ -8,8 +8,7 @@ import { uiFont } from "../theme/fonts";
 // Each tab has a filled icon (active) and an outline icon (inactive) for a
 // clear selected state alongside the accent color.
 const TABS = [
-  { key: "bible", label: "Bible", icon: "book", iconOutline: "book-outline" },
-  { key: "stats", label: "Stats", icon: "stats-chart", iconOutline: "stats-chart-outline" },
+  { key: "bible", label: "Bible", icon: "stats-chart", iconOutline: "stats-chart-outline" },
   { key: "memory", label: "Memory", icon: "bulb", iconOutline: "bulb-outline" },
   { key: "settings", label: "Settings", icon: "settings", iconOutline: "settings-outline" },
 ];
