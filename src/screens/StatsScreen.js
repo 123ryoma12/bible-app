@@ -9,10 +9,10 @@ import {
   Modal,
   Platform,
   Pressable,
-  TextInput,
   Dimensions,
 } from "react-native";
 import { uiFont } from "../theme/fonts";
+import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { SafeAreaView } from "react-native-safe-area-context";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { BOOKS } from "../data/books";
@@ -102,8 +102,6 @@ export default function StatsScreen({ onOpenChapter, isActive = true, initialCha
   const [goalDate, setGoalDateState] = useState(null);
   const [goalLoaded, setGoalLoaded] = useState(false);
   const [goalModalOpen, setGoalModalOpen] = useState(false);
-  const [filterMax, setFilterMax] = useState(Infinity);
-  const [filterModalOpen, setFilterModalOpen] = useState(false);
   const [gridWidth, setGridWidth] = useState(Dimensions.get("window").width);
   const { boxSize, numCols } = computeBoxMetrics(gridWidth);
 
@@ -111,6 +109,8 @@ export default function StatsScreen({ onOpenChapter, isActive = true, initialCha
   const scrollViewRef = useRef(null);
   // Per-chapter y-offsets, populated as cells lay out.
   const chapterOffsets = useRef({});
+  // Current scroll position of the heat-map, tracked for tooltip positioning.
+  const scrollYRef = useRef(0);
 
   // When we have an initialChapter target, hide the grid until that cell has
   // laid out and the scroll has been applied — prevents a flicker of the grid
@@ -162,20 +162,6 @@ export default function StatsScreen({ onOpenChapter, isActive = true, initialCha
 
   const maxCount = useMemo(() => Math.max(1, ...Object.values(countsByKey)), [countsByKey]);
 
-  const visibleChapters = useMemo(() => {
-    if (filterMax === Infinity) return ALL_CHAPTERS;
-    const out = [];
-    const seenBook = new Set();
-    for (const ch of ALL_CHAPTERS) {
-      const count = countsByKey[`${ch.bookId}:${ch.chapterNumber}`] || 0;
-      if (count < filterMax) {
-        const isFirstOfBook = !seenBook.has(ch.bookId);
-        seenBook.add(ch.bookId);
-        out.push(isFirstOfBook ? { ...ch, isFirstOfBook: true } : { ...ch, isFirstOfBook: false });
-      }
-    }
-    return out;
-  }, [filterMax, countsByKey]);
 
   const readChapterCount = useMemo(
     () => Object.values(countsByKey).filter((c) => c > 0).length,
@@ -240,13 +226,8 @@ export default function StatsScreen({ onOpenChapter, isActive = true, initialCha
         </TouchableOpacity>
       </View>
 
-      <View style={styles.summary}>
-        <View style={styles.summaryHeaderRow}>
-          <Text style={[styles.summaryHeadline, { color: colors.text }]}>
-            {readChapterCount.toLocaleString()} / {TOTAL_CHAPTERS.toLocaleString()} chapters
-          </Text>
-          <Text style={[styles.summaryPercent, { color: colors.accent }]}>{percent}%</Text>
-        </View>
+      {/* Compact stats row: progress bar + percent + range + goal icons */}
+      <View style={styles.statsRow}>
         <View style={[styles.progressTrack, { backgroundColor: colors.surface }]}>
           <View
             style={[
@@ -255,180 +236,42 @@ export default function StatsScreen({ onOpenChapter, isActive = true, initialCha
             ]}
           />
         </View>
-        <View style={styles.summarySubtextRow}>
-          <Text style={[styles.summarySubtext, { color: colors.mutedText }]}>
-            {readChapterCount === 0
-              ? `No chapters read ${rangePhrase(rangeSetting)} yet`
-              : `${totalReads.toLocaleString()} read${totalReads === 1 ? "" : "s"} ${rangePhrase(rangeSetting)}`}
-          </Text>
-          <TouchableOpacity
-            onPress={() => setRangeModalOpen(true)}
-            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-          >
-            <Text style={[styles.modifyRangeBtn, { color: colors.accent }]}>Modify range</Text>
-          </TouchableOpacity>
-        </View>
-
-        <View style={styles.goalPaceRow}>
-          <Text style={[styles.goalPaceText, { color: colors.mutedText }]}>
-            {goalPace && goalPace.applicable ? (
-              goalPace.reached ? (
-                <Text style={{ color: colors.accent, fontFamily: uiFont(700) }}>
-                  Goal reached — whole Bible done! 🎉
-                </Text>
-              ) : goalPace.overdue ? (
-                <>
-                  Goal date passed —{" "}
-                  <Text style={{ color: colors.text, fontFamily: uiFont(700) }}>
-                    {goalPace.remaining.toLocaleString()}
-                  </Text>{" "}
-                  chapter{goalPace.remaining === 1 ? "" : "s"} still to go
-                </>
-              ) : (
-                <>
-                  Read{" "}
-                  <Text style={{ color: colors.accent, fontFamily: uiFont(700) }}>
-                    {goalPace.perDay.toLocaleString()}
-                  </Text>{" "}
-                  chapter{goalPace.perDay === 1 ? "" : "s"}/day to finish by{" "}
-                  {formatDisplayDate(goalPace.goalDate)}
-                  {" · "}
-                  {goalPace.remaining.toLocaleString()} left over {goalPace.daysLeft.toLocaleString()} day
-                  {goalPace.daysLeft === 1 ? "" : "s"}
-                </>
-              )
-            ) : goalPace && goalPace.hasGoal ? (
-              <>
-                Goal set for {formatDisplayDate(goalPace.goalDate)} — choose "This year" or
-                "Since a date" to see your pace
-              </>
-            ) : (
-              "No reading goal set"
-            )}
-          </Text>
-          <TouchableOpacity
-            onPress={() => setGoalModalOpen(true)}
-            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-          >
-            <Text style={[styles.modifyRangeBtn, { color: colors.accent }]}>
-              {goalDate ? "Modify goal" : "Set goal"}
-            </Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-
-      {selected ? (
-        <View
-          style={[
-            styles.tooltip,
-            { backgroundColor: colors.surface, borderColor: colors.border },
-          ]}
-        >
-          <Text style={[styles.tooltipText, { color: colors.surfaceText }]}>
-            {selected.bookName} {selected.chapterNumber}
-            {" · "}
-            {selected.count > 0
-              ? `${selected.count} read${selected.count === 1 ? "" : "s"}`
-              : "not read yet"}
-          </Text>
-          <View style={styles.tooltipActions}>
-            <TouchableOpacity
-              onPress={() => onOpenChapter(selected.bookId, selected.chapterNumber)}
-              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-            >
-              <Text style={[styles.tooltipOpen, { color: colors.accent }]}>Open ›</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              onPress={() => setSelected(null)}
-              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-              style={{ marginLeft: 16 }}
-            >
-              <Text style={[styles.tooltipClose, { color: colors.mutedText }]}>Close</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      ) : null}
-
-      {/* Read-count filter pills */}
-      <View style={styles.filterRow}>
+        <Text style={[styles.statsPercent, { color: colors.accent }]}>{percent}%</Text>
         <TouchableOpacity
-          onPress={() => setFilterMax(Infinity)}
-          style={[
-            styles.filterPill,
-            { borderColor: colors.border },
-            filterMax === Infinity && { backgroundColor: colors.accent, borderColor: colors.accent },
-          ]}
+          onPress={() => setRangeModalOpen(true)}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          style={styles.statsIcon}
         >
-          <Text
-            style={[
-              styles.filterPillText,
-              { color: filterMax === Infinity ? colors.accentContrast : colors.text },
-            ]}
-          >
-            All
-          </Text>
+          <MaterialCommunityIcons name="calendar-range" size={20} color={colors.mutedText} />
         </TouchableOpacity>
-
         <TouchableOpacity
-          onPress={() => setFilterMax(1)}
-          style={[
-            styles.filterPill,
-            { borderColor: colors.border },
-            filterMax === 1 && { backgroundColor: colors.accent, borderColor: colors.accent },
-          ]}
+          onPress={() => setGoalModalOpen(true)}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          style={styles.statsIcon}
         >
-          <Text
-            style={[
-              styles.filterPillText,
-              { color: filterMax === 1 ? colors.accentContrast : colors.text },
-            ]}
-          >
-            Unread
-          </Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          onPress={() => setFilterModalOpen(true)}
-          style={[
-            styles.filterPill,
-            { borderColor: colors.border },
-            filterMax !== Infinity && filterMax !== 1 && {
-              backgroundColor: colors.accent,
-              borderColor: colors.accent,
-            },
-          ]}
-        >
-          <Text
-            style={[
-              styles.filterPillText,
-              {
-                color:
-                  filterMax !== Infinity && filterMax !== 1
-                    ? colors.accentContrast
-                    : colors.text,
-              },
-            ]}
-          >
-            {filterMax !== Infinity && filterMax !== 1 ? `< ${filterMax} reads` : "< N reads"}
-          </Text>
+          <MaterialCommunityIcons
+            name="flag-outline"
+            size={20}
+            color={goalDate ? colors.accent : colors.mutedText}
+          />
         </TouchableOpacity>
       </View>
 
-      {/* Heat-map grid — chapters flow freely as equal-size boxes.
-          Books are grouped in tinted wrappers (alternating) so book
-          boundaries are visible without breaking the wrap flow. */}
-      <ScrollView
-        ref={scrollViewRef}
-        style={{ flex: 1, opacity: gridReady ? 1 : 0 }}
-        contentContainerStyle={styles.heatGrid}
-        onLayout={(e) => setGridWidth(e.nativeEvent.layout.width)}
-      >
-        {visibleChapters.length === 0 ? (
-          <Text style={[styles.emptyFilter, { color: colors.mutedText }]}>
-            No chapters match this filter.
-          </Text>
-        ) : (
-          visibleChapters.map((item, idx) => {
+      {/* Heat-map grid wrapper — relative so tooltip can be absolutely
+          positioned below the tapped cell. */}
+      <View style={{ flex: 1 }}>
+        <ScrollView
+          ref={scrollViewRef}
+          style={{ flex: 1, opacity: gridReady ? 1 : 0 }}
+          contentContainerStyle={styles.heatGrid}
+          onLayout={(e) => setGridWidth(e.nativeEvent.layout.width)}
+          onScroll={(e) => {
+            scrollYRef.current = e.nativeEvent.contentOffset.y;
+            if (selected) setSelected(null);
+          }}
+          scrollEventThrottle={16}
+        >
+        {ALL_CHAPTERS.map((item, idx) => {
             const count = countsByKey[`${item.bookId}:${item.chapterNumber}`] || 0;
             const bg = heatColor(count, maxCount, isDark);
             const isSelected =
@@ -445,12 +288,20 @@ export default function StatsScreen({ onOpenChapter, isActive = true, initialCha
               <TouchableOpacity
                 key={`${item.bookId}-${item.chapterNumber}`}
                 onPress={() =>
-                  setSelected({ bookId: item.bookId, chapterNumber: item.chapterNumber, bookName: item.bookName, count })
+                  setSelected({
+                    bookId: item.bookId,
+                    chapterNumber: item.chapterNumber,
+                    bookName: item.bookName,
+                    count,
+                    cellX: chapterOffsets.current[`${item.bookId}:${item.chapterNumber}:x`] ?? 0,
+                    cellY: chapterOffsets.current[`${item.bookId}:${item.chapterNumber}`] ?? 0,
+                  })
                 }
                 onLayout={(e) => {
                   const key = `${item.bookId}:${item.chapterNumber}`;
-                  const y = e.nativeEvent.layout.y;
+                  const { y, x } = e.nativeEvent.layout;
                   chapterOffsets.current[key] = y;
+                  chapterOffsets.current[`${key}:x`] = x;
                   // If this is the target cell, scroll to it then reveal the grid.
                   if (
                     !gridReady &&
@@ -493,8 +344,49 @@ export default function StatsScreen({ onOpenChapter, isActive = true, initialCha
               </TouchableOpacity>
             );
           })
+        }
+        </ScrollView>
+
+        {/* Tooltip anchored below the tapped cell */}
+        {selected && (
+          <View
+            pointerEvents="box-none"
+            style={[
+              styles.tooltip,
+              {
+                backgroundColor: colors.surface,
+                borderColor: colors.border,
+                top: selected.cellY - scrollYRef.current + boxSize + 4,
+                left: SCREEN_PADDING,
+                right: SCREEN_PADDING,
+              },
+            ]}
+          >
+            <Text style={[styles.tooltipText, { color: colors.surfaceText }]}>
+              {selected.bookName} {selected.chapterNumber}
+              {' · '}
+              {selected.count > 0
+                ? `${selected.count} read${selected.count === 1 ? '' : 's'}`
+                : 'not read yet'}
+            </Text>
+            <View style={styles.tooltipActions}>
+              <TouchableOpacity
+                onPress={() => onOpenChapter(selected.bookId, selected.chapterNumber)}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <Text style={[styles.tooltipOpen, { color: colors.accent }]}>Open ›</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => setSelected(null)}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                style={{ marginLeft: 16 }}
+              >
+                <Text style={[styles.tooltipClose, { color: colors.mutedText }]}>✕</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
         )}
-      </ScrollView>
+      </View>
 
       <DateRangeModal
         visible={rangeModalOpen}
@@ -516,103 +408,7 @@ export default function StatsScreen({ onOpenChapter, isActive = true, initialCha
         }}
       />
 
-      <FilterModal
-        visible={filterModalOpen}
-        currentMax={filterMax !== Infinity && filterMax !== 1 ? filterMax : null}
-        onClose={() => setFilterModalOpen(false)}
-        onApply={(n) => {
-          setFilterMax(n);
-          setFilterModalOpen(false);
-        }}
-        onClear={() => {
-          setFilterMax(Infinity);
-          setFilterModalOpen(false);
-        }}
-      />
     </SafeAreaView>
-  );
-}
-
-// Lets the user pick (or clear) a single "finish the whole Bible by" date. The
-// goal date is required to be in the future (a past date makes the whole target
-// "due now"), so the picker's minimum is tomorrow.
-function FilterModal({ visible, currentMax, onClose, onApply, onClear }) {
-  const { colors } = useTheme();
-  const [draftText, setDraftText] = useState("");
-
-  // Re-sync draft whenever the modal opens.
-  useEffect(() => {
-    if (visible) {
-      setDraftText(currentMax != null ? String(currentMax) : "");
-    }
-  }, [visible, currentMax]);
-
-  const draftN = draftText === "" ? null : parseInt(draftText, 10);
-  // Valid when it's a whole number >= 2 (< 1 is meaningless; Unread covers that).
-  const canApply = draftN != null && Number.isFinite(draftN) && draftN >= 2;
-
-  return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <Pressable style={styles.modalBackdrop} onPress={onClose}>
-        <Pressable style={[styles.modalCard, { backgroundColor: colors.surface }]} onPress={() => {}}>
-          <Text style={[styles.modalTitle, { color: colors.text }]}>Filter by Reads</Text>
-          <Text style={[styles.filterModalHint, { color: colors.mutedText }]}>
-            Show only chapters read fewer than N times. Enter a number (2 or more).
-          </Text>
-
-          <View style={styles.fieldRow}>
-            <Text style={[styles.fieldLabel, { color: colors.mutedText }]}>Fewer than</Text>
-            <View
-              style={[
-                styles.fieldBtn,
-                styles.filterModalInputRow,
-                { borderColor: colors.border, backgroundColor: colors.background },
-              ]}
-            >
-              <TextInput
-                value={draftText}
-                onChangeText={(t) => setDraftText(t.replace(/[^0-9]/g, ""))}
-                keyboardType="number-pad"
-                placeholder="e.g. 3"
-                placeholderTextColor={colors.mutedText}
-                autoFocus
-                style={[styles.filterModalInput, { color: colors.text }]}
-              />
-              <Text style={[styles.filterModalUnit, { color: colors.mutedText }]}>reads</Text>
-            </View>
-          </View>
-
-          <View style={styles.modalActions}>
-            {currentMax != null && (
-              <TouchableOpacity
-                onPress={onClear}
-                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                style={[styles.modalActionBtn, { marginRight: "auto" }]}
-              >
-                <Text style={[styles.modalCancel, { color: colors.accent }]}>Clear</Text>
-              </TouchableOpacity>
-            )}
-            <TouchableOpacity
-              onPress={onClose}
-              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-              style={styles.modalActionBtn}
-            >
-              <Text style={[styles.modalCancel, { color: colors.mutedText }]}>Cancel</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              onPress={() => canApply && onApply(draftN)}
-              disabled={!canApply}
-              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-              style={[styles.modalActionBtn, styles.modalApplyBtn]}
-            >
-              <Text style={[styles.modalApply, { color: canApply ? colors.accent : colors.mutedText }]}>
-                Apply
-              </Text>
-            </TouchableOpacity>
-          </View>
-        </Pressable>
-      </Pressable>
-    </Modal>
   );
 }
 
@@ -907,40 +703,32 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontFamily: uiFont(500),
   },
-  summary: { paddingHorizontal: 20, marginBottom: 14 },
-  summaryHeaderRow: {
+  statsRow: {
     flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "baseline",
-    marginBottom: 8,
+    alignItems: "center",
+    paddingHorizontal: 16,
+    paddingBottom: 8,
+    gap: 8,
   },
-  summaryHeadline: { fontSize: 16, fontFamily: uiFont(600) },
-  summaryPercent: { fontSize: 16, fontFamily: uiFont(700) },
   progressTrack: {
-    width: "100%",
-    height: 10,
-    borderRadius: 5,
+    flex: 1,
+    height: 6,
+    borderRadius: 3,
     overflow: "hidden",
   },
   progressFill: {
     height: "100%",
-    borderRadius: 5,
+    borderRadius: 3,
   },
-  summarySubtextRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginTop: 8,
+  statsPercent: {
+    fontSize: 13,
+    fontFamily: uiFont(600),
+    minWidth: 36,
+    textAlign: "right",
   },
-  summarySubtext: { fontSize: 13, fontFamily: uiFont(400), flexShrink: 1 },
-  modifyRangeBtn: { fontSize: 13, fontFamily: uiFont(700), marginLeft: 12 },
-  goalPaceRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginTop: 6,
+  statsIcon: {
+    padding: 2,
   },
-  goalPaceText: { fontSize: 13, fontFamily: uiFont(400), flexShrink: 1, lineHeight: 18 },
   goalModalHint: {
     fontSize: 13,
     fontFamily: uiFont(400),
@@ -948,66 +736,25 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   tooltip: {
+    position: "absolute",
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    marginHorizontal: 20,
-    marginBottom: 4,
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 8,
     borderWidth: StyleSheet.hairlineWidth,
+    zIndex: 10,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.12,
+    shadowRadius: 4,
+    elevation: 4,
   },
   tooltipText: { fontSize: 13, fontFamily: uiFont(600), flexShrink: 1 },
   tooltipActions: { flexDirection: "row", alignItems: "center" },
   tooltipOpen: { fontSize: 13, fontFamily: uiFont(700) },
   tooltipClose: { fontSize: 13, fontFamily: uiFont(400) },
-  filterRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: SCREEN_PADDING,
-    paddingBottom: 10,
-    gap: 8,
-  },
-  filterPill: {
-    flexDirection: "row",
-    alignItems: "center",
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: 999,
-    paddingVertical: 5,
-    paddingHorizontal: 12,
-  },
-  filterPillText: {
-    fontSize: 12,
-    fontFamily: uiFont(600),
-  },
-  filterModalHint: {
-    fontSize: 13,
-    fontFamily: uiFont(400),
-    lineHeight: 19,
-    marginBottom: 12,
-  },
-  filterModalInputRow: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  filterModalInput: {
-    flex: 1,
-    fontSize: 15,
-    fontFamily: uiFont(400),
-    padding: 0,
-  },
-  filterModalUnit: {
-    fontSize: 15,
-    fontFamily: uiFont(400),
-    marginLeft: 6,
-  },
-  emptyFilter: {
-    textAlign: "center",
-    marginTop: 24,
-    fontSize: 13,
-    fontFamily: uiFont(),
-  },
   heatGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
