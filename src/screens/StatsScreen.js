@@ -68,12 +68,13 @@ function computeCellOffset(itemIndex, numCols, boxSize) {
 // stable onOpenChapter reference instead of a new inline arrow per cell.
 // ---------------------------------------------------------------------------
 const HeatCell = memo(function HeatCell({
-  item, isRead, isDark, isCurrent, boxSize, isLastInRow,
+  item, readSet, isDark, isCurrent, boxSize, isLastInRow,
   // Individual color values instead of the whole colors object — lets memo's
   // shallow-equality check work even when the colors object reference changes.
   colorSurface, colorAccent, colorBorder, colorText, colorMutedText,
   onPress,
 }) {
+  const isRead = readSet.has(`${item.bookId}:${item.chapterNumber}`);
   const bg = isRead ? (isDark ? READ_COLOR_DARK : READ_COLOR_LIGHT) : null;
   // Stable per-cell handler — only recreated when onPress or item identity changes.
   const handlePress = useCallback(() => {
@@ -117,6 +118,26 @@ const HeatCell = memo(function HeatCell({
         {item.isFirstOfBook ? item.bookId : item.chapterNumber}
       </Text>
     </TouchableOpacity>
+  );
+}, (prev, next) => {
+  // Custom comparator — only re-render if something this cell actually
+  // displays has changed. Critically, we compare the *result* of the
+  // readSet lookup rather than the Set reference itself, so marking one
+  // chapter read only re-renders that single cell instead of all 1,189.
+  const prevRead = prev.readSet.has(`${prev.item.bookId}:${prev.item.chapterNumber}`);
+  const nextRead = next.readSet.has(`${next.item.bookId}:${next.item.chapterNumber}`);
+  return (
+    prevRead === nextRead &&
+    prev.isCurrent === next.isCurrent &&
+    prev.boxSize === next.boxSize &&
+    prev.isLastInRow === next.isLastInRow &&
+    prev.isDark === next.isDark &&
+    prev.colorSurface === next.colorSurface &&
+    prev.colorAccent === next.colorAccent &&
+    prev.colorBorder === next.colorBorder &&
+    prev.colorText === next.colorText &&
+    prev.colorMutedText === next.colorMutedText &&
+    prev.onPress === next.onPress
   );
 });
 
@@ -238,7 +259,6 @@ export default function StatsScreen({ onOpenChapter, initialChapter, currentChap
   // onOpenChapter is passed straight through to HeatCell which binds its own
   // args internally — no inline arrow here so memo's equality check holds.
   const renderItem = useCallback(({ item, index }) => {
-    const isRead = readSet.has(`${item.bookId}:${item.chapterNumber}`);
     const isCurrent =
       currentChapter &&
       currentChapter.bookId === item.bookId &&
@@ -247,7 +267,7 @@ export default function StatsScreen({ onOpenChapter, initialChapter, currentChap
     return (
       <HeatCell
         item={item}
-        isRead={isRead}
+        readSet={readSet}
         isDark={isDark}
         isCurrent={isCurrent}
         boxSize={boxSize}

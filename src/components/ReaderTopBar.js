@@ -35,8 +35,8 @@ import { setReadingVersion } from "../data/bibleVersionStore";
 // Sub-component: Appearance dropdown (font typeface + size)
 // ─────────────────────────────────────────────────────────────────────────────
 
-function AppearanceMenu({ visible, onClose, colors, dropdownTop }) {
-  const { fontScale, setFontScale, readingFontKey, setReadingFontKey } = useTheme();
+function AppearanceMenu({ visible, onClose, dropdownTop }) {
+  const { colors, fontScale, setFontScale, readingFontKey, setReadingFontKey } = useTheme();
 
   if (!visible) return null;
 
@@ -133,7 +133,8 @@ function AppearanceMenu({ visible, onClose, colors, dropdownTop }) {
 // Sub-component: Version picker dropdown
 // ─────────────────────────────────────────────────────────────────────────────
 
-function VersionMenu({ visible, onClose, onSelect, activeVersion, colors, dropdownTop }) {
+function VersionMenu({ visible, onClose, onSelect, activeVersion, dropdownTop }) {
+  const { colors } = useTheme();
   if (!visible) return null;
 
   const available = BIBLE_VERSIONS.filter((v) => v.available);
@@ -221,6 +222,37 @@ export default function ReaderTopBar({
     [onVersionChange]
   );
 
+  const handleOpenSermons = useCallback(() => {
+    setAppearanceOpen(false);
+    setVersionOpen(false);
+    onOpenSermons?.();
+  }, [onOpenSermons]);
+
+  const handleOpenHistory = useCallback(() => {
+    setAppearanceOpen(false);
+    setVersionOpen(false);
+    onOpenHistory?.();
+  }, [onOpenHistory]);
+
+  const handleToggleAppearance = useCallback(() => {
+    setVersionOpen(false);
+    setAppearanceOpen((o) => !o);
+  }, []);
+
+  const handleToggleVersion = useCallback(() => {
+    setAppearanceOpen(false);
+    setVersionOpen((o) => !o);
+  }, []);
+
+  const handleToggleNotesCb = useCallback(() => {
+    setAppearanceOpen(false);
+    setVersionOpen(false);
+    onToggleNotes?.();
+  }, [onToggleNotes]);
+
+  const handleCloseAppearance = useCallback(() => setAppearanceOpen(false), []);
+  const handleCloseVersion = useCallback(() => setVersionOpen(false), []);
+
   return (
     <>
       <Animated.View
@@ -252,11 +284,7 @@ export default function ReaderTopBar({
         {onToggleNotes && (
           <TouchableOpacity
             style={styles.notesBtn}
-            onPress={() => {
-              setAppearanceOpen(false);
-              setVersionOpen(false);
-              onToggleNotes();
-            }}
+            onPress={handleToggleNotesCb}
             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
             accessibilityRole="button"
             accessibilityLabel={notesOpen ? "Close study notes" : "Open study notes"}
@@ -270,15 +298,10 @@ export default function ReaderTopBar({
           </TouchableOpacity>
         )}
 
-        {/* Listen button — opens the sermon sheet for the current book/chapter.
-            Sized to match the appearance icon so the two sit evenly. */}
+        {/* Listen button — opens the sermon sheet for the current book/chapter. */}
         <TouchableOpacity
           style={styles.listenBtn}
-          onPress={() => {
-            setAppearanceOpen(false);
-            setVersionOpen(false);
-            onOpenSermons?.();
-          }}
+          onPress={handleOpenSermons}
           hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
           accessibilityRole="button"
           accessibilityLabel="Listen to sermons"
@@ -287,15 +310,10 @@ export default function ReaderTopBar({
           <MaterialCommunityIcons name="headphones" size={24} color={colors.text} />
         </TouchableOpacity>
 
-        {/* Aa Appearance button — "format-size" renders a large A beside a small a,
-            the conventional affordance for text size + typeface (cf. Apple Books,
-            Kindle). Preferred over "format-font", which reads as typeface-only. */}
+        {/* Aa Appearance button */}
         <TouchableOpacity
           style={styles.appearanceBtn}
-          onPress={() => {
-            setVersionOpen(false);
-            setAppearanceOpen((o) => !o);
-          }}
+          onPress={handleToggleAppearance}
           hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
           accessibilityRole="button"
           accessibilityLabel="Text size and font"
@@ -305,18 +323,11 @@ export default function ReaderTopBar({
           <MaterialCommunityIcons name="format-size" size={24} color={colors.text} />
         </TouchableOpacity>
 
-        {/* History button — "history" (a clock face with a counter-clockwise
-            arrow) is the platform-conventional "recently viewed" glyph, and
-            reads unambiguously next to the version pill. Opens the same list
-            as the History link in the book/chapter picker. */}
+        {/* History button */}
         {onOpenHistory && (
           <TouchableOpacity
             style={styles.historyBtn}
-            onPress={() => {
-              setAppearanceOpen(false);
-              setVersionOpen(false);
-              onOpenHistory();
-            }}
+            onPress={handleOpenHistory}
             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
             accessibilityRole="button"
             accessibilityLabel="Reading history"
@@ -329,10 +340,7 @@ export default function ReaderTopBar({
         {/* Version pill */}
         <TouchableOpacity
           style={[styles.versionPill, { borderColor: colors.accent, backgroundColor: colors.surface }]}
-          onPress={() => {
-            setAppearanceOpen(false);
-            setVersionOpen((o) => !o);
-          }}
+          onPress={handleToggleVersion}
           hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
           accessibilityLabel={`Bible version: ${activeVersion?.toUpperCase()}, tap to change`}
         >
@@ -344,17 +352,15 @@ export default function ReaderTopBar({
 
       <AppearanceMenu
         visible={appearanceOpen}
-        onClose={() => setAppearanceOpen(false)}
-        colors={colors}
+        onClose={handleCloseAppearance}
         dropdownTop={dropdownTop}
       />
 
       <VersionMenu
         visible={versionOpen}
-        onClose={() => setVersionOpen(false)}
+        onClose={handleCloseVersion}
         onSelect={handleSelectVersion}
         activeVersion={activeVersion}
-        colors={colors}
         dropdownTop={dropdownTop}
       />
     </>

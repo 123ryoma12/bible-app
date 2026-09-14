@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState, memo } from "react";
 import {
   View,
   Text,
@@ -10,9 +10,39 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { BOOKS } from "../data/books";
 import { getHistoryPage, PAGE_SIZE } from "../data/historyStore";
+
 import { useTheme } from "../theme/ThemeContext";
 import { uiFont } from "../theme/fonts";
 import { formatDisplayDate } from "../data/statsSettingsStore";
+
+// Precomputed map so renderItem never calls BOOKS.find() — O(1) vs O(n).
+const BOOK_BY_ID = Object.fromEntries(BOOKS.map((b) => [b.id, b]));
+
+// Memo'd row — only re-renders when its own item or onSelectEntry changes.
+// Uses BOOK_BY_ID for O(1) lookup and reads colors from context directly
+// so memo's shallow prop check actually works.
+const HistoryRow = memo(function HistoryRow({ item, onSelectEntry }) {
+  const { colors } = useTheme();
+  const book = BOOK_BY_ID[item.bookId];
+  if (!book) return null;
+  return (
+    <TouchableOpacity
+      style={[styles.row, { borderBottomColor: colors.border }]}
+      onPress={() => onSelectEntry(item.bookId, item.chapterNumber)}
+    >
+      <Text
+        style={[styles.rowText, { color: colors.text }]}
+        numberOfLines={1}
+        ellipsizeMode="tail"
+      >
+        {book.name} {item.chapterNumber}
+      </Text>
+      <Text style={[styles.rowMeta, { color: colors.mutedText }]}>
+        {formatRelativeTime(item.readAt)}
+      </Text>
+    </TouchableOpacity>
+  );
+});
 
 // Formats a Date as the app-wide "1 Jan 2026" display style.
 function formatCalendarDate(d) {
@@ -94,14 +124,18 @@ export default function HistoryScreen({ onSelectEntry, onBack }) {
     };
   }, []);
 
-  const renderFooter = () => {
+  const renderFooter = useCallback(() => {
     if (!loadingMore) return null;
     return (
       <View style={styles.footer}>
         <ActivityIndicator color={colors.accent} />
       </View>
     );
-  };
+  }, [loadingMore, colors.accent]);
+
+  const renderItem = useCallback(({ item }) => (
+    <HistoryRow item={item} onSelectEntry={onSelectEntry} />
+  ), [onSelectEntry]);
 
   return (
     <SafeAreaView
@@ -133,31 +167,11 @@ export default function HistoryScreen({ onSelectEntry, onBack }) {
       <FlatList
         data={entries}
         keyExtractor={(item) => `${item.bookId}-${item.chapterNumber}`}
-        contentContainerStyle={{ paddingBottom: 24 }}
+        contentContainerStyle={styles.listContent}
         onEndReached={loadMore}
         onEndReachedThreshold={0.5}
         ListFooterComponent={renderFooter}
-        renderItem={({ item }) => {
-          const book = BOOKS.find((b) => b.id === item.bookId);
-          if (!book) return null;
-          return (
-            <TouchableOpacity
-              style={[styles.row, { borderBottomColor: colors.border }]}
-              onPress={() => onSelectEntry(item.bookId, item.chapterNumber)}
-            >
-              <Text
-                style={[styles.rowText, { color: colors.text }]}
-                numberOfLines={1}
-                ellipsizeMode="tail"
-              >
-                {book.name} {item.chapterNumber}
-              </Text>
-              <Text style={[styles.rowMeta, { color: colors.mutedText }]}>
-                {formatRelativeTime(item.readAt)}
-              </Text>
-            </TouchableOpacity>
-          );
-        }}
+        renderItem={renderItem}
       />
     </SafeAreaView>
   );
@@ -202,4 +216,5 @@ const styles = StyleSheet.create({
   rowText: { flex: 1, fontSize: 17, marginRight: 12, fontFamily: uiFont(400) },
   rowMeta: { fontSize: 13, flexShrink: 0, fontFamily: uiFont(400) },
   footer: { paddingVertical: 20 },
+  listContent: { paddingBottom: 24 },
 });

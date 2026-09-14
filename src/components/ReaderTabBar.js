@@ -11,7 +11,7 @@
 //   onAddTab      – () => void
 //   maxTabs       – number (default 5)
 
-import React, { useRef, useCallback, useState } from "react";
+import React, { useRef, useCallback, useState, memo } from "react";
 import {
   View,
   Text,
@@ -22,6 +22,54 @@ import {
 import { useTheme } from "../theme/ThemeContext";
 import { uiFont } from "../theme/fonts";
 import { MAX_TABS } from "../data/readerTabsStore";
+
+// Memo'd tab item — eliminates per-render arrow functions for onPress,
+// onClosePress, and onLayout. Only re-renders when its own props change.
+const TabItem = memo(function TabItem({
+  tab, isActive, canClose, onSelect, onClose, onActiveLayout,
+}) {
+  const { colors } = useTheme();
+
+  const handlePress = useCallback(() => onSelect(tab.id), [onSelect, tab.id]);
+  const handleClose = useCallback(() => onClose(tab.id), [onClose, tab.id]);
+  const handleLayout = useCallback((e) => {
+    if (isActive) onActiveLayout(e.nativeEvent.layout.x, e.nativeEvent.layout.width);
+  }, [isActive, onActiveLayout]);
+
+  return (
+    <TouchableOpacity
+      onLayout={handleLayout}
+      style={[
+        styles.tab,
+        {
+          backgroundColor: isActive ? colors.background : colors.surface,
+          borderColor: isActive ? colors.accent : colors.border,
+          borderBottomColor: isActive ? colors.background : colors.border,
+        },
+      ]}
+      onPress={handlePress}
+      activeOpacity={0.7}
+    >
+      <Text
+        style={[styles.tabLabel, { color: isActive ? colors.accent : colors.secondaryText }]}
+        numberOfLines={1}
+      >
+        {tab.bookId} {tab.chapterNumber}
+      </Text>
+      {canClose && (
+        <TouchableOpacity
+          style={styles.closeBtn}
+          onPress={handleClose}
+          hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+        >
+          <Text style={[styles.closeText, { color: isActive ? colors.accent : colors.secondaryText }]}>
+            ×
+          </Text>
+        </TouchableOpacity>
+      )}
+    </TouchableOpacity>
+  );
+});
 
 export default function ReaderTabBar({
   tabs,
@@ -102,59 +150,17 @@ export default function ReaderTabBar({
         onScroll={handleScroll}
         scrollEventThrottle={16}
       >
-        {tabs.map((tab) => {
-          const isActive = tab.id === activeTabId;
-          return (
-            <TouchableOpacity
-              key={tab.id}
-              onLayout={(e) => {
-                if (isActive) {
-                  handleActiveTabLayout(
-                    e.nativeEvent.layout.x,
-                    e.nativeEvent.layout.width
-                  );
-                }
-              }}
-              style={[
-                styles.tab,
-                {
-                  backgroundColor: isActive ? colors.background : colors.surface,
-                  borderColor: isActive ? colors.accent : colors.border,
-                  borderBottomColor: isActive ? colors.background : colors.border,
-                },
-              ]}
-              onPress={() => onSelectTab(tab.id)}
-              activeOpacity={0.7}
-            >
-              <Text
-                style={[
-                  styles.tabLabel,
-                  { color: isActive ? colors.accent : colors.secondaryText },
-                ]}
-                numberOfLines={1}
-              >
-                {tab.bookId} {tab.chapterNumber}
-              </Text>
-
-              {canClose && (
-                <TouchableOpacity
-                  style={styles.closeBtn}
-                  onPress={() => onCloseTab(tab.id)}
-                  hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
-                >
-                  <Text
-                    style={[
-                      styles.closeText,
-                      { color: isActive ? colors.accent : colors.secondaryText },
-                    ]}
-                  >
-                    ×
-                  </Text>
-                </TouchableOpacity>
-              )}
-            </TouchableOpacity>
-          );
-        })}
+        {tabs.map((tab) => (
+          <TabItem
+            key={tab.id}
+            tab={tab}
+            isActive={tab.id === activeTabId}
+            canClose={canClose}
+            onSelect={onSelectTab}
+            onClose={onCloseTab}
+            onActiveLayout={handleActiveTabLayout}
+          />
+        ))}
       </ScrollView>
 
       {/* "+" button – always visible but disabled (dimmed) at max tabs */}

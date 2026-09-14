@@ -365,7 +365,7 @@ export default function ReaderScreen({
       <StatusBar hidden={!chromeVisible} animated translucent />
       <ScrollView
         ref={scrollRef}
-        style={{ flex: 1, opacity: scrollReady ? 1 : 0 }}
+        style={scrollReady ? styles.scrollViewReady : styles.scrollViewHidden}
         contentInsetAdjustmentBehavior="never"
         contentContainerStyle={contentContainerStyle}
         onScroll={handleScroll}
@@ -564,6 +564,8 @@ export default function ReaderScreen({
 const styles = StyleSheet.create({
   safe: { flex: 1 },
   scrollContent: {},
+  scrollViewReady: { flex: 1, opacity: 1 },
+  scrollViewHidden: { flex: 1, opacity: 0 },
   chapterHeading: {
     alignItems: "center",
     paddingTop: 28,
