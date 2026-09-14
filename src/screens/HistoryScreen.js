@@ -115,7 +115,7 @@ export default function HistoryScreen({ onSelectEntry, onBack }) {
           hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
         >
           <Text style={[styles.back, { color: colors.accent }]} numberOfLines={1}>
-            {"‹ Books"}
+            {"‹ Back"}
           </Text>
         </TouchableOpacity>
         <Text style={[styles.title, { color: colors.text }]}>History</Text>

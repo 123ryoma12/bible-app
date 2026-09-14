@@ -142,9 +142,6 @@ function AppContent() {
   // saved session is found, or keeps "reader" if a chapter is restored.
   const [screen, setScreen] = useState("bible");
 
-  // Imperative handle: StatsScreen exposes scrollToChapter(bookId, chapterNumber)
-  // via this ref so App.js can trigger a scroll when switching to the Bible tab.
-  const scrollToChapterRef = useRef(null);
   const [bookIndex, setBookIndex] = useState(0);
   const [chapterNumber, setChapterNumber] = useState(1);
   // The scroll offset to restore into the Reader. Non-zero only for the chapter
@@ -302,17 +299,24 @@ function AppContent() {
   // History can be reached from the book/chapter picker or from the reader's
   // top bar. Remember which so Back (both the on-screen arrow and Android's
   // hardware button) returns to where the user actually came from.
-  function openHistory() {
+  // Track which screen to return to when closing History.
+  const historyReturnScreen = useRef("reader");
+
+  function openHistory(returnTo = "reader") {
+    historyReturnScreen.current = returnTo;
     setScreen("history");
   }
 
   function closeHistory() {
-    // ReaderScreen unmounted while history was open, so hand it back the
-    // scroll offset the user was last at instead of jumping to the top.
-    if (activeTabId) {
-      setInitialScrollY(tabScrollPositions.current[activeTabId] ?? 0);
+    if (historyReturnScreen.current === "reader") {
+      // Restore scroll position the user was at before leaving the reader.
+      if (activeTabId) {
+        setInitialScrollY(tabScrollPositions.current[activeTabId] ?? 0);
+      }
+      setScreen("reader");
+    } else {
+      setScreen("bible");
     }
-    setScreen("reader");
   }
 
   // Switches to the Bible tab and scrolls the heat-map to the given chapter.
@@ -493,9 +497,6 @@ function AppContent() {
           behind when the chrome slides away. Every other screen keeps the
           chrome's footprint reserved here. */}
       <View style={{ flex: 1, paddingBottom: isReader ? 0 : bottomChromeHeight }}>
-        {screen === "history" && (
-          <HistoryScreen onSelectEntry={openChapterDirect} onBack={closeHistory} />
-        )}
         {activeTab === "bible" && screen === "reader" && (
           <ReaderScreen
             key={`${activeTabId}-${book.id}-${chapterNumber}`}
@@ -506,7 +507,7 @@ function AppContent() {
             onPrev={goPrev}
             onNext={goNext}
             onOpenBooks={() => openBibleTab(book.id, chapterNumber)}
-            onOpenHistory={() => openHistory()}
+            onOpenHistory={() => openHistory("reader")}
             onChromeChange={setChromeVisible}
             hasPrev={hasPrev}
             hasNext={hasNext}
@@ -533,13 +534,18 @@ function AppContent() {
             initialChapter={bibleInitialChapter}
             currentChapter={readerTabs.length > 0 ? { bookId: book.id, chapterNumber } : null}
             onBack={readerTabs.length > 0 ? () => setScreen("reader") : undefined}
-            onOpenHistory={() => setScreen("history")}
+            onOpenHistory={() => openHistory("bible")}
           />
         )}
 
         {activeTab === "memory" && <MemoryScreen />}
 
         {activeTab === "settings" && <SettingsScreen />}
+
+        {/* History overlays everything — must come last so it renders on top. */}
+        {screen === "history" && (
+          <HistoryScreen onSelectEntry={openChapterDirect} onBack={closeHistory} />
+        )}
       </View>
 
       {/* Bottom chrome stack: sermon player above the tab bar. Absolutely
@@ -582,10 +588,9 @@ function AppContent() {
         <BottomTabBar
           active={activeTab}
           onChange={(tab) => {
-            if (tab === "bible") {
-              // Tapping the Bible tab always shows the heat-map, not the reader.
-              setScreen("bible");
-            }
+            // Always reset to the bible heat-map screen when switching tabs.
+            // This clears any overlay (history) that might be open.
+            setScreen("bible");
             setActiveTab(tab);
           }}
           visible={chromeVisible}
