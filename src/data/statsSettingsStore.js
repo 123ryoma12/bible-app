@@ -16,6 +16,38 @@ import { todayDateString } from "./progressStore";
 const SETTINGS_KEY = "stats:dateRange";
 const GOAL_KEY = "stats:goalDate"; // a single "YYYY-MM-DD" target to finish the whole Bible, or null
 
+// ---------------------------------------------------------------------------
+// In-memory cache — populated by preloadStatsSettings() at app startup so
+// StatsScreen never has to wait for async storage reads.
+// ---------------------------------------------------------------------------
+let _rangeSetting = null; // null = not yet loaded
+let _goalDate = undefined; // undefined = not yet loaded (null is a valid value)
+
+/** True once preloadStatsSettings() has completed. */
+export function statsSettingsReady() {
+  return _rangeSetting !== null && _goalDate !== undefined;
+}
+
+/** Synchronous read — only valid after preloadStatsSettings() resolves. */
+export function getRangeSettingSync() {
+  return _rangeSetting ?? defaultRangeSetting();
+}
+
+/** Synchronous read — only valid after preloadStatsSettings() resolves. */
+export function getGoalDateSync() {
+  return _goalDate ?? null;
+}
+
+/** Call once at startup. Warms both caches in parallel. */
+export async function preloadStatsSettings() {
+  const [range, goal] = await Promise.all([
+    backend.getItem(SETTINGS_KEY),
+    backend.getItem(GOAL_KEY),
+  ]);
+  _rangeSetting = (range && range.mode) ? { ...defaultRangeSetting(), ...range } : defaultRangeSetting();
+  _goalDate = (typeof goal === "string" && goal) ? goal : null;
+}
+
 export const RANGE_MODES = {
   YEAR: "year",
   SINCE: "since",
@@ -41,6 +73,7 @@ export async function getRangeSetting() {
 
 export async function setRangeSetting(setting) {
   await backend.setItem(SETTINGS_KEY, setting);
+  _rangeSetting = setting;
   return setting;
 }
 
@@ -114,6 +147,7 @@ export async function getGoalDate() {
 
 export async function setGoalDate(dateStr) {
   await backend.setItem(GOAL_KEY, dateStr || null);
+  _goalDate = dateStr || null;
   return dateStr || null;
 }
 

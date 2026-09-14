@@ -44,6 +44,8 @@ import { getLastPosition, setLastPosition, setLastScroll } from "./src/data/last
 import { getSermonPlayback } from "./src/data/sermonPlaybackStore";
 import { loadMemoryPrefs } from "./src/data/memoryPrefsStore";
 import { loadReadingVersion } from "./src/data/bibleVersionStore";
+import { preloadAllProgress } from "./src/data/progressStore";
+import { preloadStatsSettings } from "./src/data/statsSettingsStore";
 import {
   getReaderTabs,
   setReaderTabs,
@@ -180,6 +182,9 @@ function AppContent() {
   // survives ReaderScreen remounts (which happen on every tab switch due to the
   // key prop) and can be restored correctly.
   const tabBarScrollX = useRef(0);
+  // Remembers which bible sub-screen (reader/bible) was active when the user
+  // switched away to Memory/Settings, so we can restore it on return.
+  const lastBibleScreen = useRef("bible");
   // True only when returning to the Bible reader from another bottom tab
   // (Stats/Memory/Settings). Tells ReaderTabBar to scroll the active tab into
   // view rather than just restoring the strip's last x position.
@@ -212,6 +217,11 @@ function AppContent() {
   // On launch, restore tabs and last position.
   useEffect(() => {
     let cancelled = false;
+
+    // Fire preloads in parallel with the session restore — by the time the
+    // user can navigate to StatsScreen or BookChapterPicker, caches are warm.
+    preloadAllProgress(BOOKS.map((b) => b.id));
+    preloadStatsSettings();
 
     Promise.all([getReaderTabs(), getLastPosition(), getSermonPlayback()])
       .then(([savedTabs, position, savedSermon]) => {
@@ -315,7 +325,7 @@ function AppContent() {
       }
       setScreen("reader");
     } else {
-      setScreen("bible");
+      openBibleHeatmap();
     }
   }
 
@@ -323,11 +333,23 @@ function AppContent() {
   // Called when the user taps the "Book Chapter" pill in the reader footer.
   // The chapter to highlight and scroll to when the Bible tab opens.
   const [bibleInitialChapter, setBibleInitialChapter] = useState(null);
+  // Controls wrapper opacity — hidden until StatsScreen signals it has scrolled
+  // to the right position. Reset to false whenever initialChapter changes so
+  // the wrapper is already hidden before StatsScreen receives the new prop.
+  const [statsScreenReady, setStatsScreenReady] = useState(true);
 
   function openBibleTab(bookId, chapterNumber) {
+    // Hide before prop change — onReady reveals after scroll is applied.
+    setStatsScreenReady(false);
     setBibleInitialChapter({ bookId, chapterNumber });
     setScreen("bible");
     setActiveTab("bible");
+  }
+
+  function openBibleHeatmap() {
+    // Navigating to the heatmap without a specific chapter — reveal immediately.
+    setStatsScreenReady(true);
+    setScreen("bible");
   }
 
   // Jumps straight into the Reader for an arbitrary book/chapter.
@@ -463,13 +485,19 @@ function AppContent() {
       }
       if (screen === "reader") {
         // Back from reader goes to the Bible heat-map.
-        setScreen("bible");
+        openBibleHeatmap();
         return true;
       }
 
-      // 3. On Memory/Settings, back returns to the Bible heat-map.
-      setScreen("bible");
+      // 3. On Memory/Settings, back returns to exactly the bible sub-screen
+      // that was active when the user left.
       setActiveTab("bible");
+      if (lastBibleScreen.current === "reader") {
+        tabBarScrollToActive.current = true;
+        setScreen("reader");
+      } else {
+        openBibleHeatmap();
+      }
       return true;
     }
 
@@ -497,45 +525,68 @@ function AppContent() {
           behind when the chrome slides away. Every other screen keeps the
           chrome's footprint reserved here. */}
       <View style={{ flex: 1, paddingBottom: isReader ? 0 : bottomChromeHeight }}>
-        {activeTab === "bible" && screen === "reader" && (
-          <ReaderScreen
-            key={`${activeTabId}-${book.id}-${chapterNumber}`}
-            book={book}
-            chapterNumber={chapterNumber}
-            initialScrollY={initialScrollY}
-            onScrollPositionChange={handleScrollPositionChange}
-            onPrev={goPrev}
-            onNext={goNext}
-            onOpenBooks={() => openBibleTab(book.id, chapterNumber)}
-            onOpenHistory={() => openHistory("reader")}
-            onChromeChange={setChromeVisible}
-            hasPrev={hasPrev}
-            hasNext={hasNext}
-            readerTabs={readerTabs}
-            activeTabId={activeTabId}
-            onSelectTab={handleSelectTab}
-            onCloseTab={handleCloseTab}
-            onAddTab={handleAddTab}
-            tabBarScrollX={tabBarScrollX.current}
-            onTabBarScrollX={(x) => { tabBarScrollX.current = x; }}
-            tabBarScrollToActive={tabBarScrollToActive.current}
-            onTabBarScrollToActiveConsumed={() => { tabBarScrollToActive.current = false; }}
-            onPlaySermon={setActiveSermon}
-            activeSermonId={activeSermon?.id}
-            bottomChromeHeight={bottomChromeHeight}
-          />
+        {/* Reader — always mounted once tabs exist so scroll position is
+            preserved when switching to Memory/Settings and back. Hidden via
+            display:none when not active; the key only changes on actual
+            chapter/tab changes, not on tab-bar navigation. */}
+        {readerTabs.length > 0 && (
+          <View
+            style={{ flex: 1, display: activeTab === "bible" && screen === "reader" ? "flex" : "none" }}
+            pointerEvents={activeTab === "bible" && screen === "reader" ? "auto" : "none"}
+          >
+            <ReaderScreen
+              key={`${activeTabId}-${book.id}-${chapterNumber}`}
+              book={book}
+              chapterNumber={chapterNumber}
+              initialScrollY={initialScrollY}
+              onScrollPositionChange={handleScrollPositionChange}
+              onPrev={goPrev}
+              onNext={goNext}
+              onOpenBooks={() => openBibleTab(book.id, chapterNumber)}
+              onOpenHistory={() => openHistory("reader")}
+              onChromeChange={setChromeVisible}
+              hasPrev={hasPrev}
+              hasNext={hasNext}
+              readerTabs={readerTabs}
+              activeTabId={activeTabId}
+              onSelectTab={handleSelectTab}
+              onCloseTab={handleCloseTab}
+              onAddTab={handleAddTab}
+              tabBarScrollX={tabBarScrollX.current}
+              onTabBarScrollX={(x) => { tabBarScrollX.current = x; }}
+              tabBarScrollToActive={tabBarScrollToActive.current}
+              onTabBarScrollToActiveConsumed={() => { tabBarScrollToActive.current = false; }}
+              onPlaySermon={setActiveSermon}
+              activeSermonId={activeSermon?.id}
+              bottomChromeHeight={bottomChromeHeight}
+            />
+          </View>
         )}
 
-        {/* Bible tab — heat-map / chapter browser (formerly Stats). */}
-        {activeTab === "bible" && screen === "bible" && (
+        {/* StatsScreen — always mounted, never unmounts.
+            Uses opacity+pointerEvents instead of display:none so there is
+            no layout-then-paint frame where the wrong scroll position shows.
+            opacity:0 is applied instantly (same render) when we navigate away
+            or when a new initialChapter is set; onReady reveals it only after
+            the scroll has been applied. */}
+        <View
+          style={{
+            flex: 1,
+            position: "absolute",
+            top: 0, left: 0, right: 0, bottom: 0,
+            opacity: activeTab === "bible" && screen === "bible" && statsScreenReady ? 1 : 0,
+          }}
+          pointerEvents={activeTab === "bible" && screen === "bible" && statsScreenReady ? "auto" : "none"}
+        >
           <StatsScreen
             onOpenChapter={openChapterDirect}
             initialChapter={bibleInitialChapter}
             currentChapter={readerTabs.length > 0 ? { bookId: book.id, chapterNumber } : null}
             onBack={readerTabs.length > 0 ? () => setScreen("reader") : undefined}
             onOpenHistory={() => openHistory("bible")}
+            onReady={() => setStatsScreenReady(true)}
           />
-        )}
+        </View>
 
         {activeTab === "memory" && <MemoryScreen />}
 
@@ -587,9 +638,21 @@ function AppContent() {
         <BottomTabBar
           active={activeTab}
           onChange={(tab) => {
-            // Always reset to the bible heat-map screen when switching tabs.
-            // This clears any overlay (history) that might be open.
-            setScreen("bible");
+            if (tab === activeTab) return; // tapping the already-active tab — no-op
+            if (tab === "bible") {
+              // Returning to the bible tab — restore exactly the screen that
+              // was active when the user left (reader or heat-map).
+              if (lastBibleScreen.current === "reader") {
+                tabBarScrollToActive.current = true;
+                setScreen("reader");
+              } else {
+                openBibleHeatmap();
+              }
+            } else {
+              // Leaving the bible tab — snapshot the current screen so we can
+              // restore it on return. Treat history as bible (the overlay is gone).
+              lastBibleScreen.current = screen === "history" ? "bible" : screen;
+            }
             setActiveTab(tab);
           }}
           visible={chromeVisible}

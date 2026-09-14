@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   View,
   Text,
@@ -16,7 +16,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { BOOKS } from "../data/books";
 import { ALL_CHAPTERS } from "../data/chapterIndex";
-import { getAllBooksProgress, subscribeProgress } from "../data/progressStore";
+import { getAllBooksProgress, subscribeProgress, getProgressCacheSync } from "../data/progressStore";
 import {
   RANGE_MODES,
   getRangeSetting,
@@ -24,9 +24,10 @@ import {
   resolveBounds,
   makeDateInRange,
   formatDisplayDate,
-  getGoalDate,
   setGoalDate,
   computeGoalPace,
+  getRangeSettingSync,
+  getGoalDateSync,
 } from "../data/statsSettingsStore";
 import { useTheme } from "../theme/ThemeContext";
 
@@ -90,15 +91,23 @@ function rangePhrase(setting) {
   }
 }
 
-export default function StatsScreen({ onOpenChapter, initialChapter, currentChapter, onBack, onOpenHistory }) {
+export default function StatsScreen({ onOpenChapter, initialChapter, currentChapter, onBack, onOpenHistory, onReady }) {
   const { colors, mode } = useTheme();
   const isDark = mode === "dark";
-  const [progressByBook, setProgressByBook] = useState(null); // null = loading
-  const [rangeSetting, setRangeSettingState] = useState(null); // null = loading
+
+  // Initialise synchronously from the preloaded cache — if App.js fired
+  // preloadAllProgress + preloadStatsSettings at startup these will already
+  // have values and the spinner is never shown.
+  const [progressByBook, setProgressByBook] = useState(() => {
+    const c = getProgressCacheSync();
+    return Object.keys(c).length > 0 ? c : null;
+  });
+  const [rangeSetting, setRangeSettingState] = useState(() => getRangeSettingSync());
+  const [goalDate, setGoalDateState] = useState(() => getGoalDateSync());
+
   const [rangeModalOpen, setRangeModalOpen] = useState(false);
-  const [goalDate, setGoalDateState] = useState(null);
-  const [goalLoaded, setGoalLoaded] = useState(false);
   const [goalModalOpen, setGoalModalOpen] = useState(false);
+
   // Start at 0 — we don't render boxes until the ScrollView has measured its
   // own width via onLayout, so we never use the wrong window width (which on
   // native may differ from the actual available width due to safe-area insets).
@@ -109,25 +118,50 @@ export default function StatsScreen({ onOpenChapter, initialChapter, currentChap
   const scrollViewRef = useRef(null);
   // Per-chapter y-offsets, populated as cells lay out.
   const chapterOffsets = useRef({});
+  // Track which initialChapter we've already scrolled to so we don't repeat it.
+  const scrolledToChapter = useRef(null);
 
-  // When we have an initialChapter target, hide the grid until that cell has
-  // laid out and the scroll has been applied — prevents a flicker of the grid
-  // being visible at the top before jumping to the right position.
-  const [gridReady, setGridReady] = useState(!initialChapter);
-
-  // Load progress once on mount (hits storage first time, then cache is warm).
-  // Also subscribe so any chapter being marked read in the reader instantly
-  // updates the heat-map without a full reload.
+  // Subscribe to cache updates (chapter marked read in reader) and fall back
+  // to async loads if the cache wasn't warm yet on first render.
   useEffect(() => {
-    getAllBooksProgress(BOOKS.map((b) => b.id)).then(setProgressByBook);
-    getRangeSetting().then(setRangeSettingState);
-    getGoalDate().then((d) => {
-      setGoalDateState(d);
-      setGoalLoaded(true);
-    });
+    if (!progressByBook) {
+      getAllBooksProgress(BOOKS.map((b) => b.id)).then(setProgressByBook);
+    }
+    if (!rangeSetting) {
+      getRangeSetting().then(setRangeSettingState);
+    }
     const unsub = subscribeProgress(setProgressByBook);
     return unsub;
   }, []);
+
+  // When initialChapter changes, hide the grid, scroll synchronously before
+  // the next paint (useLayoutEffect), then reveal. Since the screen is always
+  // mounted the cell offsets are already cached so the scroll is instant.
+  // If the offset isn't cached yet (first ever render) the onLayout handler
+  // below takes over once the cell measures.
+  useLayoutEffect(() => {
+    if (!initialChapter) {
+      onReady?.();
+      return;
+    }
+    const key = `${initialChapter.bookId}:${initialChapter.chapterNumber}`;
+    if (scrolledToChapter.current === key) {
+      onReady?.();
+      return;
+    }
+    scrolledToChapter.current = key;
+    const y = chapterOffsets.current[key];
+    if (y != null) {
+      // Scroll then signal ready — App.js wrapper is already hidden so no
+      // flash is possible. Reveal on the next frame after scroll is applied.
+      requestAnimationFrame(() => {
+        scrollViewRef.current?.scrollTo({ y, animated: false });
+        onReady?.();
+      });
+    } else {
+      // Offset not cached yet — onLayout will scroll + call onReady.
+    }
+  }, [initialChapter]);
 
   const applyGoalDate = useCallback((next) => {
     setGoalDateState(next);
@@ -179,7 +213,10 @@ export default function StatsScreen({ onOpenChapter, initialChapter, currentChap
     });
   }, [rangeSetting, goalDate, readChapterCount]);
 
-  if (progressByBook === null || rangeSetting === null || !goalLoaded) {
+  // Only show the spinner on the very first cold launch before preloads have
+  // had a chance to complete. On all subsequent visits the cache is warm and
+  // this branch is never taken.
+  if (progressByBook === null || rangeSetting === null) {
     return (
       <SafeAreaView
         style={[styles.safe, { backgroundColor: colors.background }]}
@@ -255,7 +292,7 @@ export default function StatsScreen({ onOpenChapter, initialChapter, currentChap
       <View style={{ flex: 1 }}>
         <ScrollView
           ref={scrollViewRef}
-          style={{ flex: 1, opacity: gridReady ? 1 : 0 }}
+          style={{ flex: 1 }}
           contentContainerStyle={styles.heatGrid}
           onLayout={(e) => setGridWidth(e.nativeEvent.layout.width)}
         >
@@ -276,15 +313,11 @@ export default function StatsScreen({ onOpenChapter, initialChapter, currentChap
                   const key = `${item.bookId}:${item.chapterNumber}`;
                   const { y } = e.nativeEvent.layout;
                   chapterOffsets.current[key] = y;
-                  // If this is the target cell, scroll to it then reveal the grid.
-                  if (
-                    !gridReady &&
-                    initialChapter &&
-                    initialChapter.bookId === item.bookId &&
-                    initialChapter.chapterNumber === item.chapterNumber
-                  ) {
+                  // If this cell is the pending scroll target (offset wasn't
+                  // cached when initialChapter effect ran), scroll and reveal now.
+                  if (scrolledToChapter.current === key) {
                     scrollViewRef.current?.scrollTo({ y, animated: false });
-                    setGridReady(true);
+                    onReady?.();
                   }
                 }}
                 activeOpacity={0.65}

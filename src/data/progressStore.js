@@ -112,3 +112,13 @@ export async function getAllBooksProgress(bookIds) {
   _allLoaded = true;
   return Object.fromEntries(entries);
 }
+
+/** Call once at app startup to warm the full progress cache before any screen mounts. */
+export async function preloadAllProgress(bookIds) {
+  await getAllBooksProgress(bookIds);
+}
+
+/** Synchronous read — only valid after preloadAllProgress() resolves. */
+export function getProgressCacheSync() {
+  return { ..._cache };
+}
