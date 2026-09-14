@@ -669,10 +669,6 @@ const styles = StyleSheet.create({
     lineHeight: 19,
     marginBottom: 12,
   },
-    shadowOpacity: 0.12,
-    shadowRadius: 4,
-    elevation: 4,
-  },
   heatGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
