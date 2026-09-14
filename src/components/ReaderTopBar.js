@@ -203,6 +203,9 @@ export default function ReaderTopBar({
   onOpenHistory,
   notesOpen,
   onToggleNotes,
+  // Book intro tab: TOC button replaces the notes button
+  tocOpen,
+  onToggleToc,
 }) {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
@@ -280,8 +283,24 @@ export default function ReaderTopBar({
         {/* Spacer pushes the controls to the right */}
         <View style={{ flex: 1 }} />
 
-        {/* Study notes toggle — opens/closes the bottom notes panel. */}
-        {onToggleNotes && (
+        {/* TOC button — shown on book intro tabs instead of study notes. */}
+        {onToggleToc ? (
+          <TouchableOpacity
+            style={styles.notesBtn}
+            onPress={onToggleToc}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            accessibilityRole="button"
+            accessibilityLabel={tocOpen ? "Close table of contents" : "Open table of contents"}
+            accessibilityState={{ expanded: tocOpen }}
+          >
+            <MaterialCommunityIcons
+              name="format-list-bulleted"
+              size={22}
+              color={tocOpen ? colors.accent : colors.text}
+            />
+          </TouchableOpacity>
+        ) : onToggleNotes ? (
+          /* Study notes toggle — opens/closes the bottom notes panel. */
           <TouchableOpacity
             style={styles.notesBtn}
             onPress={handleToggleNotesCb}
@@ -296,19 +315,21 @@ export default function ReaderTopBar({
               color={notesOpen ? colors.accent : colors.text}
             />
           </TouchableOpacity>
-        )}
+        ) : null}
 
-        {/* Listen button — opens the sermon sheet for the current book/chapter. */}
-        <TouchableOpacity
-          style={styles.listenBtn}
-          onPress={handleOpenSermons}
-          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-          accessibilityRole="button"
-          accessibilityLabel="Listen to sermons"
-          accessibilityHint="Opens sermons for this book"
-        >
-          <MaterialCommunityIcons name="headphones" size={24} color={colors.text} />
-        </TouchableOpacity>
+        {/* Listen button — hidden on book intro tabs. */}
+        {!onToggleToc && (
+          <TouchableOpacity
+            style={styles.listenBtn}
+            onPress={handleOpenSermons}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            accessibilityRole="button"
+            accessibilityLabel="Listen to sermons"
+            accessibilityHint="Opens sermons for this book"
+          >
+            <MaterialCommunityIcons name="headphones" size={24} color={colors.text} />
+          </TouchableOpacity>
+        )}
 
         {/* Aa Appearance button */}
         <TouchableOpacity

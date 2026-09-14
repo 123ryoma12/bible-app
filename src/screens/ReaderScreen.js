@@ -15,6 +15,7 @@ import ChapterViewBase from "../components/ChapterView";
 import ReaderTabBar from "../components/ReaderTabBar";
 import ReaderTopBar from "../components/ReaderTopBar";
 import SermonSheet from "../components/SermonSheet";
+import BookIntroView, { TocSheet } from "../components/BookIntroView";
 import { getChapter } from "../data/bibleData";
 import { incrementReadCount } from "../data/progressStore";
 import { addToHistory } from "../data/historyStore";
@@ -77,6 +78,10 @@ export default function ReaderScreen({
   bottomChromeHeight = 0,
   // Callback so App.js can shift the bottom chrome up when notes are open.
   onNotesOpenChange,
+  // When true, this tab shows book intro instead of chapter content.
+  isIntro = false,
+  // Called when user taps "Read [Book] 1" on the intro view.
+  onOpenChapterOne,
 }) {
   const { colors, readingFontKey } = useTheme();
   const insets = useSafeAreaInsets();
@@ -128,6 +133,24 @@ export default function ReaderScreen({
   );
   const handleToggleNotes = useCallback(() => {
     setNotesOpen((o) => !o);
+  }, []);
+
+  // TOC for book intro tabs
+  const [tocOpen, setTocOpen] = useState(false);
+  const introSectionRefs = useRef([]);
+  const handleIntroSectionRefs = useCallback((refs) => {
+    introSectionRefs.current = refs;
+  }, []);
+  const handleTocSelect = useCallback((index) => {
+    setTocOpen(false);
+    const ref = introSectionRefs.current[index];
+    if (ref && scrollRef.current) {
+      ref.measureLayout(
+        scrollRef.current,
+        (_x, y) => scrollRef.current?.scrollTo({ y, animated: true }),
+        () => {}
+      );
+    }
   }, []);
 
   const handleSelectSermon = useCallback(
@@ -371,48 +394,59 @@ export default function ReaderScreen({
         onScroll={handleScroll}
         scrollEventThrottle={16}
         onContentSizeChange={handleContentSizeChange}
-        {...panResponder.panHandlers}
+        {...(isIntro ? {} : panResponder.panHandlers)}
       >
-        {/* Tapping the reading area toggles the chrome (immersive reading). */}
-        <TouchableOpacity activeOpacity={1} onPress={toggleChrome}>
-          {/* Non-interactive page heading (the tappable version lives in the
-              footer pill). Purely decorative, so it is not a button. */}
-          <View style={styles.chapterHeading}>
-            <Text
-              style={[
-                styles.chapterHeadingBook,
-                { color: colors.text, fontFamily: readingFont(readingFontKey, "bold") },
-              ]}
-            >
-              {book.name}
-            </Text>
-            <Text
-              style={[
-                styles.chapterHeadingNumber,
-                { color: colors.accent, fontFamily: readingFont(readingFontKey, "semiBold") },
-              ]}
-            >
-              Chapter {chapterNumber}
-            </Text>
-            <View style={[styles.chapterHeadingRule, { backgroundColor: colors.border }]} />
-          </View>
+        {isIntro ? (
+          <BookIntroView
+            book={book}
+            onOpenChapter={onOpenChapterOne}
+            scrollRef={scrollRef}
+            onSectionRefs={handleIntroSectionRefs}
+          />
+        ) : (
+          /* Tapping the reading area toggles the chrome (immersive reading). */
+          <TouchableOpacity activeOpacity={1} onPress={toggleChrome}>
+            {/* Non-interactive page heading (the tappable version lives in the
+                footer pill). Purely decorative, so it is not a button. */}
+            <View style={styles.chapterHeading}>
+              <Text
+                style={[
+                  styles.chapterHeadingBook,
+                  { color: colors.text, fontFamily: readingFont(readingFontKey, "bold") },
+                ]}
+              >
+                {book.name}
+              </Text>
+              <Text
+                style={[
+                  styles.chapterHeadingNumber,
+                  { color: colors.accent, fontFamily: readingFont(readingFontKey, "semiBold") },
+                ]}
+              >
+                Chapter {chapterNumber}
+              </Text>
+              <View style={[styles.chapterHeadingRule, { backgroundColor: colors.border }]} />
+            </View>
 
-          <ChapterView chapter={chapter} />
-        </TouchableOpacity>
+            <ChapterView chapter={chapter} />
+          </TouchableOpacity>
+        )}
 
-        {/* End-of-chapter action. */}
-        <TouchableOpacity
-          style={[
-            styles.markReadBtn,
-            { backgroundColor: colors.accent, borderColor: colors.accentBorder },
-          ]}
-          onPress={handleMarkRead}
-          activeOpacity={0.85}
-        >
-          <Text style={[styles.markReadText, { color: colors.accentContrast }]}>
-            Mark as Read
-          </Text>
-        </TouchableOpacity>
+        {/* End-of-chapter action — only for real chapters, not intro. */}
+        {!isIntro && (
+          <TouchableOpacity
+            style={[
+              styles.markReadBtn,
+              { backgroundColor: colors.accent, borderColor: colors.accentBorder },
+            ]}
+            onPress={handleMarkRead}
+            activeOpacity={0.85}
+          >
+            <Text style={[styles.markReadText, { color: colors.accentContrast }]}>
+              Mark as Read
+            </Text>
+          </TouchableOpacity>
+        )}
       </ScrollView>
 
       {/* Reading appearance + version selector. Slides up out of view while
@@ -424,11 +458,25 @@ export default function ReaderScreen({
         onHeightChange={setTopBarHeight}
         activeVersion={version}
         onVersionChange={() => setVersionKey((k) => k + 1)}
-        onOpenSermons={() => setSermonsOpen(true)}
+        onOpenSermons={isIntro ? undefined : () => setSermonsOpen(true)}
         onOpenHistory={onOpenHistory}
         notesOpen={notesOpen}
-        onToggleNotes={handleToggleNotes}
+        onToggleNotes={isIntro ? undefined : handleToggleNotes}
+        tocOpen={tocOpen}
+        onToggleToc={isIntro ? () => setTocOpen((o) => !o) : undefined}
       />
+
+      {/* TOC sheet for intro tabs */}
+      {isIntro && tocOpen && (
+        <TocSheet
+          sections={require("../../data/book-info.json")[
+            { "Psalm": "Psalms", "Song of Songs": "Song of Solomon" }[book.name] ?? book.name
+          ]?.sections ?? []}
+          onSelect={handleTocSelect}
+          onClose={() => setTocOpen(false)}
+          colors={colors}
+        />
+      )}
 
       {/* Sermons for the current book / chapter. Mounted only while open so
           that nothing is fetched until the Listen button is actually tapped. */}
@@ -525,7 +573,7 @@ export default function ReaderScreen({
             hitSlop={{ top: 10, bottom: 10 }}
             activeOpacity={0.7}
             accessibilityRole="button"
-            accessibilityLabel={`${book.name} ${chapterNumber}, tap to choose another book or chapter`}
+            accessibilityLabel={isIntro ? `${book.name} introduction` : `${book.name} ${chapterNumber}, tap to choose another book or chapter`}
           >
             <Text
               style={[
@@ -536,7 +584,7 @@ export default function ReaderScreen({
               adjustsFontSizeToFit
               minimumFontScale={0.7}
             >
-              {book.name} {chapterNumber}
+              {isIntro ? book.name : `${book.name} ${chapterNumber}`}
             </Text>
           </TouchableOpacity>
 

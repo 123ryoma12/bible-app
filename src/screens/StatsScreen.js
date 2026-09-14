@@ -30,7 +30,7 @@ import {
 import { useTheme } from "../theme/ThemeContext";
 
 const SCREEN_PADDING = 20;
-const TOTAL_CHAPTERS = ALL_CHAPTERS.length; // 1,189
+const TOTAL_CHAPTERS = ALL_CHAPTERS.filter((c) => !c.isIntroCell).length; // 1,189
 const BOX_GAP = 3; // gap between cells (applied as marginRight + marginBottom)
 
 function computeBoxMetrics(containerWidth) {
@@ -71,28 +71,36 @@ const HeatCell = memo(function HeatCell({
   colorSurface, colorAccent, colorBorder, colorText, colorMutedText,
   onPress,
 }) {
-  const isRead = readSet.has(`${item.bookId}:${item.chapterNumber}`);
+  const isRead = !item.isIntroCell && readSet.has(`${item.bookId}:${item.chapterNumber}`);
   const bg = isRead ? (isDark ? READ_COLOR_DARK : READ_COLOR_LIGHT) : null;
   const handlePress = useCallback(() => {
-    onPress(item.bookId, item.chapterNumber);
-  }, [onPress, item.bookId, item.chapterNumber]);
+    onPress(item.bookId, item.chapterNumber, item.isIntroCell);
+  }, [onPress, item.bookId, item.chapterNumber, item.isIntroCell]);
+  const introBg = item.isIntroCell
+    ? isCurrent
+      ? colorAccent
+      : colorAccent + "28"  // 16% opacity tint
+    : null;
+
   return (
     <TouchableOpacity
       onPress={handlePress}
       activeOpacity={0.65}
       style={[
-        styles.heatBox,
+        item.isIntroCell ? styles.heatBoxIntro : styles.heatBox,
         {
-          width: boxSize,
+          width: item.isIntroCell ? boxSize * 1.4 + BOX_GAP : boxSize,
           height: boxSize,
           marginRight: isLastInRow ? 0 : BOX_GAP,
-          backgroundColor: bg || colorSurface,
-          borderWidth: 2,
+          backgroundColor: introBg || bg || colorSurface,
+          borderWidth: item.isIntroCell ? 1.5 : 2,
           borderColor: isCurrent
             ? colorAccent
-            : bg
-              ? "transparent"
-              : colorBorder,
+            : item.isIntroCell
+              ? colorAccent + "60"
+              : bg
+                ? "transparent"
+                : colorBorder,
         },
       ]}
     >
@@ -101,17 +109,19 @@ const HeatCell = memo(function HeatCell({
         adjustsFontSizeToFit
         minimumFontScale={0.6}
         style={[
-          item.isFirstOfBook ? styles.heatLabelBook : styles.heatLabel,
+          item.isIntroCell ? styles.heatLabelBook : styles.heatLabel,
           {
-            color: bg
-              ? "#1a1206"
-              : item.isFirstOfBook
-                ? colorText
-                : colorMutedText,
+            color: isCurrent && item.isIntroCell
+              ? "#fff"
+              : bg
+                ? "#1a1206"
+                : item.isIntroCell
+                  ? colorAccent
+                  : colorMutedText,
           },
         ]}
       >
-        {item.isFirstOfBook ? item.bookId : item.chapterNumber}
+        {item.isIntroCell ? item.bookId : item.chapterNumber}
       </Text>
     </TouchableOpacity>
   );
@@ -284,7 +294,7 @@ export default function StatsScreen({ onOpenChapter, initialChapter, currentChap
     }
 
     const itemIndex = ALL_CHAPTERS.findIndex(
-      (c) => c.bookId === initialChapter.bookId && c.chapterNumber === initialChapter.chapterNumber
+      (c) => !c.isIntroCell && c.bookId === initialChapter.bookId && c.chapterNumber === initialChapter.chapterNumber
     );
     if (itemIndex === -1) { onReady?.(); return; }
 
@@ -911,6 +921,12 @@ const styles = StyleSheet.create({
   heatRowFlex: { flexDirection: "row" },
   heatBox: {
     borderRadius: 5,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: BOX_GAP,
+  },
+  heatBoxIntro: {
+    borderRadius: 7,
     alignItems: "center",
     justifyContent: "center",
     marginBottom: BOX_GAP,

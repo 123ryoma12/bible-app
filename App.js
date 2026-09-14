@@ -358,6 +358,45 @@ const AppContent = memo(function AppContent() {
     setActiveTab("bible");
   }, []);
 
+  // Open a book intro tab for the given book. If there's already an intro tab
+  // for this book, switch to it. Otherwise open the intro in the active tab
+  // (replacing whatever was there), same as how openChapterDirect works.
+  const openIntroTab = useCallback((bookObj) => {
+    const existingTab = readerTabs.find(
+      (t) => t.type === "intro" && t.bookId === bookObj.id
+    );
+    if (existingTab) {
+      setActiveTabId(existingTab.id);
+      const idx = BOOKS.findIndex((b) => b.id === bookObj.id);
+      setBookIndex(idx >= 0 ? idx : 0);
+      setChapterNumber(0);
+      setInitialScrollY(0);
+      setScreen("reader");
+      setActiveTab("bible");
+      const activeIdx = readerTabs.findIndex((t) => t.id === existingTab.id);
+      setReaderTabs(readerTabs, activeIdx);
+      return;
+    }
+    const idx = BOOKS.findIndex((b) => b.id === bookObj.id);
+    if (idx === -1) return;
+    setBookIndex(idx);
+    setChapterNumber(0);
+    setInitialScrollY(0);
+    setScreen("reader");
+    setActiveTab("bible");
+    if (readerTabs.length === 0) {
+      const tab = { id: newTabId(), bookId: bookObj.id, chapterNumber: 0, type: "intro" };
+      applyTabs([tab], tab.id);
+    } else if (activeTabId) {
+      const updated = readerTabs.map((t) =>
+        t.id === activeTabId
+          ? { ...t, bookId: bookObj.id, chapterNumber: 0, type: "intro" }
+          : t
+      );
+      applyTabs(updated, activeTabId);
+    }
+  }, [readerTabs, activeTabId]);
+
   const openChapterDirect = useCallback((entryBookId, entryChapterNumber) => {
     const idx = BOOKS.findIndex((b) => b.id === entryBookId);
     if (idx === -1) return;
@@ -373,7 +412,7 @@ const AppContent = memo(function AppContent() {
     } else if (activeTabId) {
       const updated = readerTabs.map((t) =>
         t.id === activeTabId
-          ? { ...t, bookId: entryBookId, chapterNumber: entryChapterNumber }
+          ? { ...t, bookId: entryBookId, chapterNumber: entryChapterNumber, type: undefined }
           : t
       );
       applyTabs(updated, activeTabId);
@@ -413,18 +452,28 @@ const AppContent = memo(function AppContent() {
     applyTabs(newTabs, newActiveId);
   }, [readerTabs, activeTabId]);
 
+  // True when the active reader tab is a book intro tab.
+  // Must be derived before handleAddTab so the callback captures the correct value.
+  const activeReaderTab = readerTabs.find((t) => t.id === activeTabId);
+  const isIntroTab = activeReaderTab?.type === "intro";
+
   const handleAddTab = useCallback(() => {
     if (readerTabs.length >= MAX_TABS) return;
-    const tab = { id: newTabId(), bookId: book.id, chapterNumber };
+    // If the current tab is a book intro, duplicate it as another intro tab.
+    const tab = isIntroTab
+      ? { id: newTabId(), bookId: book.id, chapterNumber: 0, type: "intro" }
+      : { id: newTabId(), bookId: book.id, chapterNumber };
     tabScrollPositions.current[tab.id] = 0;
     const newTabs = [...readerTabs, tab];
     applyTabs(newTabs, tab.id);
     setInitialScrollY(0);
     setScreen("reader");
-  }, [readerTabs, book?.id, chapterNumber]);
+  }, [readerTabs, isIntroTab, book?.id, chapterNumber]);
 
-  const hasPrev = bookIndex > 0 || chapterNumber > 1;
-  const hasNext = bookIndex < BOOKS.length - 1 || chapterNumber < book.chapterCount;
+  // Intro tab: prev = last chapter of previous book (disabled for first book).
+  // Chapter tab: prev always available (chapter 1 goes to same book's intro).
+  const hasPrev = isIntroTab ? bookIndex > 0 : true;
+  const hasNext = isIntroTab ? true : (bookIndex < BOOKS.length - 1 || chapterNumber < book.chapterCount);
 
   // Stable callbacks for ReaderScreen props — prevents new references on every render.
   const onOpenBooksForReader = useCallback(() => openBibleTab(book.id, chapterNumber), [openBibleTab, book?.id, chapterNumber]);
@@ -441,11 +490,26 @@ const AppContent = memo(function AppContent() {
   // AppContent re-rendered for an unrelated reason (e.g. chrome show/hide).
   // Only recreated when the actual book or chapter changes.
   const statsCurrentChapter = useMemo(
-    () => hasReaderTabs ? { bookId: book.id, chapterNumber } : null,
-    [hasReaderTabs, book?.id, chapterNumber]
+    () => hasReaderTabs
+      ? { bookId: book.id, chapterNumber: isIntroTab ? 0 : chapterNumber }
+      : null,
+    [hasReaderTabs, isIntroTab, book?.id, chapterNumber]
   );
   const onOpenHistoryForBible = useCallback(() => openHistory("bible"), [openHistory]);
   const onStatsReady = useCallback(() => setStatsScreenReady(true), []);
+
+  // From StatsScreen: tapping the first chapter cell (showing book abbreviation)
+  // opens the book intro as a tab. Tapping any other chapter opens it directly.
+  const openChapterOrIntro = useCallback((entryBookId, entryChapterNumber, isIntroCell) => {
+    if (isIntroCell) {
+      const bookObj = BOOKS.find((b) => b.id === entryBookId);
+      if (bookObj) {
+        openIntroTab(bookObj);
+        return;
+      }
+    }
+    openChapterDirect(entryBookId, entryChapterNumber);
+  }, [openIntroTab, openChapterDirect]);
 
   // Stable BottomTabBar onChange.
   const onTabBarChange = useCallback((tab) => {
@@ -458,38 +522,44 @@ const AppContent = memo(function AppContent() {
         openBibleHeatmap();
       }
     } else {
-      lastBibleScreen.current = screen === "history" ? "bible" : screen;
+      lastBibleScreen.current = (screen === "history") ? "bible" : screen;
     }
     setActiveTab(tab);
   }, [activeTab, screen, openBibleHeatmap]);
 
   const goPrev = useCallback(() => {
     setInitialScrollY(0);
-    if (chapterNumber > 1) {
+    if (isIntroTab) {
+      // From intro: go to last chapter of previous book.
+      if (bookIndex > 0) {
+        const prevBook = BOOKS[bookIndex - 1];
+        openChapterDirect(prevBook.id, prevBook.chapterCount);
+      }
+    } else if (chapterNumber > 1) {
       const newChapter = chapterNumber - 1;
       setChapterNumber(newChapter);
       setLastPosition(book.id, newChapter);
-    } else if (bookIndex > 0) {
-      const prevBook = BOOKS[bookIndex - 1];
-      setBookIndex(bookIndex - 1);
-      setChapterNumber(prevBook.chapterCount);
-      setLastPosition(prevBook.id, prevBook.chapterCount);
+    } else {
+      // At chapter 1 — go to this book's own intro.
+      openIntroTab(book);
     }
-  }, [chapterNumber, bookIndex, book?.id]);
+  }, [isIntroTab, chapterNumber, bookIndex, book?.id, openChapterDirect, openIntroTab]);
 
   const goNext = useCallback(() => {
     setInitialScrollY(0);
-    if (chapterNumber < book.chapterCount) {
+    if (isIntroTab) {
+      // From intro: go to chapter 1 of this book.
+      openChapterDirect(book.id, 1);
+    } else if (chapterNumber < book.chapterCount) {
       const newChapter = chapterNumber + 1;
       setChapterNumber(newChapter);
       setLastPosition(book.id, newChapter);
     } else if (bookIndex < BOOKS.length - 1) {
+      // At last chapter of a book — go to the next book's intro.
       const nextBook = BOOKS[bookIndex + 1];
-      setBookIndex(bookIndex + 1);
-      setChapterNumber(1);
-      setLastPosition(nextBook.id, 1);
+      openIntroTab(nextBook);
     }
-  }, [chapterNumber, bookIndex, book?.id, book?.chapterCount]);
+  }, [isIntroTab, chapterNumber, bookIndex, book?.id, book?.chapterCount, openChapterDirect, openIntroTab]);
 
   // Android hardware/gesture back. Priority:
   //   1. Any screen that registered its own handler (e.g. Memory's add/drill
@@ -618,6 +688,8 @@ const AppContent = memo(function AppContent() {
               onPlaySermon={setActiveSermon}
               activeSermonId={activeSermon?.id}
               bottomChromeHeight={chromeState.height}
+              isIntro={isIntroTab}
+              onOpenChapterOne={isIntroTab ? () => openChapterDirect(book.id, 1) : undefined}
             />
           </View>
         )}
@@ -631,7 +703,7 @@ const AppContent = memo(function AppContent() {
           pointerEvents={activeTab === "bible" && screen === "bible" ? "auto" : "none"}
         >
           <StatsScreen
-            onOpenChapter={openChapterDirect}
+            onOpenChapter={openChapterOrIntro}
             initialChapter={bibleInitialChapter}
             currentChapter={statsCurrentChapter}
             onBack={onStatsBack}
@@ -657,6 +729,7 @@ const AppContent = memo(function AppContent() {
         {screen === "history" && (
           <HistoryScreen onSelectEntry={openChapterDirect} onBack={closeHistory} />
         )}
+
       </ScreenContainer>
 
       {/* Bottom chrome stack: sermon player above the tab bar. Absolutely

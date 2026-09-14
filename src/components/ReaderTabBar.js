@@ -54,7 +54,7 @@ const TabItem = memo(function TabItem({
         style={[styles.tabLabel, { color: isActive ? colors.accent : colors.secondaryText }]}
         numberOfLines={1}
       >
-        {tab.bookId} {tab.chapterNumber}
+        {tab.type === "intro" ? `${tab.bookId} INTRO` : `${tab.bookId} ${tab.chapterNumber}`}
       </Text>
       {canClose && (
         <TouchableOpacity
