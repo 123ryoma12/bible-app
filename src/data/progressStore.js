@@ -19,6 +19,30 @@
 
 import { backend } from "./storageBackend";
 
+// ---------------------------------------------------------------------------
+// In-memory cache
+// ---------------------------------------------------------------------------
+// Keyed by bookId → { [chapterNumber: string]: { dates: string[] } }.
+// Populated on first access per book and kept in sync after every write so
+// callers never need to re-read storage just because something changed.
+const _cache = {}; // { [bookId]: chapters }
+let _allLoaded = false; // true after getAllBooksProgress has warmed every book
+
+// Listeners notified whenever any book's data changes.
+// Each listener receives the full updated cache snapshot.
+const _listeners = new Set();
+
+export function subscribeProgress(fn) {
+  _listeners.add(fn);
+  return () => _listeners.delete(fn);
+}
+
+function _notify() {
+  // Shallow-copy so listeners always get a stable new reference.
+  const snapshot = { ..._cache };
+  _listeners.forEach((fn) => fn(snapshot));
+}
+
 function bookKey(bookId) {
   return `progress:${bookId}`;
 }
@@ -37,9 +61,13 @@ export function todayDateString(d = new Date()) {
 }
 
 // Returns { [chapterNumber: string]: { dates: string[] } } for a book.
+// Results are cached in memory — storage is only hit once per book.
 export async function getBookProgress(bookId) {
-  const doc = await backend.getItem(bookKey(bookId));
-  return (doc && doc.chapters) || {};
+  if (!Object.prototype.hasOwnProperty.call(_cache, bookId)) {
+    const doc = await backend.getItem(bookKey(bookId));
+    _cache[bookId] = (doc && doc.chapters) || {};
+  }
+  return _cache[bookId];
 }
 
 export async function getProgress(bookId, chapterNumber) {
@@ -53,14 +81,17 @@ export function readCountFromDates(rec) {
 }
 
 // Appends today's date to a chapter's list of read dates (duplicates allowed).
+// Updates the cache and notifies listeners — no full reload needed anywhere.
 export async function incrementReadCount(bookId, chapterNumber) {
   const key = String(chapterNumber);
-  const chapters = await getBookProgress(bookId);
+  const chapters = await getBookProgress(bookId); // guaranteed cached after this
   const current = chapters[key] || emptyChapterRecord();
   const updated = { dates: [...current.dates, todayDateString()] };
-  await backend.setItem(bookKey(bookId), {
-    chapters: { ...chapters, [key]: updated },
-  });
+  const nextChapters = { ...chapters, [key]: updated };
+  await backend.setItem(bookKey(bookId), { chapters: nextChapters });
+  // Update cache in-place and tell listeners.
+  _cache[bookId] = nextChapters;
+  _notify();
   return updated;
 }
 
@@ -72,9 +103,12 @@ export function getBookTotalReadCount(chapters) {
 
 // Fetches progress for many books at once, keyed by bookId. Used by the Stats
 // screen to show totals for every book in one pass.
+// On first call it warms the full cache; subsequent calls are instant.
 export async function getAllBooksProgress(bookIds) {
+  if (_allLoaded) return { ..._cache };
   const entries = await Promise.all(
     bookIds.map(async (id) => [id, await getBookProgress(id)])
   );
+  _allLoaded = true;
   return Object.fromEntries(entries);
 }

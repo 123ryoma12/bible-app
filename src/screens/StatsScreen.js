@@ -9,7 +9,6 @@ import {
   Modal,
   Platform,
   Pressable,
-  Dimensions,
 } from "react-native";
 import { uiFont } from "../theme/fonts";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
@@ -17,7 +16,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { BOOKS } from "../data/books";
 import { ALL_CHAPTERS } from "../data/chapterIndex";
-import { getAllBooksProgress } from "../data/progressStore";
+import { getAllBooksProgress, subscribeProgress } from "../data/progressStore";
 import {
   RANGE_MODES,
   getRangeSetting,
@@ -91,7 +90,7 @@ function rangePhrase(setting) {
   }
 }
 
-export default function StatsScreen({ onOpenChapter, isActive = true, initialChapter, currentChapter, onBack, onOpenHistory }) {
+export default function StatsScreen({ onOpenChapter, initialChapter, currentChapter, onBack, onOpenHistory }) {
   const { colors, mode } = useTheme();
   const isDark = mode === "dark";
   const [progressByBook, setProgressByBook] = useState(null); // null = loading
@@ -100,7 +99,10 @@ export default function StatsScreen({ onOpenChapter, isActive = true, initialCha
   const [goalDate, setGoalDateState] = useState(null);
   const [goalLoaded, setGoalLoaded] = useState(false);
   const [goalModalOpen, setGoalModalOpen] = useState(false);
-  const [gridWidth, setGridWidth] = useState(Dimensions.get("window").width);
+  // Start at 0 — we don't render boxes until the ScrollView has measured its
+  // own width via onLayout, so we never use the wrong window width (which on
+  // native may differ from the actual available width due to safe-area insets).
+  const [gridWidth, setGridWidth] = useState(0);
   const { boxSize, numCols } = computeBoxMetrics(gridWidth);
 
   // Ref to the heat-map ScrollView for imperative scrolling.
@@ -113,27 +115,24 @@ export default function StatsScreen({ onOpenChapter, isActive = true, initialCha
   // being visible at the top before jumping to the right position.
   const [gridReady, setGridReady] = useState(!initialChapter);
 
-  const reload = useCallback(() => {
-    getAllBooksProgress(BOOKS.map((b) => b.id)).then(setProgressByBook);
-  }, []);
-
+  // Load progress once on mount (hits storage first time, then cache is warm).
+  // Also subscribe so any chapter being marked read in the reader instantly
+  // updates the heat-map without a full reload.
   useEffect(() => {
-    reload();
+    getAllBooksProgress(BOOKS.map((b) => b.id)).then(setProgressByBook);
     getRangeSetting().then(setRangeSettingState);
     getGoalDate().then((d) => {
       setGoalDateState(d);
       setGoalLoaded(true);
     });
-  }, [reload]);
+    const unsub = subscribeProgress(setProgressByBook);
+    return unsub;
+  }, []);
 
   const applyGoalDate = useCallback((next) => {
     setGoalDateState(next);
     setGoalDate(next);
   }, []);
-
-  useEffect(() => {
-    if (isActive) reload();
-  }, [isActive, reload]);
 
   const applyRangeSetting = useCallback((next) => {
     setRangeSettingState(next);
@@ -260,7 +259,7 @@ export default function StatsScreen({ onOpenChapter, isActive = true, initialCha
           contentContainerStyle={styles.heatGrid}
           onLayout={(e) => setGridWidth(e.nativeEvent.layout.width)}
         >
-        {ALL_CHAPTERS.map((item, idx) => {
+        {gridWidth > 0 && ALL_CHAPTERS.map((item, idx) => {
             const count = countsByKey[`${item.bookId}:${item.chapterNumber}`] || 0;
             const bg = heatColor(count, maxCount, isDark);
             const isCurrent =

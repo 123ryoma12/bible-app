@@ -530,7 +530,6 @@ function AppContent() {
         {activeTab === "bible" && screen === "bible" && (
           <StatsScreen
             onOpenChapter={openChapterDirect}
-            isActive={activeTab === "bible"}
             initialChapter={bibleInitialChapter}
             currentChapter={readerTabs.length > 0 ? { bookId: book.id, chapterNumber } : null}
             onBack={readerTabs.length > 0 ? () => setScreen("reader") : undefined}
