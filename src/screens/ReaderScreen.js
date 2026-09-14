@@ -101,8 +101,9 @@ export default function ReaderScreen({
   // Re-derive chapter whenever book, chapter number, or version changes.
   // versionKey triggers re-evaluation after a top-bar version switch.
   // getChapter() is now O(1) via a cached chapter index map (see bibleData.js).
+  // chapterNumber is 0 for intro tabs — skip the lookup in that case.
   const chapter = useMemo(
-    () => getChapter(book.id, chapterNumber, version),
+    () => chapterNumber > 0 ? getChapter(book.id, chapterNumber, version) : null,
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [book.id, chapterNumber, version, versionKey]
   );
@@ -174,7 +175,8 @@ export default function ReaderScreen({
   const restoreResolved = useRef(false);
   // Keep content invisible until we've jumped to the restored position so the
   // user never sees it flash from y=0 to wherever they left off.
-  const [scrollReady, setScrollReady] = useState(false);
+  // Intro tabs always start at top so they're immediately ready.
+  const [scrollReady, setScrollReady] = useState(isIntro);
   // Largest content height seen for the current chapter, used to tell whether
   // the ScrollView content is still growing across layout passes.
   const lastContentHeight = useRef(0);
@@ -466,7 +468,7 @@ export default function ReaderScreen({
         onToggleToc={isIntro ? () => setTocOpen((o) => !o) : undefined}
       />
 
-      {/* TOC sheet for intro tabs */}
+      {/* TOC sheet for intro tabs — Modal manages its own overlay */}
       {isIntro && tocOpen && (
         <TocSheet
           sections={require("../../data/book-info.json")[

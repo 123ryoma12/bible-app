@@ -3,8 +3,11 @@ import {
   View,
   Text,
   TouchableOpacity,
+  Modal,
+  ScrollView,
   StyleSheet,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useTheme } from "../theme/ThemeContext";
 import { uiFont, readingFont } from "../theme/fonts";
@@ -96,34 +99,52 @@ function Section({ section, colors, readingFontKey, sectionRef }) {
 // TOC sheet — modal-style overlay listing all section headings
 // ---------------------------------------------------------------------------
 export function TocSheet({ sections, onSelect, onClose, colors }) {
+  const insets = useSafeAreaInsets();
   return (
-    <TouchableOpacity
-      style={styles.tocBackdrop}
-      activeOpacity={1}
-      onPress={onClose}
+    <Modal
+      transparent
+      visible
+      animationType="slide"
+      onRequestClose={onClose}
+      statusBarTranslucent
     >
-      <TouchableOpacity
-        activeOpacity={1}
-        style={[styles.tocSheet, { backgroundColor: colors.background, borderColor: colors.border }]}
-      >
-        <Text style={[styles.tocTitle, { color: colors.text, fontFamily: uiFont(700) }]}>
-          Sections
-        </Text>
-        {sections.map((s, i) => (
-          <TouchableOpacity
-            key={i}
-            style={[styles.tocRow, { borderBottomColor: colors.border }]}
-            onPress={() => onSelect(i)}
-            activeOpacity={0.7}
+      <View style={styles.tocBackdrop}>
+        {/* Tapping above the sheet dismisses it */}
+        <TouchableOpacity style={styles.tocBackdropTap} activeOpacity={1} onPress={onClose} />
+
+        <View style={[styles.tocSheet, { backgroundColor: colors.background, borderColor: colors.border, paddingBottom: insets.bottom }]}>
+          {/* Grabber */}
+          <View style={styles.tocGrabber}>
+            <View style={[styles.tocGrabberBar, { backgroundColor: colors.border }]} />
+          </View>
+
+          <Text style={[styles.tocTitle, { color: colors.text, fontFamily: uiFont(700) }]}>
+            Sections
+          </Text>
+
+          <ScrollView
+            bounces={false}
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+            contentContainerStyle={{ paddingBottom: 8 }}
           >
-            <Text style={[styles.tocRowText, { color: colors.accent, fontFamily: uiFont(500) }]}>
-              {s.heading}
-            </Text>
-            <MaterialCommunityIcons name="chevron-right" size={18} color={colors.mutedText} />
-          </TouchableOpacity>
-        ))}
-      </TouchableOpacity>
-    </TouchableOpacity>
+            {sections.map((s, i) => (
+              <TouchableOpacity
+                key={i}
+                style={[styles.tocRow, { borderBottomColor: colors.border }]}
+                onPress={() => onSelect(i)}
+                activeOpacity={0.7}
+              >
+                <Text style={[styles.tocRowText, { color: colors.accent, fontFamily: uiFont(500) }]}>
+                  {s.heading}
+                </Text>
+                <MaterialCommunityIcons name="chevron-right" size={18} color={colors.mutedText} />
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        </View>
+      </View>
+    </Modal>
   );
 }
 
@@ -252,25 +273,36 @@ const styles = StyleSheet.create({
     fontSize: 16,
   },
 
-  // TOC
+  // TOC modal
   tocBackdrop: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: "rgba(0,0,0,0.45)",
+    flex: 1,
     justifyContent: "flex-end",
+    backgroundColor: "rgba(0,0,0,0.35)",
+  },
+  tocBackdropTap: {
+    flex: 1,
   },
   tocSheet: {
-    borderTopLeftRadius: 16,
-    borderTopRightRadius: 16,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderLeftWidth: StyleSheet.hairlineWidth,
-    borderRightWidth: StyleSheet.hairlineWidth,
-    paddingHorizontal: 16,
-    paddingTop: 16,
-    paddingBottom: 40,
     maxHeight: "75%",
+    borderTopLeftRadius: 18,
+    borderTopRightRadius: 18,
+    borderWidth: StyleSheet.hairlineWidth,
+    overflow: "hidden",
+    paddingHorizontal: 16,
+  },
+  tocGrabber: {
+    alignItems: "center",
+    paddingTop: 8,
+    paddingBottom: 2,
+  },
+  tocGrabberBar: {
+    width: 38,
+    height: 4,
+    borderRadius: 2,
   },
   tocTitle: {
     fontSize: 16,
+    marginTop: 4,
     marginBottom: 12,
   },
   tocRow: {

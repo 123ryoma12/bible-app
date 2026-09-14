@@ -89,7 +89,7 @@ const HeatCell = memo(function HeatCell({
       style={[
         item.isIntroCell ? styles.heatBoxIntro : styles.heatBox,
         {
-          width: item.isIntroCell ? boxSize * 1.4 + BOX_GAP : boxSize,
+          width: boxSize,
           height: boxSize,
           marginRight: isLastInRow ? 0 : BOX_GAP,
           backgroundColor: introBg || bg || colorSurface,
