@@ -2,7 +2,7 @@ import React, { useState, useRef, useCallback, useMemo, memo } from "react";
 import {
   View,
   Text,
-  ScrollView,
+  SectionList,
   TouchableOpacity,
   StyleSheet,
 } from "react-native";
@@ -29,12 +29,33 @@ const BOOK_CHAPTERS = Object.fromEntries(
 );
 
 // ---------------------------------------------------------------------------
-// ChapterGrid — memoized so it only re-renders when its own props change.
+// ChapterGrid — fix #2: reads colors from context directly (not via prop) so
+// memo's shallow-equality check on the other props actually works.
+// fix #3: memoizes per-cell style objects so they aren't recreated on every render.
 // ---------------------------------------------------------------------------
 const ChapterGrid = memo(function ChapterGrid({
-  book, cellSize, colors, currentBookId, currentChapter, onSelectChapter,
+  book, cellSize, currentBookId, currentChapter, onSelectChapter,
 }) {
+  // Fix #2: own theme subscription — doesn't bust memo from parent re-renders.
+  const { colors } = useTheme();
   const chapters = BOOK_CHAPTERS[book.id];
+
+  // Fix #3: memoize the base (inactive) cell style so only active cells get a
+  // new style object. cellSize and colors.surface are the only dynamic parts.
+  const baseCellStyle = useMemo(() => ({
+    width: cellSize,
+    height: cellSize,
+    backgroundColor: colors.surface,
+    borderRadius: 10,
+    alignItems: "center",
+    justifyContent: "center",
+  }), [cellSize, colors.surface]);
+
+  const activeCellStyle = useMemo(() => ({
+    ...baseCellStyle,
+    backgroundColor: colors.accent,
+  }), [baseCellStyle, colors.accent]);
+
   return (
     <View style={styles.chapterGrid}>
       {chapters.map((ch, idx) => {
@@ -44,14 +65,9 @@ const ChapterGrid = memo(function ChapterGrid({
           <TouchableOpacity
             key={ch}
             style={[
-              styles.chapterCell,
-              {
-                width: cellSize,
-                height: cellSize,
-                backgroundColor: isActive ? colors.accent : colors.surface,
-                marginBottom: CELL_GAP,
-                marginRight: isLastInRow ? 0 : CELL_GAP,
-              },
+              isActive ? activeCellStyle : baseCellStyle,
+              isLastInRow ? styles.cellNoMarginRight : styles.cellMarginRight,
+              styles.cellMarginBottom,
             ]}
             onPress={() => onSelectChapter(book, ch)}
             activeOpacity={0.6}
@@ -72,13 +88,15 @@ const ChapterGrid = memo(function ChapterGrid({
 });
 
 // ---------------------------------------------------------------------------
-// BookRow — memoized so toggling one book only re-renders that row + its
-// previously-expanded sibling, not all 66 rows.
+// BookRow — fix #2: reads colors from context directly so memo works correctly.
 // ---------------------------------------------------------------------------
 const BookRow = memo(function BookRow({
-  book, isExpanded, cellSize, colors, currentBookId, currentChapter,
+  book, isExpanded, cellSize, currentBookId, currentChapter,
   onToggle, onSelectChapter,
 }) {
+  // Fix #2: own theme subscription.
+  const { colors } = useTheme();
+
   return (
     <View>
       <TouchableOpacity
@@ -128,7 +146,6 @@ const BookRow = memo(function BookRow({
         <ChapterGrid
           book={book}
           cellSize={cellSize}
-          colors={colors}
           currentBookId={currentBookId}
           currentChapter={currentChapter}
           onSelectChapter={onSelectChapter}
@@ -145,58 +162,73 @@ export default function BookChapterPicker({ onSelectChapter, onClose, onOpenHist
   const { colors } = useTheme();
   const [expandedBookId, setExpandedBookId] = useState(currentBookId ?? null);
   const listRef = useRef(null);
-  const listLaidOut = useRef(false);
-  // Hide list only if we need to scroll to a position on first open, to avoid
-  // a flash of the list at the top before the scroll jump fires.
-  const [scrollReady, setScrollReady] = useState(!currentBookId);
-  // Use measured layout width rather than window width — on Android,
-  // SafeAreaView insets reduce the actual available width.
   const [containerWidth, setContainerWidth] = useState(0);
-
-  const currentBookLocation = useMemo(() => {
-    if (!currentBookId) return null;
-    for (let s = 0; s < SECTIONS.length; s++) {
-      const idx = SECTIONS[s].data.findIndex((b) => b.id === currentBookId);
-      if (idx !== -1) return { sectionIndex: s, itemIndex: idx };
-    }
-    return null;
-  }, [currentBookId]);
 
   const cellSize = containerWidth > 0
     ? Math.floor((containerWidth - GRID_H_PAD * 2 - CELL_GAP * (NUM_COLS - 1)) / NUM_COLS)
     : 0;
 
-  // Compute scroll offset once from known fixed heights — no layout measurement needed.
-  const computeScrollOffset = useCallback(() => {
-    if (!currentBookLocation) return null;
-    let offset = 0;
+  // Fix #4: compute the initial scroll location once — only needs sectionIndex
+  // and itemIndex for SectionList.scrollToLocation(), no height math required.
+  const initialScrollLocation = useMemo(() => {
+    if (!currentBookId) return null;
     for (let s = 0; s < SECTIONS.length; s++) {
-      offset += SECTION_HEADER_HEIGHT;
-      const items = SECTIONS[s].data;
-      for (let i = 0; i < items.length; i++) {
-        if (s === currentBookLocation.sectionIndex && i === currentBookLocation.itemIndex) {
-          return offset;
-        }
-        offset += BOOK_ROW_HEIGHT;
-        const book = items[i];
-        if (expandedBookId === book.id) {
-          const numRows = Math.ceil(book.chapterCount / NUM_COLS);
-          offset += 8 + numRows * (cellSize + CELL_GAP) + 4;
-        }
-      }
+      const idx = SECTIONS[s].data.findIndex((b) => b.id === currentBookId);
+      if (idx !== -1) return { sectionIndex: s, itemIndex: idx, viewOffset: 16, animated: false };
     }
     return null;
-  }, [currentBookLocation, expandedBookId, cellSize]);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps — intentionally run once on mount
 
-  const scrollToCurrentBook = useCallback(() => {
-    const offset = computeScrollOffset();
-    if (offset == null) return;
-    listRef.current?.scrollTo({ y: Math.max(0, offset - 16), animated: false });
-  }, [computeScrollOffset]);
+  const scrolledRef = useRef(false);
+
+  const handleLayout = useCallback((e) => {
+    const { width } = e.nativeEvent.layout;
+    if (width > 0) setContainerWidth(width);
+  }, []);
+
+  // Fix #1: SectionList calls this when it's ready to scroll. We only do it
+  // once — after that the user may have scrolled elsewhere deliberately.
+  const handleScrollToIndexFailed = useCallback(() => {
+    // SectionList can fail if items haven't laid out yet; retry after a tick.
+    if (initialScrollLocation) {
+      setTimeout(() => {
+        listRef.current?.scrollToLocation({ ...initialScrollLocation, animated: false });
+      }, 100);
+    }
+  }, [initialScrollLocation]);
+
+  const scrollToInitial = useCallback(() => {
+    if (!initialScrollLocation || scrolledRef.current) return;
+    scrolledRef.current = true;
+    listRef.current?.scrollToLocation({ ...initialScrollLocation, animated: false });
+  }, [initialScrollLocation]);
 
   const toggleBook = useCallback((book) => {
     setExpandedBookId((prev) => (prev === book.id ? null : book.id));
   }, []);
+
+  const renderSectionHeader = useCallback(({ section }) => (
+    <Text
+      style={[
+        styles.sectionHeader,
+        { color: colors.accent, backgroundColor: colors.background },
+      ]}
+    >
+      {section.title}
+    </Text>
+  ), [colors.accent, colors.background]);
+
+  const renderItem = useCallback(({ item: book }) => (
+    <BookRow
+      book={book}
+      isExpanded={expandedBookId === book.id}
+      cellSize={cellSize}
+      currentBookId={currentBookId}
+      currentChapter={currentChapter}
+      onToggle={toggleBook}
+      onSelectChapter={onSelectChapter}
+    />
+  ), [expandedBookId, cellSize, currentBookId, currentChapter, toggleBook, onSelectChapter]);
 
   return (
     <SafeAreaView
@@ -223,46 +255,23 @@ export default function BookChapterPicker({ onSelectChapter, onClose, onOpenHist
         </TouchableOpacity>
       </View>
 
-      <ScrollView
+      {/* Fix #1: SectionList virtualizes — only visible rows are mounted. */}
+      <SectionList
         ref={listRef}
+        sections={SECTIONS}
+        keyExtractor={(book) => book.id}
+        renderSectionHeader={renderSectionHeader}
+        renderItem={renderItem}
+        stickySectionHeadersEnabled={false}
         contentContainerStyle={{ paddingBottom: 32 }}
-        style={{ opacity: scrollReady ? 1 : 0 }}
-        onLayout={(e) => {
-          const { width } = e.nativeEvent.layout;
-          if (width > 0) setContainerWidth(width);
-          if (!listLaidOut.current) {
-            listLaidOut.current = true;
-            scrollToCurrentBook();
-            setScrollReady(true);
-          }
-        }}
-      >
-        {SECTIONS.map((section) => (
-          <View key={section.title}>
-            <Text
-              style={[
-                styles.sectionHeader,
-                { color: colors.accent, backgroundColor: colors.background },
-              ]}
-            >
-              {section.title}
-            </Text>
-            {section.data.map((book) => (
-              <BookRow
-                key={book.id}
-                book={book}
-                isExpanded={expandedBookId === book.id}
-                cellSize={cellSize}
-                colors={colors}
-                currentBookId={currentBookId}
-                currentChapter={currentChapter}
-                onToggle={toggleBook}
-                onSelectChapter={onSelectChapter}
-              />
-            ))}
-          </View>
-        ))}
-      </ScrollView>
+        onLayout={handleLayout}
+        onScrollToIndexFailed={handleScrollToIndexFailed}
+        onContentSizeChange={scrollToInitial}
+        // Increase render window slightly to avoid blank flashes on fast scroll.
+        windowSize={7}
+        maxToRenderPerBatch={12}
+        initialNumToRender={20}
+      />
     </SafeAreaView>
   );
 }
@@ -306,7 +315,6 @@ const styles = StyleSheet.create({
   chevron: {
     fontSize: 20,
     fontFamily: uiFont(400),
-    // Rotate the › to point down when expanded
   },
 
   chapterGrid: {
@@ -316,11 +324,9 @@ const styles = StyleSheet.create({
     paddingTop: 8,
     paddingBottom: 4,
   },
-  chapterCell: {
-    borderRadius: 10,
-    alignItems: "center",
-    justifyContent: "center",
-  },
+  cellMarginBottom: { marginBottom: CELL_GAP },
+  cellMarginRight: { marginRight: CELL_GAP },
+  cellNoMarginRight: { marginRight: 0 },
   chapterCellText: {
     fontSize: 16,
     fontFamily: uiFont(600),
