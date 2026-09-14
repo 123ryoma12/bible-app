@@ -27,10 +27,16 @@ function entryKey(id) {
   return `${ENTRY_PREFIX}${id}`;
 }
 
+// Set to true once we've confirmed (or performed) the legacy migration so
+// subsequent calls to getIndex() skip the storage read entirely.
+let _migrationDone = false;
+
 // Converts the old single `history` array (if present) into the per-entry
 // shape, then removes it. Idempotent and safe to call before any read/write.
 async function migrateLegacyIfNeeded() {
+  if (_migrationDone) return;
   const legacy = await backend.getItem(LEGACY_KEY);
+  _migrationDone = true; // set before awaits below so concurrent calls don't double-migrate
   if (!legacy || !Array.isArray(legacy)) return;
 
   const index = [];
@@ -91,11 +97,10 @@ export async function getHistoryPage(limit = PAGE_SIZE, cursor = null) {
   }
 
   const pageIds = index.slice(start, start + limit);
-  const entries = [];
-  for (const id of pageIds) {
-    const entry = await backend.getItem(entryKey(id));
-    if (entry) entries.push(entry);
-  }
+  // Fetch all entries in parallel instead of sequentially — PAGE_SIZE reads
+  // fired at once rather than one-at-a-time.
+  const results = await Promise.all(pageIds.map((id) => backend.getItem(entryKey(id))));
+  const entries = results.filter(Boolean);
 
   const nextIndex = start + pageIds.length;
   return {

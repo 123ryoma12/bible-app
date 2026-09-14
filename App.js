@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo, memo } from "react";
 import { StatusBar } from "expo-status-bar";
-import { View, ActivityIndicator, StyleSheet, BackHandler, Platform, useWindowDimensions } from "react-native";
+import { View, ActivityIndicator, StyleSheet, BackHandler, Platform, AppState, useWindowDimensions } from "react-native";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import { BOOKS } from "./src/data/books";
 import ReaderScreen from "./src/screens/ReaderScreen";
@@ -394,7 +394,9 @@ const AppContent = memo(function AppContent() {
     if (activeTabId) {
       tabScrollPositions.current[activeTabId] = scrollY;
     }
-    setLastScroll(scrollY);
+    // setLastScroll is NOT called here — flushed to storage on screen change
+    // or app background instead (see effects below). This avoids a storage
+    // write on every scroll event.
   }, [activeTabId]);
 
   const handleCloseTab = useCallback((id) => {
@@ -529,6 +531,31 @@ const AppContent = memo(function AppContent() {
     const subscription = BackHandler.addEventListener("hardwareBackPress", onBackPress);
     return () => subscription.remove();
   }, [activeTab, screen, backRegistry, readerTabs.length, activeTabId]);
+
+  // Flush scroll position to storage whenever the user leaves the reader —
+  // navigating to any other screen (stats, history, settings, memory, bible
+  // heatmap) counts as "leaving". We only need the write when screen changes
+  // away from "reader"; arriving back at "reader" doesn't need a flush.
+  const prevScreenRef = useRef(screen);
+  useEffect(() => {
+    const prev = prevScreenRef.current;
+    prevScreenRef.current = screen;
+    if (prev === "reader" && screen !== "reader" && activeTabId) {
+      const scrollY = tabScrollPositions.current[activeTabId] ?? 0;
+      setLastScroll(scrollY);
+    }
+  }, [screen, activeTabId]);
+
+  // Also flush when the app goes to the background (home button, switcher, etc.)
+  useEffect(() => {
+    const sub = AppState.addEventListener("change", (nextState) => {
+      if ((nextState === "background" || nextState === "inactive") && activeTabId) {
+        const scrollY = tabScrollPositions.current[activeTabId] ?? 0;
+        setLastScroll(scrollY);
+      }
+    });
+    return () => sub.remove();
+  }, [activeTabId]);
 
   if (isRestoring) {
     return (
