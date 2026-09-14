@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useSta
 import {
   View,
   Text,
-  ScrollView,
+  FlatList,
   TouchableOpacity,
   StyleSheet,
   ActivityIndicator,
@@ -62,10 +62,7 @@ function computeCellOffset(itemIndex, numCols, boxSize) {
 // ---------------------------------------------------------------------------
 // HeatCell — one chapter square. Memoized so only cells whose props actually
 // changed re-render when progress updates, theme changes, or the current
-// chapter moves. Previously all 1,189 cells re-rendered together.
-//
-// onPress is bound here (not in renderItem) so the parent can pass a single
-// stable onOpenChapter reference instead of a new inline arrow per cell.
+// chapter moves.
 // ---------------------------------------------------------------------------
 const HeatCell = memo(function HeatCell({
   item, readSet, isDark, isCurrent, boxSize, isLastInRow,
@@ -76,7 +73,6 @@ const HeatCell = memo(function HeatCell({
 }) {
   const isRead = readSet.has(`${item.bookId}:${item.chapterNumber}`);
   const bg = isRead ? (isDark ? READ_COLOR_DARK : READ_COLOR_LIGHT) : null;
-  // Stable per-cell handler — only recreated when onPress or item identity changes.
   const handlePress = useCallback(() => {
     onPress(item.bookId, item.chapterNumber);
   }, [onPress, item.bookId, item.chapterNumber]);
@@ -141,6 +137,81 @@ const HeatCell = memo(function HeatCell({
   );
 });
 
+// ---------------------------------------------------------------------------
+// HeatRow — one row of numCols cells, rendered as a single FlatList item.
+// Grouping cells into rows means FlatList manages ~100 items instead of 1,189,
+// dramatically reducing item-level overhead while windowing still applies.
+// ---------------------------------------------------------------------------
+const HeatRow = memo(function HeatRow({
+  row, readSet, isDark, numCols, boxSize,
+  colorSurface, colorAccent, colorBorder, colorText, colorMutedText,
+  onPress, currentChapter,
+}) {
+  return (
+    <View style={styles.heatRowFlex}>
+      {row.map((item, colIndex) => {
+        const isCurrent =
+          currentChapter &&
+          currentChapter.bookId === item.bookId &&
+          currentChapter.chapterNumber === item.chapterNumber;
+        const isLastInRow = colIndex === row.length - 1;
+        return (
+          <HeatCell
+            key={`${item.bookId}-${item.chapterNumber}`}
+            item={item}
+            readSet={readSet}
+            isDark={isDark}
+            isCurrent={isCurrent}
+            boxSize={boxSize}
+            isLastInRow={isLastInRow}
+            colorSurface={colorSurface}
+            colorAccent={colorAccent}
+            colorBorder={colorBorder}
+            colorText={colorText}
+            colorMutedText={colorMutedText}
+            onPress={onPress}
+          />
+        );
+      })}
+    </View>
+  );
+}, (prev, next) => {
+  // Re-render only if the current-chapter highlight or read state changed for
+  // any cell in this row, or if layout/theme props changed.
+  if (
+    prev.boxSize !== next.boxSize ||
+    prev.numCols !== next.numCols ||
+    prev.isDark !== next.isDark ||
+    prev.colorSurface !== next.colorSurface ||
+    prev.colorAccent !== next.colorAccent ||
+    prev.colorBorder !== next.colorBorder ||
+    prev.colorText !== next.colorText ||
+    prev.colorMutedText !== next.colorMutedText ||
+    prev.onPress !== next.onPress ||
+    prev.row !== next.row
+  ) return false;
+  // Check if current-chapter highlight changed for any cell in this row.
+  const prevCurrent = prev.currentChapter;
+  const nextCurrent = next.currentChapter;
+  const currentChanged = prevCurrent?.bookId !== nextCurrent?.bookId ||
+    prevCurrent?.chapterNumber !== nextCurrent?.chapterNumber;
+  if (currentChanged) {
+    const rowItems = prev.row;
+    const anyInRow = rowItems.some(
+      (item) =>
+        (prevCurrent && prevCurrent.bookId === item.bookId && prevCurrent.chapterNumber === item.chapterNumber) ||
+        (nextCurrent && nextCurrent.bookId === item.bookId && nextCurrent.chapterNumber === item.chapterNumber)
+    );
+    if (anyInRow) return false;
+  }
+  // Check if read state changed for any cell in this row.
+  for (const item of prev.row) {
+    const key = `${item.bookId}:${item.chapterNumber}`;
+    if (prev.readSet.has(key) !== next.readSet.has(key)) return false;
+  }
+  return true;
+});
+
 
 export default function StatsScreen({ onOpenChapter, initialChapter, currentChapter, onBack, onOpenHistory, onReady, gridVisible = true, containerWidth = 0 }) {
   const { colors, mode } = useTheme();
@@ -166,7 +237,7 @@ export default function StatsScreen({ onOpenChapter, initialChapter, currentChap
   const [gridWidth, setGridWidth] = useState(containerWidth);
   const { boxSize, numCols } = computeBoxMetrics(gridWidth);
 
-  // Ref to the heat-map ScrollView for imperative scrolling.
+  // Ref to the heat-map FlatList for imperative scrolling.
   const flatListRef = useRef(null);
   // Track which initialChapter we've already scrolled to so we don't repeat it.
   const scrolledToChapter = useRef(null);
@@ -200,8 +271,6 @@ export default function StatsScreen({ onOpenChapter, initialChapter, currentChap
     scrolledToChapter.current = key;
 
     if (boxSize <= 0 || numCols <= 0) {
-      // gridWidth not measured yet — the onLayout below will re-trigger this
-      // effect indirectly by setting gridWidth, which updates boxSize/numCols.
       return;
     }
 
@@ -210,9 +279,12 @@ export default function StatsScreen({ onOpenChapter, initialChapter, currentChap
     );
     if (itemIndex === -1) { onReady?.(); return; }
 
-    const y = computeCellOffset(itemIndex, numCols, boxSize);
+    // itemIndex is a chapter index; convert to row index for FlatList.
+    const rowIndex = Math.floor(itemIndex / numCols);
+    const rowHeight = boxSize + BOX_GAP;
+    const y = rowIndex * rowHeight + BOX_GAP;
     requestAnimationFrame(() => {
-      flatListRef.current?.scrollTo({ y: Math.max(0, y - 16), animated: false });
+      flatListRef.current?.scrollToOffset({ offset: Math.max(0, y - 16), animated: false });
       onReady?.();
     });
   }, [initialChapter, boxSize, numCols]);
@@ -248,6 +320,42 @@ export default function StatsScreen({ onOpenChapter, initialChapter, currentChap
   const readChapterCount = readSet.size;
 
   const percent = Math.round((readChapterCount / TOTAL_CHAPTERS) * 100);
+
+  // Chunk ALL_CHAPTERS into rows of numCols for FlatList. Stable reference
+  // when numCols doesn't change so FlatList doesn't re-render every row.
+  const chapterRows = useMemo(() => {
+    if (numCols <= 0) return [];
+    const rows = [];
+    for (let i = 0; i < ALL_CHAPTERS.length; i += numCols) {
+      rows.push(ALL_CHAPTERS.slice(i, i + numCols));
+    }
+    return rows;
+  }, [numCols]);
+
+  const rowHeight = boxSize + BOX_GAP;
+
+  const getItemLayout = useCallback((_data, index) => ({
+    length: rowHeight,
+    offset: BOX_GAP + index * rowHeight,
+    index,
+  }), [rowHeight]);
+
+  const renderRow = useCallback(({ item: row }) => (
+    <HeatRow
+      row={row}
+      readSet={readSet}
+      isDark={isDark}
+      numCols={numCols}
+      boxSize={boxSize}
+      colorSurface={colors.surface}
+      colorAccent={colors.accent}
+      colorBorder={colors.border}
+      colorText={colors.text}
+      colorMutedText={colors.mutedText}
+      onPress={onOpenChapter}
+      currentChapter={currentChapter}
+    />
+  ), [readSet, isDark, numCols, boxSize, colors.surface, colors.accent, colors.border, colors.text, colors.mutedText, onOpenChapter, currentChapter]);
 
 
   // Only show the spinner on the very first cold launch before preloads have
@@ -325,47 +433,29 @@ export default function StatsScreen({ onOpenChapter, initialChapter, currentChap
         </TouchableOpacity>
       </View>
 
-      {/* Heat-map grid — opacity controlled by App.js so header stays visible
-          during the scroll-to-chapter jump. The outer View always renders to
-          capture onLayout and measure gridWidth; ScrollView only mounts once
-          gridWidth > 0 so numCols is stable from the very first render. */}
+      {/* Heat-map grid — windowed via FlatList so only ~10 rows are in the
+          compositor at once instead of all 1,189 cells. The outer View captures
+          onLayout to measure gridWidth; FlatList only mounts once gridWidth > 0
+          so numCols is stable from the very first render. getItemLayout lets
+          FlatList skip measurement entirely for instant scroll-to-offset. */}
       <View
-        style={{ flex: 1, opacity: gridVisible ? 1 : 0 }}
+        style={gridVisible ? styles.gridContainer : styles.gridContainerHidden}
         onLayout={(e) => setGridWidth(e.nativeEvent.layout.width)}
       >
-        {gridWidth > 0 && (
-          <ScrollView
+        {gridWidth > 0 && chapterRows.length > 0 && (
+          <FlatList
             ref={flatListRef}
+            data={chapterRows}
+            keyExtractor={(_row, index) => String(index)}
+            renderItem={renderRow}
+            getItemLayout={getItemLayout}
             contentContainerStyle={styles.heatGrid}
             showsVerticalScrollIndicator={false}
-          >
-            <View style={styles.heatRow}>
-              {ALL_CHAPTERS.map((item, index) => {
-                const isCurrent =
-                  currentChapter &&
-                  currentChapter.bookId === item.bookId &&
-                  currentChapter.chapterNumber === item.chapterNumber;
-                const isLastInRow = (index + 1) % numCols === 0;
-                return (
-                  <HeatCell
-                    key={`${item.bookId}-${item.chapterNumber}`}
-                    item={item}
-                    readSet={readSet}
-                    isDark={isDark}
-                    isCurrent={isCurrent}
-                    boxSize={boxSize}
-                    isLastInRow={isLastInRow}
-                    colorSurface={colors.surface}
-                    colorAccent={colors.accent}
-                    colorBorder={colors.border}
-                    colorText={colors.text}
-                    colorMutedText={colors.mutedText}
-                    onPress={onOpenChapter}
-                  />
-                );
-              })}
-            </View>
-          </ScrollView>
+            removeClippedSubviews={true}
+            initialNumToRender={15}
+            maxToRenderPerBatch={10}
+            windowSize={5}
+          />
         )}
       </View>
 
@@ -382,6 +472,7 @@ export default function StatsScreen({ onOpenChapter, initialChapter, currentChap
       <GoalModal
         visible={goalModalOpen}
         goalDate={goalDate}
+        readChapterCount={readChapterCount}
         onClose={() => setGoalModalOpen(false)}
         onApply={(next) => {
           applyGoalDate(next);
@@ -393,7 +484,7 @@ export default function StatsScreen({ onOpenChapter, initialChapter, currentChap
   );
 }
 
-function GoalModal({ visible, goalDate, onClose, onApply }) {
+function GoalModal({ visible, goalDate, readChapterCount, onClose, onApply }) {
   const { colors } = useTheme();
   const [draft, setDraft] = useState(goalDate);
   const [picking, setPicking] = useState(false);
@@ -418,15 +509,28 @@ function GoalModal({ visible, goalDate, onClose, onApply }) {
     setDraft(toDateString(selectedDate));
   };
 
+  // Compute pace from whichever date is currently shown in the picker (draft),
+  // so the number updates live as the user scrubs through dates.
+  const pace = useMemo(() => {
+    const targetStr = draft;
+    if (!targetStr) return null;
+    const remaining = TOTAL_CHAPTERS - readChapterCount;
+    if (remaining <= 0) return null; // already done
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const target = parseDate(targetStr);
+    target.setHours(0, 0, 0, 0);
+    const msPerDay = 24 * 60 * 60 * 1000;
+    const daysLeft = Math.round((target - today) / msPerDay);
+    if (daysLeft <= 0) return null; // date is today or past
+    return { perDay: Math.ceil(remaining / daysLeft), remaining, daysLeft };
+  }, [draft, readChapterCount]);
+
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <View style={styles.modalBackdrop}>
         <View style={[styles.modalCard, { backgroundColor: colors.surface }]}>
           <Text style={[styles.modalTitle, { color: colors.text }]}>Reading Goal</Text>
-          <Text style={[styles.goalModalHint, { color: colors.mutedText }]}>
-            Pick the date you want to have read the whole Bible ({TOTAL_CHAPTERS.toLocaleString()}{" "}
-            chapters) by. Stats will show how many chapters you should have reached by today.
-          </Text>
 
           <View style={styles.fieldRow}>
             <Text style={[styles.fieldLabel, { color: colors.mutedText }]}>Finish by</Text>
@@ -451,6 +555,26 @@ function GoalModal({ visible, goalDate, onClose, onApply }) {
               />
             )}
           </View>
+
+          {/* Live pace summary — updates as the user changes the date */}
+          {pace ? (
+            <View style={[styles.paceBox, { backgroundColor: colors.background }]}>
+              <Text style={[styles.paceMain, { color: colors.accent }]}>
+                {pace.perDay} chapter{pace.perDay !== 1 ? "s" : ""} per day
+              </Text>
+              <Text style={[styles.paceSub, { color: colors.mutedText }]}>
+                {pace.remaining.toLocaleString()} chapters left · {pace.daysLeft} day{pace.daysLeft !== 1 ? "s" : ""} to go
+              </Text>
+            </View>
+          ) : readChapterCount >= TOTAL_CHAPTERS ? (
+            <View style={[styles.paceBox, { backgroundColor: colors.background }]}>
+              <Text style={[styles.paceMain, { color: colors.accent }]}>🎉 You've read them all!</Text>
+            </View>
+          ) : draft ? (
+            <View style={[styles.paceBox, { backgroundColor: colors.background }]}>
+              <Text style={[styles.paceSub, { color: colors.mutedText }]}>Pick a future date to see your daily pace.</Text>
+            </View>
+          ) : null}
 
           <View style={styles.modalActions}>
             {goalDate ? (
@@ -710,18 +834,30 @@ const styles = StyleSheet.create({
   statsIcon: {
     padding: 2,
   },
-  goalModalHint: {
+  paceBox: {
+    borderRadius: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    marginTop: 12,
+    marginBottom: 4,
+  },
+  paceMain: {
+    fontSize: 17,
+    fontFamily: uiFont(700),
+    marginBottom: 2,
+  },
+  paceSub: {
     fontSize: 13,
     fontFamily: uiFont(400),
-    lineHeight: 19,
-    marginBottom: 12,
   },
+  gridContainer: { flex: 1, opacity: 1 },
+  gridContainerHidden: { flex: 1, opacity: 0 },
   heatGrid: {
     paddingHorizontal: SCREEN_PADDING,
     paddingTop: BOX_GAP,
     paddingBottom: 24,
   },
-  heatRow: { flexDirection: "row", flexWrap: "wrap" },
+  heatRowFlex: { flexDirection: "row" },
   heatBox: {
     borderRadius: 5,
     alignItems: "center",

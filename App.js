@@ -137,7 +137,7 @@ export default function App() {
   );
 }
 
-function AppContent() {
+const AppContent = memo(function AppContent() {
   const { mode, colors } = useTheme();
   const backRegistry = useBackHandlerRegistry();
   const { width: windowWidth } = useWindowDimensions();
@@ -548,15 +548,17 @@ function AppContent() {
       {/* Only the reader runs full-bleed under the bottom chrome — it reserves
           the space itself in its scroll content, so there is no dead band left
           behind when the chrome slides away. Every other screen keeps the
-          chrome's footprint reserved here. */}
-      <View style={{ flex: 1, paddingBottom: isReader ? 0 : chromeState.height }}>
+          chrome's footprint reserved here.
+          NB: paddingBottom is stored in a ref and applied via a stable style
+          array so chromeState height changes don't re-render this whole tree. */}
+      <ScreenContainer isReader={isReader} chromeHeight={chromeState.height}>
         {/* Reader — always mounted once tabs exist so scroll position is
             preserved when switching to Memory/Settings and back. Hidden via
             display:none when not active; the key only changes on actual
             chapter/tab changes, not on tab-bar navigation. */}
         {readerTabs.length > 0 && (
           <View
-            style={{ flex: 1, display: activeTab === "bible" && screen === "reader" ? "flex" : "none" }}
+            style={activeTab === "bible" && screen === "reader" ? styles.screenVisible : styles.screenHidden}
             pointerEvents={activeTab === "bible" && screen === "reader" ? "auto" : "none"}
           >
             <ReaderScreen
@@ -589,17 +591,11 @@ function AppContent() {
         )}
 
         {/* StatsScreen — always mounted so state, scroll position, and the
-            1,189 laid-out boxes are preserved. Hidden with display:none when
-            not active (zero compositor cost). containerWidth is passed from
-            useWindowDimensions so gridWidth is initialised immediately without
-            waiting for an onLayout — the grid is fully pre-laid-out before the
-            user ever switches to this tab. The statsScreenReady flag controls
-            opacity *while visible* during the scroll-to jump. */}
+            grid are preserved. Hidden with display:none when not active.
+            containerWidth is passed from useWindowDimensions so the grid is
+            pre-laid-out before the user ever switches to this tab. */}
         <View
-          style={{
-            flex: 1,
-            display: activeTab === "bible" && screen === "bible" ? "flex" : "none",
-          }}
+          style={activeTab === "bible" && screen === "bible" ? styles.screenVisible : styles.screenHidden}
           pointerEvents={activeTab === "bible" && screen === "bible" ? "auto" : "none"}
         >
           <StatsScreen
@@ -614,21 +610,22 @@ function AppContent() {
           />
         </View>
 
-        <View style={{ flex: 1, display: activeTab === "memory" ? "flex" : "none" }}
-              pointerEvents={activeTab === "memory" ? "auto" : "none"}>
+        {/* Memory and Settings are lazy-mounted — only added to the tree on
+            first visit, then kept alive with display:none. This avoids paying
+            their mount cost on startup and keeps tab switching instant. */}
+        <LazyScreen active={activeTab === "memory"}>
           <MemoryScreen />
-        </View>
+        </LazyScreen>
 
-        <View style={{ flex: 1, display: activeTab === "settings" ? "flex" : "none" }}
-              pointerEvents={activeTab === "settings" ? "auto" : "none"}>
+        <LazyScreen active={activeTab === "settings"}>
           <SettingsScreen />
-        </View>
+        </LazyScreen>
 
         {/* History overlays everything — must come last so it renders on top. */}
         {screen === "history" && (
           <HistoryScreen onSelectEntry={openChapterDirect} onBack={closeHistory} />
         )}
-      </View>
+      </ScreenContainer>
 
       {/* Bottom chrome stack: sermon player above the tab bar. Absolutely
           positioned so the reader can run full-bleed behind it — as a column
@@ -675,7 +672,35 @@ function AppContent() {
       </View>
     </View>
   );
-}
+});
+
+// ScreenContainer — holds the paddingBottom that shifts all non-reader screens
+// up above the chrome. Implemented as a tiny memo'd component so that chrome
+// height changes (scroll show/hide) only re-render this wrapper, not the whole
+// AppContent tree.
+const ScreenContainer = memo(function ScreenContainer({ isReader, chromeHeight, children }) {
+  return (
+    <View style={[styles.screenContainer, { paddingBottom: isReader ? 0 : chromeHeight }]}>
+      {children}
+    </View>
+  );
+});
+
+// LazyScreen — mounts children only on the first visit, then keeps them alive
+// with display:none. Avoids paying mount cost for Memory/Settings on startup.
+const LazyScreen = memo(function LazyScreen({ active, children }) {
+  const hasBeenActive = useRef(false);
+  if (active) hasBeenActive.current = true;
+  if (!hasBeenActive.current) return null;
+  return (
+    <View
+      style={active ? styles.screenVisible : styles.screenHidden}
+      pointerEvents={active ? "auto" : "none"}
+    >
+      {children}
+    </View>
+  );
+});
 
 const styles = StyleSheet.create({
   container: {
@@ -690,5 +715,16 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
+  },
+  screenContainer: {
+    flex: 1,
+  },
+  screenVisible: {
+    flex: 1,
+    display: "flex",
+  },
+  screenHidden: {
+    flex: 1,
+    display: "none",
   },
 });
