@@ -5,7 +5,6 @@ import {
   ScrollView,
   TouchableOpacity,
   StyleSheet,
-  useWindowDimensions,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { BOOKS } from "../data/books";
@@ -144,13 +143,15 @@ const BookRow = memo(function BookRow({
 // ---------------------------------------------------------------------------
 export default function BookChapterPicker({ onSelectChapter, onClose, onOpenHistory, currentBookId, currentChapter }) {
   const { colors } = useTheme();
-  const { width: windowWidth } = useWindowDimensions();
   const [expandedBookId, setExpandedBookId] = useState(currentBookId ?? null);
   const listRef = useRef(null);
   const listLaidOut = useRef(false);
   // Hide list only if we need to scroll to a position on first open, to avoid
   // a flash of the list at the top before the scroll jump fires.
   const [scrollReady, setScrollReady] = useState(!currentBookId);
+  // Use measured layout width rather than window width — on Android,
+  // SafeAreaView insets reduce the actual available width.
+  const [containerWidth, setContainerWidth] = useState(0);
 
   const currentBookLocation = useMemo(() => {
     if (!currentBookId) return null;
@@ -161,9 +162,9 @@ export default function BookChapterPicker({ onSelectChapter, onClose, onOpenHist
     return null;
   }, [currentBookId]);
 
-  const cellSize = Math.floor(
-    (windowWidth - GRID_H_PAD * 2 - CELL_GAP * (NUM_COLS - 1)) / NUM_COLS
-  );
+  const cellSize = containerWidth > 0
+    ? Math.floor((containerWidth - GRID_H_PAD * 2 - CELL_GAP * (NUM_COLS - 1)) / NUM_COLS)
+    : 0;
 
   // Compute scroll offset once from known fixed heights — no layout measurement needed.
   const computeScrollOffset = useCallback(() => {
@@ -226,12 +227,12 @@ export default function BookChapterPicker({ onSelectChapter, onClose, onOpenHist
         ref={listRef}
         contentContainerStyle={{ paddingBottom: 32 }}
         style={{ opacity: scrollReady ? 1 : 0 }}
-        onLayout={() => {
+        onLayout={(e) => {
+          const { width } = e.nativeEvent.layout;
+          if (width > 0) setContainerWidth(width);
           if (!listLaidOut.current) {
             listLaidOut.current = true;
             scrollToCurrentBook();
-            // Reveal immediately after the synchronous scroll — no rAF needed
-            // since scrollTo on a ScrollView takes effect before the next paint.
             setScrollReady(true);
           }
         }}

@@ -37,12 +37,12 @@ const BOX_GAP = 3; // gap between cells (applied as marginRight + marginBottom)
 
 function computeBoxMetrics(containerWidth) {
   // containerWidth is the actual measured ScrollView width.
-  // The grid has paddingHorizontal: SCREEN_PADDING on each side, so the
-  // available width for boxes is containerWidth - 2 * SCREEN_PADDING.
-  const available = containerWidth - 2 * SCREEN_PADDING;
+  // The grid has paddingHorizontal: SCREEN_PADDING on each side.
+  const available = Math.floor(containerWidth - 2 * SCREEN_PADDING);
   const numCols = Math.floor((available + BOX_GAP) / (36 + BOX_GAP));
-  // Exact box size: n boxes + (n-1) gaps = available
-  const boxSize = (available - BOX_GAP * (numCols - 1)) / numCols;
+  // Floor boxSize so it's always a whole pixel — avoids sub-pixel rounding
+  // that causes the last box in a row to wrap to the next line.
+  const boxSize = Math.floor((available - BOX_GAP * (numCols - 1)) / numCols);
   return { boxSize, numCols };
 }
 
@@ -91,7 +91,7 @@ function rangePhrase(setting) {
   }
 }
 
-export default function StatsScreen({ onOpenChapter, initialChapter, currentChapter, onBack, onOpenHistory, onReady }) {
+export default function StatsScreen({ onOpenChapter, initialChapter, currentChapter, onBack, onOpenHistory, onReady, gridVisible = true }) {
   const { colors, mode } = useTheme();
   const isDark = mode === "dark";
 
@@ -288,8 +288,9 @@ export default function StatsScreen({ onOpenChapter, initialChapter, currentChap
         </TouchableOpacity>
       </View>
 
-      {/* Heat-map grid */}
-      <View style={{ flex: 1 }}>
+      {/* Heat-map grid — opacity controlled by App.js so header stays visible
+          during the scroll-to-chapter jump. */}
+      <View style={{ flex: 1, opacity: gridVisible ? 1 : 0 }}>
         <ScrollView
           ref={scrollViewRef}
           style={{ flex: 1 }}
@@ -323,11 +324,19 @@ export default function StatsScreen({ onOpenChapter, initialChapter, currentChap
                 activeOpacity={0.65}
                 style={[
                   styles.heatBox,
-                  { width: boxSize, height: boxSize, marginRight: isLastInRow ? 0 : BOX_GAP },
-                  bg
-                    ? { backgroundColor: bg }
-                    : { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border },
-                  isCurrent && { borderWidth: 2, borderColor: colors.accent },
+                  {
+                    width: boxSize,
+                    height: boxSize,
+                    marginRight: isLastInRow ? 0 : BOX_GAP,
+                    backgroundColor: bg || colors.surface,
+                    // Always reserve 2px for the border so it never affects layout size.
+                    borderWidth: 2,
+                    borderColor: isCurrent
+                      ? colors.accent
+                      : bg
+                        ? "transparent"
+                        : colors.border,
+                  },
                 ]}
               >
                 <Text

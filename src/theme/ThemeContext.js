@@ -27,33 +27,34 @@ function normalizeScale(v) {
 
 const ThemeContext = createContext(null);
 
-export function ThemeProvider({ children }) {
-  const [mode, setModeState] = useState("light"); // "light" | "dark"
-  const [fontScale, setFontScaleState] = useState(DEFAULT_FONT_SCALE);
-  const [readingFontKey, setReadingFontKeyState] = useState(DEFAULT_READING_FONT);
+// ---------------------------------------------------------------------------
+// Synchronous theme cache — populated by preloadTheme() at app startup so
+// ThemeProvider can initialise with the correct values and never flash.
+// ---------------------------------------------------------------------------
+let _cachedMode = null;
+let _cachedFontScale = null;
+let _cachedReadingFontKey = null;
 
-  useEffect(() => {
-    let cancelled = false;
-    backend.getItem(THEME_KEY).then((saved) => {
-      if (!cancelled && (saved === "light" || saved === "dark")) {
-        setModeState(saved);
-      }
-    });
-    backend.getItem(FONT_SCALE_KEY).then((saved) => {
-      const parsed = parseFloat(saved);
-      if (!cancelled && !Number.isNaN(parsed) && isValidScale(parsed)) {
-        setFontScaleState(parsed);
-      }
-    });
-    backend.getItem(READING_FONT_KEY).then((saved) => {
-      if (!cancelled && isReadingFontKey(saved)) {
-        setReadingFontKeyState(saved);
-      }
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+export async function preloadTheme() {
+  const [mode, scale, font] = await Promise.all([
+    backend.getItem(THEME_KEY),
+    backend.getItem(FONT_SCALE_KEY),
+    backend.getItem(READING_FONT_KEY),
+  ]);
+  if (mode === "light" || mode === "dark") _cachedMode = mode;
+  const parsed = parseFloat(scale);
+  if (!Number.isNaN(parsed) && isValidScale(parsed)) _cachedFontScale = parsed;
+  if (isReadingFontKey(font)) _cachedReadingFontKey = font;
+}
+
+export function ThemeProvider({ children }) {
+  const [mode, setModeState] = useState(() => _cachedMode ?? "dark");
+  const [fontScale, setFontScaleState] = useState(() => _cachedFontScale ?? DEFAULT_FONT_SCALE);
+  const [readingFontKey, setReadingFontKeyState] = useState(() => _cachedReadingFontKey ?? DEFAULT_READING_FONT);
+
+  // No async loading needed here — preloadTheme() was called at startup.
+  // If for some reason the cache is empty (first ever launch) the defaults
+  // above are sensible and no flash occurs.
 
   function setMode(nextMode) {
     setModeState(nextMode);
