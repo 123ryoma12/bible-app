@@ -10,6 +10,7 @@ import {
   Platform,
   Pressable,
   TextInput,
+  Dimensions,
 } from "react-native";
 import { uiFont } from "../theme/fonts";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -32,8 +33,13 @@ import { useTheme } from "../theme/ThemeContext";
 
 const SCREEN_PADDING = 20;
 const TOTAL_CHAPTERS = ALL_CHAPTERS.length; // 1,189
-const BOX_SIZE = 36; // width & height of every heat-map cell
-const BOX_GAP = 3;  // gap between cells
+// Compute BOX_SIZE and BOX_GAP so boxes fill the row exactly with no gap on the right.
+// Strategy: fix column count from target box size ~36, then divide available width evenly.
+const _screenWidth = Dimensions.get("window").width;
+const _availableWidth = _screenWidth - 2 * SCREEN_PADDING;
+const _numCols = Math.floor((_availableWidth + 3) / (36 + 3)); // target ~36px boxes, ~3px gaps
+const BOX_GAP = 3; // keep gap fixed at 3
+const BOX_SIZE = (_availableWidth - BOX_GAP * (_numCols - 1)) / _numCols; // exact, no flooring
 
 // Returns a CSS hex colour for a chapter cell given its read count and the
 // overall maximum count seen. Unread → muted surface; 1 read → yellow/amber;
@@ -923,7 +929,7 @@ const styles = StyleSheet.create({
   heatGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
-    paddingHorizontal: SCREEN_PADDING - BOX_GAP / 2,
+    paddingHorizontal: SCREEN_PADDING,
     paddingTop: BOX_GAP,
     paddingBottom: 24,
     gap: BOX_GAP,
