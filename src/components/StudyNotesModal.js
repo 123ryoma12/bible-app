@@ -51,6 +51,16 @@ export default function StudyNotesModal({ visible, onClose, book, chapterNumber,
         >
           {book?.name} {item.verse_ref}
         </Text>
+        {!!item.verse_quote && (
+          <Text
+            style={[
+              styles.verseQuote,
+              { color: colors.text, fontFamily: readingFont(readingFontKey, "italic") },
+            ]}
+          >
+            {item.verse_quote}
+          </Text>
+        )}
         <NoteText
           text={item.note}
           style={[
@@ -226,8 +236,12 @@ const styles = StyleSheet.create({
   verseRef: {
     fontSize: REF_FONT_SIZE,
     letterSpacing: 0.5,
-    marginBottom: 5,
+    marginBottom: 4,
     textTransform: "uppercase",
+  },
+  verseQuote: {
+    fontSize: NOTE_FONT_SIZE,
+    marginBottom: 5,
   },
   noteText: {
     fontSize: NOTE_FONT_SIZE,

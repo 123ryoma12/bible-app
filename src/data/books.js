@@ -111,7 +111,7 @@ export const BOOKS = [
   },
   {
     "id": "PSA",
-    "name": "Psalms",
+    "name": "Psalm",
     "testament": "OT",
     "chapterCount": 150
   },

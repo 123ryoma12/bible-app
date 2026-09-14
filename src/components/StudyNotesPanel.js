@@ -41,7 +41,7 @@ export default function StudyNotesPanel({ notes, visible, onClose, bottomOffset 
   }, [visible, slideAnim]);
 
   const renderNote = useCallback(
-    ({ verse_ref, note }, index) => (
+    ({ verse_ref, verse_quote, note }, index) => (
       <View
         key={`${verse_ref}-${index}`}
         style={[
@@ -61,6 +61,16 @@ export default function StudyNotesPanel({ notes, visible, onClose, bottomOffset 
         >
           {verse_ref}
         </Text>
+        {!!verse_quote && (
+          <Text
+            style={[
+              styles.verseQuote,
+              { color: colors.text, fontFamily: readingFont(readingFontKey, "italic") },
+            ]}
+          >
+            {verse_quote}
+          </Text>
+        )}
         <NoteText
           text={note}
           style={[
@@ -180,6 +190,10 @@ const styles = StyleSheet.create({
   verseRef: {
     fontSize: REF_FONT_SIZE,
     letterSpacing: 0.4,
+    marginBottom: 4,
+  },
+  verseQuote: {
+    fontSize: NOTE_FONT_SIZE,
     marginBottom: 4,
   },
   noteText: {
