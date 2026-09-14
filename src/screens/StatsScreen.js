@@ -1,8 +1,8 @@
-import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, memo } from "react";
 import {
   View,
   Text,
-  ScrollView,
+  FlatList,
   TouchableOpacity,
   StyleSheet,
   ActivityIndicator,
@@ -72,6 +72,67 @@ function heatColor(count, _maxCount, isDark) {
   return isDark ? HEAT_COLORS_DARK[step] : HEAT_COLORS_LIGHT[step];
 }
 
+// Compute the y-offset of a chapter cell mathematically from its index,
+// the number of columns, and the cell size. Used for FlatList getItemLayout
+// and for scroll-to-chapter — no onLayout callbacks needed.
+// FlatList with numColumns renders one ROW per item index, so:
+//   rowIndex = Math.floor(itemIndex / numCols)
+//   rowHeight = boxSize + BOX_GAP
+function computeCellOffset(itemIndex, numCols, boxSize) {
+  const rowIndex = Math.floor(itemIndex / numCols);
+  return rowIndex * (boxSize + BOX_GAP) + BOX_GAP; // +BOX_GAP for paddingTop
+}
+
+// ---------------------------------------------------------------------------
+// HeatCell — one chapter square. Memoized so only cells whose props actually
+// changed re-render when progress updates, theme changes, or the current
+// chapter moves. Previously all 1,189 cells re-rendered together.
+// ---------------------------------------------------------------------------
+const HeatCell = memo(function HeatCell({
+  item, count, isDark, isCurrent, boxSize, isLastInRow, colors, onPress,
+}) {
+  const bg = heatColor(count, null, isDark);
+  return (
+    <TouchableOpacity
+      onPress={onPress}
+      activeOpacity={0.65}
+      style={[
+        styles.heatBox,
+        {
+          width: boxSize,
+          height: boxSize,
+          marginRight: isLastInRow ? 0 : BOX_GAP,
+          backgroundColor: bg || colors.surface,
+          borderWidth: 2,
+          borderColor: isCurrent
+            ? colors.accent
+            : bg
+              ? "transparent"
+              : colors.border,
+        },
+      ]}
+    >
+      <Text
+        numberOfLines={1}
+        adjustsFontSizeToFit
+        minimumFontScale={0.6}
+        style={[
+          item.isFirstOfBook ? styles.heatLabelBook : styles.heatLabel,
+          {
+            color: bg
+              ? "#1a1206"
+              : item.isFirstOfBook
+                ? colors.text
+                : colors.mutedText,
+          },
+        ]}
+      >
+        {item.isFirstOfBook ? item.bookId : item.chapterNumber}
+      </Text>
+    </TouchableOpacity>
+  );
+});
+
 // Turns the range setting into a natural inline phrase for the summary line,
 // e.g. "this year", "all time", "since Jan 5, 2026", "from Jan 1 to Feb 2".
 function rangePhrase(setting) {
@@ -114,10 +175,8 @@ export default function StatsScreen({ onOpenChapter, initialChapter, currentChap
   const [gridWidth, setGridWidth] = useState(0);
   const { boxSize, numCols } = computeBoxMetrics(gridWidth);
 
-  // Ref to the heat-map ScrollView for imperative scrolling.
-  const scrollViewRef = useRef(null);
-  // Per-chapter y-offsets, populated as cells lay out.
-  const chapterOffsets = useRef({});
+  // Ref to the heat-map FlatList for imperative scrolling.
+  const flatListRef = useRef(null);
   // Track which initialChapter we've already scrolled to so we don't repeat it.
   const scrolledToChapter = useRef(null);
 
@@ -134,11 +193,9 @@ export default function StatsScreen({ onOpenChapter, initialChapter, currentChap
     return unsub;
   }, []);
 
-  // When initialChapter changes, hide the grid, scroll synchronously before
-  // the next paint (useLayoutEffect), then reveal. Since the screen is always
-  // mounted the cell offsets are already cached so the scroll is instant.
-  // If the offset isn't cached yet (first ever render) the onLayout handler
-  // below takes over once the cell measures.
+  // When initialChapter changes, scroll to it and signal ready. Offsets are
+  // computed mathematically from boxSize + numCols — no onLayout cache needed.
+  // We wait until boxSize > 0 (gridWidth measured) before scrolling.
   useLayoutEffect(() => {
     if (!initialChapter) {
       onReady?.();
@@ -150,18 +207,24 @@ export default function StatsScreen({ onOpenChapter, initialChapter, currentChap
       return;
     }
     scrolledToChapter.current = key;
-    const y = chapterOffsets.current[key];
-    if (y != null) {
-      // Scroll then signal ready — App.js wrapper is already hidden so no
-      // flash is possible. Reveal on the next frame after scroll is applied.
-      requestAnimationFrame(() => {
-        scrollViewRef.current?.scrollTo({ y, animated: false });
-        onReady?.();
-      });
-    } else {
-      // Offset not cached yet — onLayout will scroll + call onReady.
+
+    if (boxSize <= 0 || numCols <= 0) {
+      // gridWidth not measured yet — the onLayout below will re-trigger this
+      // effect indirectly by setting gridWidth, which updates boxSize/numCols.
+      return;
     }
-  }, [initialChapter]);
+
+    const itemIndex = ALL_CHAPTERS.findIndex(
+      (c) => c.bookId === initialChapter.bookId && c.chapterNumber === initialChapter.chapterNumber
+    );
+    if (itemIndex === -1) { onReady?.(); return; }
+
+    const y = computeCellOffset(itemIndex, numCols, boxSize);
+    requestAnimationFrame(() => {
+      flatListRef.current?.scrollToOffset({ offset: Math.max(0, y - 16), animated: false });
+      onReady?.();
+    });
+  }, [initialChapter, boxSize, numCols]);
 
   const applyGoalDate = useCallback((next) => {
     setGoalDateState(next);
@@ -188,7 +251,6 @@ export default function StatsScreen({ onOpenChapter, initialChapter, currentChap
     return map;
   }, [progressByBook, rangeSetting]);
 
-  const maxCount = useMemo(() => Math.max(1, ...Object.values(countsByKey)), [countsByKey]);
 
 
   const readChapterCount = useMemo(
@@ -212,6 +274,36 @@ export default function StatsScreen({ onOpenChapter, initialChapter, currentChap
       totalChapters: TOTAL_CHAPTERS,
     });
   }, [rangeSetting, goalDate, readChapterCount]);
+
+  // Stable renderItem — only re-created when the values cells actually depend
+  // on change. Modal open/close, goal state, etc. don't affect cells at all.
+  const renderItem = useCallback(({ item, index }) => {
+    const count = countsByKey[`${item.bookId}:${item.chapterNumber}`] || 0;
+    const isCurrent =
+      currentChapter &&
+      currentChapter.bookId === item.bookId &&
+      currentChapter.chapterNumber === item.chapterNumber;
+    const isLastInRow = (index + 1) % numCols === 0;
+    return (
+      <HeatCell
+        item={item}
+        count={count}
+        isDark={isDark}
+        isCurrent={isCurrent}
+        boxSize={boxSize}
+        isLastInRow={isLastInRow}
+        colors={colors}
+        onPress={() => onOpenChapter(item.bookId, item.chapterNumber)}
+      />
+    );
+  }, [countsByKey, currentChapter, boxSize, numCols, colors, isDark, onOpenChapter]);
+
+  // Tells FlatList the exact pixel height of every row without any measurement —
+  // this is what enables true virtualization (only visible rows rendered).
+  const getItemLayout = useCallback((_, index) => {
+    const rowHeight = boxSize + BOX_GAP;
+    return { length: rowHeight, offset: computeCellOffset(index, numCols, boxSize), index };
+  }, [boxSize, numCols]);
 
   // Only show the spinner on the very first cold launch before preloads have
   // had a chance to complete. On all subsequent visits the cache is warm and
@@ -289,78 +381,27 @@ export default function StatsScreen({ onOpenChapter, initialChapter, currentChap
       </View>
 
       {/* Heat-map grid — opacity controlled by App.js so header stays visible
-          during the scroll-to-chapter jump. */}
+          during the scroll-to-chapter jump. Virtualized via FlatList so only
+          the visible rows are mounted (typically ~4-6 rows vs all 1,189 cells).
+          getItemLayout provides exact row heights so FlatList never needs to
+          measure cells — enabling instant scrollToOffset for any chapter. */}
       <View style={{ flex: 1, opacity: gridVisible ? 1 : 0 }}>
-        <ScrollView
-          ref={scrollViewRef}
-          style={{ flex: 1 }}
+        <FlatList
+          ref={flatListRef}
+          data={ALL_CHAPTERS}
+          keyExtractor={(item) => `${item.bookId}-${item.chapterNumber}`}
+          renderItem={renderItem}
+          getItemLayout={getItemLayout}
+          numColumns={numCols || 1}
+          key={numCols || 1}
           contentContainerStyle={styles.heatGrid}
           onLayout={(e) => setGridWidth(e.nativeEvent.layout.width)}
-        >
-        {gridWidth > 0 && ALL_CHAPTERS.map((item, idx) => {
-            const count = countsByKey[`${item.bookId}:${item.chapterNumber}`] || 0;
-            const bg = heatColor(count, maxCount, isDark);
-            const isCurrent =
-              currentChapter &&
-              currentChapter.bookId === item.bookId &&
-              currentChapter.chapterNumber === item.chapterNumber;
-            const isLastInRow = (idx + 1) % numCols === 0;
-
-            return (
-              <TouchableOpacity
-                key={`${item.bookId}-${item.chapterNumber}`}
-                onPress={() => onOpenChapter(item.bookId, item.chapterNumber)}
-                onLayout={(e) => {
-                  const key = `${item.bookId}:${item.chapterNumber}`;
-                  const { y } = e.nativeEvent.layout;
-                  chapterOffsets.current[key] = y;
-                  // If this cell is the pending scroll target (offset wasn't
-                  // cached when initialChapter effect ran), scroll and reveal now.
-                  if (scrolledToChapter.current === key) {
-                    scrollViewRef.current?.scrollTo({ y, animated: false });
-                    onReady?.();
-                  }
-                }}
-                activeOpacity={0.65}
-                style={[
-                  styles.heatBox,
-                  {
-                    width: boxSize,
-                    height: boxSize,
-                    marginRight: isLastInRow ? 0 : BOX_GAP,
-                    backgroundColor: bg || colors.surface,
-                    // Always reserve 2px for the border so it never affects layout size.
-                    borderWidth: 2,
-                    borderColor: isCurrent
-                      ? colors.accent
-                      : bg
-                        ? "transparent"
-                        : colors.border,
-                  },
-                ]}
-              >
-                <Text
-                  numberOfLines={1}
-                  adjustsFontSizeToFit
-                  minimumFontScale={0.6}
-                  style={[
-                    item.isFirstOfBook ? styles.heatLabelBook : styles.heatLabel,
-                    {
-                      color: bg
-                        ? "#1a1206"
-                        : item.isFirstOfBook
-                          ? colors.text
-                          : colors.mutedText,
-                    },
-                  ]}
-                >
-                  {item.isFirstOfBook ? item.bookId : item.chapterNumber}
-                </Text>
-              </TouchableOpacity>
-            );
-          })
-        }
-        </ScrollView>
+          initialNumToRender={120}
+          maxToRenderPerBatch={60}
+          windowSize={5}
+          removeClippedSubviews={true}
+          showsVerticalScrollIndicator={false}
+        />
       </View>
 
       <DateRangeModal
@@ -711,8 +752,6 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   heatGrid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
     paddingHorizontal: SCREEN_PADDING,
     paddingTop: BOX_GAP,
     paddingBottom: 24,

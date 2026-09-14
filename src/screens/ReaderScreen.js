@@ -55,14 +55,14 @@ export default function ReaderScreen({
   onCloseTab,
   onAddTab,
   // Tab bar strip scroll position — persisted in App.js so it survives the
-  // ReaderScreen remounts that happen on every tab switch (key prop).
+  // ReaderScreen remounts that happen on tab switches (key prop changes on tab id).
   tabBarScrollX = 0,
   onTabBarScrollX,
   // When true, ReaderTabBar should scroll to make the active tab visible
   // (used when returning from Stats/Memory/Settings). Consumed after use.
   tabBarScrollToActive = false,
   onTabBarScrollToActiveConsumed,
-  // Sermon playback is owned by App.js so it outlives this screen's remounts.
+  // Sermon playback is owned by App.js so it outlives tab switches.
   onPlaySermon,
   activeSermonId,
   // Height of the app-level bottom chrome (sermon player + tab bar) that this
@@ -75,17 +75,27 @@ export default function ReaderScreen({
 }) {
   const { colors, readingFontKey } = useTheme();
   const insets = useSafeAreaInsets();
+
+  // Bump this to force a re-read of the (synchronously cached) active version
+  // when the user picks a new translation from the top bar. Declared first so
+  // the chapter useMemo below can reference it without a TDZ error.
+  const [versionKey, setVersionKey] = useState(0);
+
   // Read in the user's selected translation. The active version is a synchronous
   // cached value (primed at startup, updated when changed in Settings); the
   // Reader re-reads it on each render, so switching versions then returning here
   // shows the new translation. Unbundled versions fall back to NIV in getChapter.
-  // versionKey is bumped when the user picks a new translation in the top bar,
-  // forcing a re-read of the (synchronously cached) active version.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const version = getActiveReadingVersion();
+
   // Re-derive chapter whenever book, chapter number, or version changes.
-  // versionKey is listed to force re-evaluation after a top-bar version switch.
-  const chapter = getChapter(book.id, chapterNumber, version);
+  // versionKey triggers re-evaluation after a top-bar version switch.
+  // getChapter() is now O(1) via a cached chapter index map (see bibleData.js).
+  const chapter = useMemo(
+    () => getChapter(book.id, chapterNumber, version),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [book.id, chapterNumber, version, versionKey]
+  );
   const scrollRef = useRef(null);
 
   // Local mirror of chrome visibility so the Reader's own footer can animate
@@ -99,14 +109,10 @@ export default function ReaderScreen({
   // the chapter (the footer sits waiting below it, never overlapping).
   const [footerHeight, setFooterHeight] = useState(0);
   const [topBarHeight, setTopBarHeight] = useState(0);
-  // Bump this to force a re-render (and re-read of getActiveReadingVersion)
-  // when the user picks a new translation from the top bar.
-  const [versionKey, setVersionKey] = useState(0);
 
-  // Sermon sheet visibility. Transient by design: this screen is remounted on
-  // every chapter change (see the `key` in App.js), so the sheet closes when
-  // you move on. Playback deliberately does NOT live here for that same
-  // reason — the player is hosted in App.js so audio survives navigation.
+  // Sermon sheet visibility. Closes when the chapter changes (see reset effect).
+  // Playback deliberately does NOT live here — the player is hosted in App.js
+  // so audio survives navigation.
   const [sermonsOpen, setSermonsOpen] = useState(false);
 
   // Study notes panel visibility + notes for the current chapter.
@@ -153,24 +159,43 @@ export default function ReaderScreen({
     [onChromeChange]
   );
 
-  // Reset to visible whenever the chapter changes.
+  // Reset transient UI state whenever the chapter changes. Previously these
+  // were reset "for free" by the full ReaderScreen remount (key prop). Now that
+  // the screen persists across chapter changes we reset them explicitly.
   useEffect(() => {
     lastOffset.current = 0;
     setChrome(true);
+    setSermonsOpen(false);
+    setNotesOpen(false);
   }, [book.id, chapterNumber, setChrome]);
 
-  // Decide what scroll offset to restore whenever this chapter (re)mounts.
+  // Decide what scroll offset to restore whenever the chapter changes.
   // `initialScrollY` is the single source of truth: App.js resolves it from
   // the per-tab scroll map (populated as the user scrolls) so each tab
   // independently restores its own position. Cold-launch restore is also
   // handled in App.js before the Reader ever mounts.
+  //
+  // Since ReaderScreen is no longer remounted on every chapter change (the key
+  // prop only changes on tab switches), we must imperatively reset the scroll
+  // position here. Without this the ScrollView would stay at its previous
+  // chapter's offset when the content beneath it changes.
   useEffect(() => {
     restoreResolved.current = false;
     lastContentHeight.current = 0;
-    pendingScrollY.current = initialScrollY > 0 ? initialScrollY : null;
+    setScrollReady(false);
+
+    if (initialScrollY > 0) {
+      // Non-zero restore target: hide content until we've jumped to it.
+      pendingScrollY.current = initialScrollY;
+    } else {
+      // Jump to top immediately — no flash of wrong position.
+      pendingScrollY.current = null;
+      scrollRef.current?.scrollTo({ y: 0, animated: false });
+      lastOffset.current = 0;
+      setScrollReady(true);
+    }
+
     restoreResolved.current = true;
-    // Nothing to restore — reveal immediately at y=0.
-    if (pendingScrollY.current == null) setScrollReady(true);
   }, [book.id, chapterNumber, initialScrollY]);
 
   // Flush any pending debounced save when unmounting.
@@ -287,13 +312,26 @@ export default function ReaderScreen({
     if (hasNext) onNext();
   }, [book.id, chapterNumber, hasNext, onNext]);
 
+  // PanResponder is created once (useRef) so its callbacks would close over
+  // stale hasPrev/hasNext/onPrev/onNext values. Previously this was masked by
+  // the full remount on every chapter change. Now that the screen persists we
+  // use mutable refs so the handler always sees the latest values.
+  const hasPrevRef = useRef(hasPrev);
+  const hasNextRef = useRef(hasNext);
+  const onPrevRef = useRef(onPrev);
+  const onNextRef = useRef(onNext);
+  useEffect(() => { hasPrevRef.current = hasPrev; }, [hasPrev]);
+  useEffect(() => { hasNextRef.current = hasNext; }, [hasNext]);
+  useEffect(() => { onPrevRef.current = onPrev; }, [onPrev]);
+  useEffect(() => { onNextRef.current = onNext; }, [onNext]);
+
   const panResponder = useRef(
     PanResponder.create({
       onMoveShouldSetPanResponder: (_, g) =>
         Math.abs(g.dx) > 20 && Math.abs(g.dx) > Math.abs(g.dy),
       onPanResponderRelease: (_, g) => {
-        if (g.dx <= -SWIPE_THRESHOLD && hasNext) onNext();
-        else if (g.dx >= SWIPE_THRESHOLD && hasPrev) onPrev();
+        if (g.dx <= -SWIPE_THRESHOLD && hasNextRef.current) onNextRef.current?.();
+        else if (g.dx >= SWIPE_THRESHOLD && hasPrevRef.current) onPrevRef.current?.();
       },
     })
   ).current;

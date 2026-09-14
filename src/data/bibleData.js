@@ -274,16 +274,38 @@ export function getBookMap(version = "niv") {
   });
 }
 
+// Per-version, per-book chapter index cache: { version -> { bookId -> { chapterNumber -> chapter } } }
+// Built lazily the first time any chapter in a book is accessed, so lookups are O(1) after that.
+const _chapterIndex = {};
+
+function getChapterIndex(bookId, resolved) {
+  if (!_chapterIndex[resolved]) _chapterIndex[resolved] = {};
+  if (!_chapterIndex[resolved][bookId]) {
+    const book = loadBook(bookId, resolved);
+    if (!book) return null;
+    const index = {};
+    for (const c of book.chapters) {
+      index[Number(c.chapter)] = c;
+    }
+    _chapterIndex[resolved][bookId] = index;
+  }
+  return _chapterIndex[resolved][bookId];
+}
+
 /**
  * A chapter record for a book in a given version. `version` is optional and
  * falls back to NIV. Shape is identical across versions so callers/renderers
  * don't change.
+ *
+ * Lookup is O(1) — a chapter index map is built on first access per book and
+ * cached for the lifetime of the session. Previously used Array.find() which
+ * was O(n) over all chapters (up to 150 for Psalms).
  */
 export function getChapter(bookId, chapterNumber, version = "niv") {
   const resolved = resolveVersion(version) in LOADERS ? resolveVersion(version) : "niv";
-  const book = loadBook(bookId, resolved);
-  if (!book) return null;
-  return book.chapters.find((c) => Number(c.chapter) === Number(chapterNumber)) || null;
+  const index = getChapterIndex(bookId, resolved);
+  if (!index) return null;
+  return index[Number(chapterNumber)] || null;
 }
 
 // Back-compat exports. BIBLE_DATA and BIBLE_DATA_BY_VERSION are kept so any

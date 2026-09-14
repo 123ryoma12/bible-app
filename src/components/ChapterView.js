@@ -245,8 +245,18 @@ function getAppearance(style, kind) {
   }
 }
 
+// Module-level cache for typography StyleSheet objects, keyed by "fontScale|fontKey".
+// StyleSheet.create() registers styles with the native layer and should only be called
+// once per unique style set — not on every render or component mount. Previously this
+// was called inside useMemo which was blown on every chapter change due to ReaderScreen
+// remounting. Now it runs at most once per unique (fontScale, fontKey) combination for
+// the entire app session.
+const _typographyCache = {};
+
 function createTypography(fontScale, fontKey) {
-  return StyleSheet.create({
+  const cacheKey = `${fontScale}|${fontKey}`;
+  if (_typographyCache[cacheKey]) return _typographyCache[cacheKey];
+  _typographyCache[cacheKey] = StyleSheet.create({
     body: {
       fontFamily: readingFont(fontKey, "regular"),
       fontSize: BODY_SIZE * fontScale,
@@ -270,6 +280,7 @@ function createTypography(fontScale, fontKey) {
     },
     editorialText: { fontFamily: readingFont(fontKey, "italic") },
   });
+  return _typographyCache[cacheKey];
 }
 
 const styles = StyleSheet.create({

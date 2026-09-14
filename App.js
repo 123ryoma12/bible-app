@@ -549,7 +549,7 @@ function AppContent() {
             pointerEvents={activeTab === "bible" && screen === "reader" ? "auto" : "none"}
           >
             <ReaderScreen
-              key={`${activeTabId}-${book.id}-${chapterNumber}`}
+              key={activeTabId}
               book={book}
               chapterNumber={chapterNumber}
               initialScrollY={initialScrollY}
