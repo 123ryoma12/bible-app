@@ -429,8 +429,18 @@ function AppContent() {
   const onTabBarScrollX = useCallback((x) => { tabBarScrollX.current = x; }, []);
   const onTabBarScrollToActiveConsumed = useCallback(() => { tabBarScrollToActive.current = false; }, []);
 
-  // Stable callbacks for StatsScreen props.
-  const onStatsBack = useMemo(() => readerTabs.length > 0 ? () => setScreen("reader") : undefined, [readerTabs.length]);
+  // Stable callbacks and props for StatsScreen.
+  // Dep is the boolean (has tabs?) not the raw length — so adding/closing tabs
+  // doesn't recreate this and cause a StatsScreen re-render.
+  const hasReaderTabs = readerTabs.length > 0;
+  const onStatsBack = useMemo(() => hasReaderTabs ? () => setScreen("reader") : undefined, [hasReaderTabs]);
+  // Memoized so StatsScreen never receives a new object reference just because
+  // AppContent re-rendered for an unrelated reason (e.g. chrome show/hide).
+  // Only recreated when the actual book or chapter changes.
+  const statsCurrentChapter = useMemo(
+    () => hasReaderTabs ? { bookId: book.id, chapterNumber } : null,
+    [hasReaderTabs, book?.id, chapterNumber]
+  );
   const onOpenHistoryForBible = useCallback(() => openHistory("bible"), [openHistory]);
   const onStatsReady = useCallback(() => setStatsScreenReady(true), []);
 
@@ -592,7 +602,7 @@ function AppContent() {
           <StatsScreen
             onOpenChapter={openChapterDirect}
             initialChapter={bibleInitialChapter}
-            currentChapter={readerTabs.length > 0 ? { bookId: book.id, chapterNumber } : null}
+            currentChapter={statsCurrentChapter}
             onBack={onStatsBack}
             onOpenHistory={onOpenHistoryForBible}
             onReady={onStatsReady}

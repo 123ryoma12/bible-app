@@ -8,7 +8,6 @@ import {
   ActivityIndicator,
   Modal,
   Platform,
-  Pressable,
 } from "react-native";
 import { uiFont } from "../theme/fonts";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
@@ -25,7 +24,6 @@ import {
   makeDateInRange,
   formatDisplayDate,
   setGoalDate,
-  computeGoalPace,
   getRangeSettingSync,
   getGoalDateSync,
 } from "../data/statsSettingsStore";
@@ -46,31 +44,9 @@ function computeBoxMetrics(containerWidth) {
   return { boxSize, numCols };
 }
 
-// Returns a CSS hex colour for a chapter cell given its read count and the
-// overall maximum count seen. Unread → muted surface; 1 read → yellow/amber;
-// higher counts shift through orange toward red.
-// isDark lets us pick slightly different base tints for legibility.
-// Fixed 10-step scale: 1 read = step 1 (yellow), 10+ reads = step 10 (deep red).
-// Pre-computed so every step is a distinct, visually separable colour.
-const HEAT_STEPS = 10;
-const HEAT_COLORS_LIGHT = Array.from({ length: HEAT_STEPS }, (_, i) => {
-  const t = i / (HEAT_STEPS - 1); // 0..1
-  const hue = Math.round(54 - 54 * t); // 54° yellow → 0° red
-  const lit = Math.round(62 - 20 * t); // 62% → 42%
-  return `hsl(${hue}, 82%, ${lit}%)`;
-});
-const HEAT_COLORS_DARK = Array.from({ length: HEAT_STEPS }, (_, i) => {
-  const t = i / (HEAT_STEPS - 1);
-  const hue = Math.round(54 - 54 * t);
-  const lit = Math.round(55 - 18 * t); // 55% → 37%
-  return `hsl(${hue}, 75%, ${lit}%)`;
-});
-
-function heatColor(count, _maxCount, isDark) {
-  if (count <= 0) return null; // unread — caller uses surface/border style
-  const step = Math.min(count, HEAT_STEPS) - 1; // clamp to 0-indexed 0..9
-  return isDark ? HEAT_COLORS_DARK[step] : HEAT_COLORS_LIGHT[step];
-}
+// Read colour — shown for any chapter that has been read within the range.
+const READ_COLOR_LIGHT = "hsl(37, 82%, 54%)";
+const READ_COLOR_DARK  = "hsl(37, 75%, 48%)";
 
 // Compute the y-offset of a chapter cell mathematically from its index,
 // the number of columns, and the cell size. Used for FlatList getItemLayout
@@ -87,14 +63,25 @@ function computeCellOffset(itemIndex, numCols, boxSize) {
 // HeatCell — one chapter square. Memoized so only cells whose props actually
 // changed re-render when progress updates, theme changes, or the current
 // chapter moves. Previously all 1,189 cells re-rendered together.
+//
+// onPress is bound here (not in renderItem) so the parent can pass a single
+// stable onOpenChapter reference instead of a new inline arrow per cell.
 // ---------------------------------------------------------------------------
 const HeatCell = memo(function HeatCell({
-  item, count, isDark, isCurrent, boxSize, isLastInRow, colors, onPress,
+  item, isRead, isDark, isCurrent, boxSize, isLastInRow,
+  // Individual color values instead of the whole colors object — lets memo's
+  // shallow-equality check work even when the colors object reference changes.
+  colorSurface, colorAccent, colorBorder, colorText, colorMutedText,
+  onPress,
 }) {
-  const bg = heatColor(count, null, isDark);
+  const bg = isRead ? (isDark ? READ_COLOR_DARK : READ_COLOR_LIGHT) : null;
+  // Stable per-cell handler — only recreated when onPress or item identity changes.
+  const handlePress = useCallback(() => {
+    onPress(item.bookId, item.chapterNumber);
+  }, [onPress, item.bookId, item.chapterNumber]);
   return (
     <TouchableOpacity
-      onPress={onPress}
+      onPress={handlePress}
       activeOpacity={0.65}
       style={[
         styles.heatBox,
@@ -102,13 +89,13 @@ const HeatCell = memo(function HeatCell({
           width: boxSize,
           height: boxSize,
           marginRight: isLastInRow ? 0 : BOX_GAP,
-          backgroundColor: bg || colors.surface,
+          backgroundColor: bg || colorSurface,
           borderWidth: 2,
           borderColor: isCurrent
-            ? colors.accent
+            ? colorAccent
             : bg
               ? "transparent"
-              : colors.border,
+              : colorBorder,
         },
       ]}
     >
@@ -122,8 +109,8 @@ const HeatCell = memo(function HeatCell({
             color: bg
               ? "#1a1206"
               : item.isFirstOfBook
-                ? colors.text
-                : colors.mutedText,
+                ? colorText
+                : colorMutedText,
           },
         ]}
       >
@@ -133,24 +120,6 @@ const HeatCell = memo(function HeatCell({
   );
 });
 
-// Turns the range setting into a natural inline phrase for the summary line,
-// e.g. "this year", "all time", "since Jan 5, 2026", "from Jan 1 to Feb 2".
-function rangePhrase(setting) {
-  if (!setting) return "this year";
-  switch (setting.mode) {
-    case RANGE_MODES.ALL:
-      return "all time";
-    case RANGE_MODES.SINCE:
-      return setting.since ? `since ${formatDisplayDate(setting.since)}` : "since a date";
-    case RANGE_MODES.BETWEEN:
-      return setting.start && setting.end
-        ? `from ${formatDisplayDate(setting.start)} to ${formatDisplayDate(setting.end)}`
-        : "in range";
-    case RANGE_MODES.YEAR:
-    default:
-      return "this year";
-  }
-}
 
 export default function StatsScreen({ onOpenChapter, initialChapter, currentChapter, onBack, onOpenHistory, onReady, gridVisible = true }) {
   const { colors, mode } = useTheme();
@@ -236,49 +205,40 @@ export default function StatsScreen({ onOpenChapter, initialChapter, currentChap
     setRangeSetting(next);
   }, []);
 
-  const countsByKey = useMemo(() => {
-    const map = {};
-    if (!progressByBook || !rangeSetting) return map;
+  // Set of "bookId:chapterNumber" keys for chapters read within the selected
+  // range. A Set replaces the old countsByKey map — since we no longer show
+  // a heat gradient we only need read/unread, so the inner dates.reduce is
+  // replaced with dates.some which short-circuits on the first in-range date.
+  const readSet = useMemo(() => {
+    const set = new Set();
+    if (!progressByBook || !rangeSetting) return set;
     const inRange = makeDateInRange(resolveBounds(rangeSetting));
     for (const book of BOOKS) {
       const chapters = progressByBook[book.id] || {};
       for (const [chNum, rec] of Object.entries(chapters)) {
         const dates = (rec && rec.dates) || [];
-        const count = dates.reduce((n, d) => (inRange(d) ? n + 1 : n), 0);
-        if (count > 0) map[`${book.id}:${chNum}`] = count;
+        if (dates.some((d) => inRange(d))) set.add(`${book.id}:${chNum}`);
       }
     }
-    return map;
+    return set;
   }, [progressByBook, rangeSetting]);
 
-
-
-  const readChapterCount = useMemo(
-    () => Object.values(countsByKey).filter((c) => c > 0).length,
-    [countsByKey]
-  );
-
-  const totalReads = useMemo(
-    () => Object.values(countsByKey).reduce((sum, c) => sum + c, 0),
-    [countsByKey]
-  );
+  const readChapterCount = readSet.size;
 
   const percent = Math.round((readChapterCount / TOTAL_CHAPTERS) * 100);
 
-  const goalPace = useMemo(() => {
-    if (!rangeSetting) return null;
-    return computeGoalPace({
-      setting: rangeSetting,
-      goalDate,
-      readChapterCount,
-      totalChapters: TOTAL_CHAPTERS,
-    });
-  }, [rangeSetting, goalDate, readChapterCount]);
 
   // Stable renderItem — only re-created when the values cells actually depend
   // on change. Modal open/close, goal state, etc. don't affect cells at all.
+  //
+  // Individual color values (not the whole colors object) keep deps stable —
+  // the colors object reference changes on every context render even when the
+  // actual hex values haven't changed.
+  //
+  // onOpenChapter is passed straight through to HeatCell which binds its own
+  // args internally — no inline arrow here so memo's equality check holds.
   const renderItem = useCallback(({ item, index }) => {
-    const count = countsByKey[`${item.bookId}:${item.chapterNumber}`] || 0;
+    const isRead = readSet.has(`${item.bookId}:${item.chapterNumber}`);
     const isCurrent =
       currentChapter &&
       currentChapter.bookId === item.bookId &&
@@ -287,16 +247,22 @@ export default function StatsScreen({ onOpenChapter, initialChapter, currentChap
     return (
       <HeatCell
         item={item}
-        count={count}
+        isRead={isRead}
         isDark={isDark}
         isCurrent={isCurrent}
         boxSize={boxSize}
         isLastInRow={isLastInRow}
-        colors={colors}
-        onPress={() => onOpenChapter(item.bookId, item.chapterNumber)}
+        colorSurface={colors.surface}
+        colorAccent={colors.accent}
+        colorBorder={colors.border}
+        colorText={colors.text}
+        colorMutedText={colors.mutedText}
+        onPress={onOpenChapter}
       />
     );
-  }, [countsByKey, currentChapter, boxSize, numCols, colors, isDark, onOpenChapter]);
+  }, [readSet, currentChapter, boxSize, numCols,
+      colors.surface, colors.accent, colors.border, colors.text, colors.mutedText,
+      isDark, onOpenChapter]);
 
   // Tells FlatList the exact pixel height of every row without any measurement —
   // this is what enables true virtualization (only visible rows rendered).
@@ -384,24 +350,32 @@ export default function StatsScreen({ onOpenChapter, initialChapter, currentChap
           during the scroll-to-chapter jump. Virtualized via FlatList so only
           the visible rows are mounted (typically ~4-6 rows vs all 1,189 cells).
           getItemLayout provides exact row heights so FlatList never needs to
-          measure cells — enabling instant scrollToOffset for any chapter. */}
-      <View style={{ flex: 1, opacity: gridVisible ? 1 : 0 }}>
-        <FlatList
-          ref={flatListRef}
-          data={ALL_CHAPTERS}
-          keyExtractor={(item) => `${item.bookId}-${item.chapterNumber}`}
-          renderItem={renderItem}
-          getItemLayout={getItemLayout}
-          numColumns={numCols || 1}
-          key={numCols || 1}
-          contentContainerStyle={styles.heatGrid}
-          onLayout={(e) => setGridWidth(e.nativeEvent.layout.width)}
-          initialNumToRender={120}
-          maxToRenderPerBatch={60}
-          windowSize={5}
-          removeClippedSubviews={true}
-          showsVerticalScrollIndicator={false}
-        />
+          measure cells — enabling instant scrollToOffset for any chapter.
+          The outer View always renders (captures onLayout to measure gridWidth);
+          FlatList only mounts once gridWidth > 0 so numCols is stable from the
+          very first render and the key prop never changes — preventing the
+          double-mount that previously created ~240 native views on every visit. */}
+      <View
+        style={{ flex: 1, opacity: gridVisible ? 1 : 0 }}
+        onLayout={(e) => setGridWidth(e.nativeEvent.layout.width)}
+      >
+        {gridWidth > 0 && (
+          <FlatList
+            ref={flatListRef}
+            data={ALL_CHAPTERS}
+            keyExtractor={(item) => `${item.bookId}-${item.chapterNumber}`}
+            renderItem={renderItem}
+            getItemLayout={getItemLayout}
+            numColumns={numCols}
+            key={numCols}
+            contentContainerStyle={styles.heatGrid}
+            initialNumToRender={30}
+            maxToRenderPerBatch={30}
+            windowSize={5}
+            removeClippedSubviews={true}
+            showsVerticalScrollIndicator={false}
+          />
+        )}
       </View>
 
       <DateRangeModal
