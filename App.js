@@ -515,6 +515,11 @@ const AppContent = memo(function AppContent() {
         openBibleHeatmap();
         return true;
       }
+      if (screen === "bible" && activeTab === "bible" && readerTabs.length > 0) {
+        // Back from Stats goes to the currently open chapter in the reader.
+        setScreen("reader");
+        return true;
+      }
 
       // 3. On Memory/Settings, back returns to exactly the bible sub-screen
       // that was active when the user left.
