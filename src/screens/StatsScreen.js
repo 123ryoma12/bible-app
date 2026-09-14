@@ -142,7 +142,7 @@ const HeatCell = memo(function HeatCell({
 });
 
 
-export default function StatsScreen({ onOpenChapter, initialChapter, currentChapter, onBack, onOpenHistory, onReady, gridVisible = true }) {
+export default function StatsScreen({ onOpenChapter, initialChapter, currentChapter, onBack, onOpenHistory, onReady, gridVisible = true, containerWidth = 0 }) {
   const { colors, mode } = useTheme();
   const isDark = mode === "dark";
 
@@ -159,10 +159,11 @@ export default function StatsScreen({ onOpenChapter, initialChapter, currentChap
   const [rangeModalOpen, setRangeModalOpen] = useState(false);
   const [goalModalOpen, setGoalModalOpen] = useState(false);
 
-  // Start at 0 — we don't render boxes until the ScrollView has measured its
-  // own width via onLayout, so we never use the wrong window width (which on
-  // native may differ from the actual available width due to safe-area insets).
-  const [gridWidth, setGridWidth] = useState(0);
+  // Initialise from containerWidth passed by App.js (via useWindowDimensions)
+  // so the grid is ready to render immediately without waiting for onLayout.
+  // onLayout still fires when the view is visible and will correct the value
+  // if it ever differs (e.g. orientation change or safe-area adjustment).
+  const [gridWidth, setGridWidth] = useState(containerWidth);
   const { boxSize, numCols } = computeBoxMetrics(gridWidth);
 
   // Ref to the heat-map ScrollView for imperative scrolling.

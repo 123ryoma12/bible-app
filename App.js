@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo, memo } from "react";
 import { StatusBar } from "expo-status-bar";
-import { View, ActivityIndicator, StyleSheet, BackHandler, Platform } from "react-native";
+import { View, ActivityIndicator, StyleSheet, BackHandler, Platform, useWindowDimensions } from "react-native";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import { BOOKS } from "./src/data/books";
 import ReaderScreen from "./src/screens/ReaderScreen";
@@ -140,6 +140,7 @@ export default function App() {
 function AppContent() {
   const { mode, colors } = useTheme();
   const backRegistry = useBackHandlerRegistry();
+  const { width: windowWidth } = useWindowDimensions();
 
   // activeTab: "bible" | "memory" | "settings"
   // "bible" is the heat-map / reading progress screen (formerly "stats").
@@ -589,9 +590,11 @@ function AppContent() {
 
         {/* StatsScreen — always mounted so state, scroll position, and the
             1,189 laid-out boxes are preserved. Hidden with display:none when
-            not active (zero compositor cost). The statsScreenReady flag is
-            used only to control opacity *while visible* during the scroll-to
-            jump, preventing the flash of wrong position. */}
+            not active (zero compositor cost). containerWidth is passed from
+            useWindowDimensions so gridWidth is initialised immediately without
+            waiting for an onLayout — the grid is fully pre-laid-out before the
+            user ever switches to this tab. The statsScreenReady flag controls
+            opacity *while visible* during the scroll-to jump. */}
         <View
           style={{
             flex: 1,
@@ -607,6 +610,7 @@ function AppContent() {
             onOpenHistory={onOpenHistoryForBible}
             onReady={onStatsReady}
             gridVisible={statsScreenReady}
+            containerWidth={windowWidth}
           />
         </View>
 
