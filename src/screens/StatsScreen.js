@@ -251,7 +251,16 @@ export default function StatsScreen({ onOpenChapter, initialChapter, currentChap
     if (!rangeSetting) {
       getRangeSetting().then(setRangeSettingState);
     }
-    const unsub = subscribeProgress(setProgressByBook);
+    const unsub = subscribeProgress((snapshot, changedBookId) => {
+      if (changedBookId) {
+        // Single-book update: merge only the changed book into the existing
+        // snapshot so the readSet memo only re-walks that one book's chapters.
+        setProgressByBook((prev) => prev ? { ...prev, [changedBookId]: snapshot[changedBookId] } : snapshot);
+      } else {
+        // Full reload (e.g. backup restore) — replace everything.
+        setProgressByBook(snapshot);
+      }
+    });
     return unsub;
   }, []);
 
@@ -299,14 +308,53 @@ export default function StatsScreen({ onOpenChapter, initialChapter, currentChap
     setRangeSetting(next);
   }, []);
 
+  // Refs used by the surgical readSet patch below — must be declared before
+  // the useMemo that references them.
+  const prevProgressRef = useRef(null);
+  const readSetRef = useRef(null);
+
   // Set of "bookId:chapterNumber" keys for chapters read within the selected
-  // range. A Set replaces the old countsByKey map — since we no longer show
-  // a heat gradient we only need read/unread, so the inner dates.reduce is
-  // replaced with dates.some which short-circuits on the first in-range date.
+  // range. On initial build or range change: full rebuild across all 66 books.
+  // On a single-book progress update: only re-walk that one book's chapters
+  // and patch the set in-place, then return a new Set reference so React sees
+  // the change. This avoids iterating all 1,189 chapters on every read mark.
   const readSet = useMemo(() => {
-    const set = new Set();
-    if (!progressByBook || !rangeSetting) return set;
+    if (!progressByBook || !rangeSetting) return new Set();
     const inRange = makeDateInRange(resolveBounds(rangeSetting));
+    const prev = prevProgressRef.current;
+
+    // Detect a single-book swap: same object reference for all books except one.
+    let changedBookId = null;
+    if (prev && prev !== progressByBook) {
+      for (const book of BOOKS) {
+        if (prev[book.id] !== progressByBook[book.id]) {
+          if (changedBookId) { changedBookId = null; break; } // more than one changed
+          changedBookId = book.id;
+        }
+      }
+    }
+
+    prevProgressRef.current = progressByBook;
+
+    if (changedBookId && prev) {
+      // Surgical patch: copy the existing set, remove all keys for this book,
+      // then re-add only the ones that are now in range.
+      const next = new Set(readSetRef.current);
+      const chapters = progressByBook[changedBookId] || {};
+      // Remove all existing entries for this book.
+      for (const key of next) {
+        if (key.startsWith(`${changedBookId}:`)) next.delete(key);
+      }
+      // Re-add the ones now in range.
+      for (const [chNum, rec] of Object.entries(chapters)) {
+        const dates = (rec && rec.dates) || [];
+        if (dates.some((d) => inRange(d))) next.add(`${changedBookId}:${chNum}`);
+      }
+      return next;
+    }
+
+    // Full rebuild — initial load or range setting changed.
+    const set = new Set();
     for (const book of BOOKS) {
       const chapters = progressByBook[book.id] || {};
       for (const [chNum, rec] of Object.entries(chapters)) {
@@ -316,6 +364,9 @@ export default function StatsScreen({ onOpenChapter, initialChapter, currentChap
     }
     return set;
   }, [progressByBook, rangeSetting]);
+
+  // Keep readSetRef in sync so the surgical patch in the next render can copy it.
+  useEffect(() => { readSetRef.current = readSet; }, [readSet]);
 
   const readChapterCount = readSet.size;
 

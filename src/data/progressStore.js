@@ -37,10 +37,12 @@ export function subscribeProgress(fn) {
   return () => _listeners.delete(fn);
 }
 
-function _notify() {
+function _notify(changedBookId = null) {
   // Shallow-copy so listeners always get a stable new reference.
+  // changedBookId is set when a single book's data changed — listeners can
+  // use it to skip re-processing every other book.
   const snapshot = { ..._cache };
-  _listeners.forEach((fn) => fn(snapshot));
+  _listeners.forEach((fn) => fn(snapshot, changedBookId));
 }
 
 function bookKey(bookId) {
@@ -89,9 +91,10 @@ export async function incrementReadCount(bookId, chapterNumber) {
   const updated = { dates: [...current.dates, todayDateString()] };
   const nextChapters = { ...chapters, [key]: updated };
   await backend.setItem(bookKey(bookId), { chapters: nextChapters });
-  // Update cache in-place and tell listeners.
+  // Update cache in-place and tell listeners with the changed book ID so
+  // subscribers can skip re-processing every other book.
   _cache[bookId] = nextChapters;
-  _notify();
+  _notify(bookId);
   return updated;
 }
 
