@@ -1,4 +1,4 @@
-import React, { useRef, useCallback, useEffect, useState, useMemo } from "react";
+import React, { useRef, useCallback, useEffect, useState, useMemo, memo } from "react";
 import {
   View,
   Text,
@@ -11,7 +11,7 @@ import {
 } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { uiFont, readingFont } from "../theme/fonts";
-import ChapterView from "../components/ChapterView";
+import ChapterViewBase from "../components/ChapterView";
 import ReaderTabBar from "../components/ReaderTabBar";
 import ReaderTopBar from "../components/ReaderTopBar";
 import SermonSheet from "../components/SermonSheet";
@@ -26,6 +26,11 @@ import StudyNotesModal from "../components/StudyNotesModal";
 // lastPosition record is only needed at cold-launch time (handled in App.js).
 // Per-tab scroll offsets are passed in via the initialScrollY prop so each
 // tab independently restores to its own saved position.
+
+// Memoized wrapper so scroll-driven ReaderScreen re-renders (chromeVisible state
+// toggling ~16×/sec while scrolling) never cascade into ChapterView or its
+// subtree. Only re-renders when the actual chapter data changes.
+const ChapterView = memo(ChapterViewBase);
 
 const SWIPE_THRESHOLD = 50;
 // How far you must scroll down before the chrome hides (avoids twitchy hiding).
@@ -336,6 +341,22 @@ export default function ReaderScreen({
     })
   ).current;
 
+  // Memoized so scroll-driven re-renders (chromeVisible toggling) don't create
+  // new style objects on every frame. Only recalculates when layout metrics change.
+  const contentContainerStyle = useMemo(() => [
+    styles.scrollContent,
+    {
+      // Reserve the full chrome stack — the reader's footer plus the
+      // app's player / tab bar it sits on — so scrolling to the end of a
+      // chapter leaves "Mark as Read" clear of all of it. The chrome
+      // overlays the text on the way down, which is fine; this only has
+      // to guarantee somewhere to land at the bottom.
+      paddingBottom: footerHeight + bottomChromeHeight + 16,
+      // Push content below the top bar (which itself includes insets.top).
+      paddingTop: topBarHeight || insets.top,
+    },
+  ], [footerHeight, bottomChromeHeight, topBarHeight, insets.top]);
+
   return (
     <SafeAreaView
       style={[styles.safe, { backgroundColor: colors.background }]}
@@ -346,19 +367,7 @@ export default function ReaderScreen({
         ref={scrollRef}
         style={{ flex: 1, opacity: scrollReady ? 1 : 0 }}
         contentInsetAdjustmentBehavior="never"
-        contentContainerStyle={[
-          styles.scrollContent,
-          {
-            // Reserve the full chrome stack — the reader's footer plus the
-            // app's player / tab bar it sits on — so scrolling to the end of a
-            // chapter leaves "Mark as Read" clear of all of it. The chrome
-            // overlays the text on the way down, which is fine; this only has
-            // to guarantee somewhere to land at the bottom.
-            paddingBottom: footerHeight + bottomChromeHeight + 16,
-            // Push content below the top bar (which itself includes insets.top).
-            paddingTop: topBarHeight || insets.top,
-          },
-        ]}
+        contentContainerStyle={contentContainerStyle}
         onScroll={handleScroll}
         scrollEventThrottle={16}
         onContentSizeChange={handleContentSizeChange}

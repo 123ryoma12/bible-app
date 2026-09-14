@@ -1,4 +1,4 @@
-import React, { useMemo } from "react";
+import React, { useMemo, memo } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import { useTheme } from "../theme/ThemeContext";
 import { readingFont, uiFont } from "../theme/fonts";
@@ -45,7 +45,7 @@ export default function ChapterView({ chapter }) {
   );
 }
 
-function ChapterBlock({
+const ChapterBlock = memo(function ChapterBlock({
   block,
   verses,
   continuesPreviousVerse,
@@ -65,11 +65,21 @@ function ChapterBlock({
   // The reader header already presents the chapter title.
   if (sourceStyle === "cl") return null;
 
+  // Cached by style+kind — referentially stable across renders.
   const appearance = getAppearance(sourceStyle, kind);
   const showLabel = label && (kind === "heading" || verses.length === 0);
-  const continuationInset = continuesPreviousVerse
-    ? VERSE_CONTINUATION_INDENT * fontScale
-    : 0;
+
+  // Memoize the inset style object so React.memo's shallow compare stays stable.
+  const insetStyle = useMemo(
+    () => (continuesPreviousVerse ? { paddingLeft: VERSE_CONTINUATION_INDENT * fontScale } : null),
+    [continuesPreviousVerse, fontScale]
+  );
+
+  // Resolve label color once rather than creating a new inline object each render.
+  const labelColor = useMemo(
+    () => appearance.labelColor(colors),
+    [appearance, colors]
+  );
 
   if (!showLabel && verses.length === 0) return null;
 
@@ -78,7 +88,7 @@ function ChapterBlock({
       style={[
         styles.block,
         appearance.container,
-        continuationInset ? { paddingLeft: continuationInset } : null,
+        insetStyle,
         hasOnlyEditorialNotes ? styles.editorialBlock : null,
       ]}
     >
@@ -87,7 +97,8 @@ function ChapterBlock({
           style={[
             appearance.label,
             typography[appearance.labelType],
-            { color: appearance.labelColor(colors) },
+            // labelColor is a primitive (string) — safe to inline.
+            { color: labelColor },
           ]}
         >
           {appearance.uppercase ? label.toUpperCase() : label}
@@ -105,10 +116,10 @@ function ChapterBlock({
       ) : null}
     </View>
   );
-}
+});
 
-function FlowingVerses({ verses, beginsWithContinuation, appearance, colors, typography }) {
-  const segments = verses.map((verse, index) => {
+const FlowingVerses = memo(function FlowingVerses({ verses, beginsWithContinuation, appearance, colors, typography }) {
+  const segments = useMemo(() => verses.map((verse, index) => {
     const previousNumber = index > 0 ? verses[index - 1].number : null;
     const repeatedOpeningVerse = index === 0 && beginsWithContinuation;
 
@@ -122,7 +133,12 @@ function FlowingVerses({ verses, beginsWithContinuation, appearance, colors, typ
         verse.number !== previousNumber &&
         !repeatedOpeningVerse,
     };
-  });
+  }), [verses, beginsWithContinuation]);
+
+  // Stable color style objects — new inline objects each render would bust memo
+  // on the inner Text nodes even though colors almost never change.
+  const textColorStyle = useMemo(() => ({ color: colors.text }), [colors.text]);
+  const mutedColorStyle = useMemo(() => ({ color: colors.mutedText }), [colors.mutedText]);
 
   return (
     <Text
@@ -130,7 +146,7 @@ function FlowingVerses({ verses, beginsWithContinuation, appearance, colors, typ
         styles.flowingText,
         typography[appearance.textType],
         appearance.text,
-        { color: colors.text },
+        textColorStyle,
       ]}
     >
       {segments.map((segment, index) => (
@@ -140,7 +156,7 @@ function FlowingVerses({ verses, beginsWithContinuation, appearance, colors, typ
         >
           {index > 0 ? " " : null}
           {segment.showNumber ? (
-            <Text style={[styles.verseNumber, typography.verseNumber, { color: colors.mutedText }]}>
+            <Text style={[styles.verseNumber, typography.verseNumber, mutedColorStyle]}>
               {segment.number}{"\u00A0\u00A0"}
             </Text>
           ) : null}
@@ -149,7 +165,7 @@ function FlowingVerses({ verses, beginsWithContinuation, appearance, colors, typ
       ))}
     </Text>
   );
-}
+});
 
 function prepareBlocks(source) {
   let previousVerseNumber = null;
@@ -202,7 +218,16 @@ function getBlockKind(style) {
   return "paragraph";
 }
 
+// Module-level cache for appearance objects, keyed by "style|kind".
+// getAppearance() is called on every ChapterBlock render; caching ensures the
+// returned object is referentially stable, which is critical for React.memo on
+// FlowingVerses (the `appearance` prop won't spuriously change between renders).
+const _appearanceCache = new Map();
+
 function getAppearance(style, kind) {
+  const cacheKey = `${style}|${kind}`;
+  if (_appearanceCache.has(cacheKey)) return _appearanceCache.get(cacheKey);
+
   const level = Number.parseInt(String(style).replace(/\D/g, ""), 10) || 1;
   const base = {
     container: styles.paragraph,
@@ -214,9 +239,10 @@ function getAppearance(style, kind) {
     uppercase: false,
   };
 
+  let result;
   switch (kind) {
     case "heading":
-      return {
+      result = {
         ...base,
         container: styles.heading,
         label: styles.headingLabel,
@@ -224,25 +250,34 @@ function getAppearance(style, kind) {
         labelColor: (colors) => colors.secondaryText,
         uppercase: true,
       };
+      break;
     case "descriptive":
-      return {
+      result = {
         ...base,
         container: styles.descriptive,
         label: styles.plainLabel,
         labelType: "descriptive",
         textType: "descriptive",
       };
+      break;
     case "poetry":
-      return { ...base, container: [styles.poetry, { paddingLeft: 12 * (level - 1) }] };
+      result = { ...base, container: [styles.poetry, { paddingLeft: 12 * (level - 1) }] };
+      break;
     case "list":
-      return { ...base, container: [styles.list, { paddingLeft: 12 * (level - 1) }] };
+      result = { ...base, container: [styles.list, { paddingLeft: 12 * (level - 1) }] };
+      break;
     case "centered":
-      return { ...base, container: styles.paragraph, textType: "descriptive" };
+      result = { ...base, container: styles.paragraph, textType: "descriptive" };
+      break;
     case "indented":
-      return { ...base, container: styles.indented };
+      result = { ...base, container: styles.indented };
+      break;
     default:
-      return base;
+      result = base;
   }
+
+  _appearanceCache.set(cacheKey, result);
+  return result;
 }
 
 // Module-level cache for typography StyleSheet objects, keyed by "fontScale|fontKey".
