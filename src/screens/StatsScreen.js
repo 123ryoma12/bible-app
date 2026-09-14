@@ -33,13 +33,18 @@ import { useTheme } from "../theme/ThemeContext";
 
 const SCREEN_PADDING = 20;
 const TOTAL_CHAPTERS = ALL_CHAPTERS.length; // 1,189
-// Compute BOX_SIZE and BOX_GAP so boxes fill the row exactly with no gap on the right.
-// Strategy: fix column count from target box size ~36, then divide available width evenly.
-const _screenWidth = Dimensions.get("window").width;
-const _availableWidth = _screenWidth - 2 * SCREEN_PADDING;
-const _numCols = Math.floor((_availableWidth + 3) / (36 + 3)); // target ~36px boxes, ~3px gaps
-const BOX_GAP = 3; // keep gap fixed at 3
-const BOX_SIZE = (_availableWidth - BOX_GAP * (_numCols - 1)) / _numCols; // exact, no flooring
+const BOX_GAP = 3; // gap between cells (applied as marginRight + marginBottom)
+
+function computeBoxMetrics(containerWidth) {
+  // containerWidth is the actual measured ScrollView width.
+  // The grid has paddingHorizontal: SCREEN_PADDING on each side, so the
+  // available width for boxes is containerWidth - 2 * SCREEN_PADDING.
+  const available = containerWidth - 2 * SCREEN_PADDING;
+  const numCols = Math.floor((available + BOX_GAP) / (36 + BOX_GAP));
+  // Exact box size: n boxes + (n-1) gaps = available
+  const boxSize = (available - BOX_GAP * (numCols - 1)) / numCols;
+  return { boxSize, numCols };
+}
 
 // Returns a CSS hex colour for a chapter cell given its read count and the
 // overall maximum count seen. Unread → muted surface; 1 read → yellow/amber;
@@ -99,6 +104,8 @@ export default function StatsScreen({ onOpenChapter, isActive = true }) {
   const [goalModalOpen, setGoalModalOpen] = useState(false);
   const [filterMax, setFilterMax] = useState(Infinity);
   const [filterModalOpen, setFilterModalOpen] = useState(false);
+  const [gridWidth, setGridWidth] = useState(Dimensions.get("window").width);
+  const { boxSize, numCols } = computeBoxMetrics(gridWidth);
 
   const reload = useCallback(() => {
     getAllBooksProgress(BOOKS.map((b) => b.id)).then(setProgressByBook);
@@ -382,19 +389,21 @@ export default function StatsScreen({ onOpenChapter, isActive = true }) {
       <ScrollView
         style={{ flex: 1 }}
         contentContainerStyle={styles.heatGrid}
+        onLayout={(e) => setGridWidth(e.nativeEvent.layout.width)}
       >
         {visibleChapters.length === 0 ? (
           <Text style={[styles.emptyFilter, { color: colors.mutedText }]}>
             No chapters match this filter.
           </Text>
         ) : (
-          visibleChapters.map((item) => {
+          visibleChapters.map((item, idx) => {
             const count = countsByKey[`${item.bookId}:${item.chapterNumber}`] || 0;
             const bg = heatColor(count, maxCount, isDark);
             const isSelected =
               selected &&
               selected.bookId === item.bookId &&
               selected.chapterNumber === item.chapterNumber;
+            const isLastInRow = (idx + 1) % numCols === 0;
 
             return (
               <TouchableOpacity
@@ -405,6 +414,7 @@ export default function StatsScreen({ onOpenChapter, isActive = true }) {
                 activeOpacity={0.65}
                 style={[
                   styles.heatBox,
+                  { width: boxSize, height: boxSize, marginRight: isLastInRow ? 0 : BOX_GAP },
                   bg
                     ? { backgroundColor: bg }
                     : { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border },
@@ -932,14 +942,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: SCREEN_PADDING,
     paddingTop: BOX_GAP,
     paddingBottom: 24,
-    gap: BOX_GAP,
   },
   heatBox: {
-    width: BOX_SIZE,
-    height: BOX_SIZE,
     borderRadius: 5,
     alignItems: "center",
     justifyContent: "center",
+    marginBottom: BOX_GAP,
   },
   heatLabel: {
     fontSize: 9,
