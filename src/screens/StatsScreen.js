@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useSta
 import {
   View,
   Text,
-  FlatList,
+  ScrollView,
   TouchableOpacity,
   StyleSheet,
   ActivityIndicator,
@@ -165,7 +165,7 @@ export default function StatsScreen({ onOpenChapter, initialChapter, currentChap
   const [gridWidth, setGridWidth] = useState(0);
   const { boxSize, numCols } = computeBoxMetrics(gridWidth);
 
-  // Ref to the heat-map FlatList for imperative scrolling.
+  // Ref to the heat-map ScrollView for imperative scrolling.
   const flatListRef = useRef(null);
   // Track which initialChapter we've already scrolled to so we don't repeat it.
   const scrolledToChapter = useRef(null);
@@ -211,7 +211,7 @@ export default function StatsScreen({ onOpenChapter, initialChapter, currentChap
 
     const y = computeCellOffset(itemIndex, numCols, boxSize);
     requestAnimationFrame(() => {
-      flatListRef.current?.scrollToOffset({ offset: Math.max(0, y - 16), animated: false });
+      flatListRef.current?.scrollTo({ y: Math.max(0, y - 16), animated: false });
       onReady?.();
     });
   }, [initialChapter, boxSize, numCols]);
@@ -248,48 +248,6 @@ export default function StatsScreen({ onOpenChapter, initialChapter, currentChap
 
   const percent = Math.round((readChapterCount / TOTAL_CHAPTERS) * 100);
 
-
-  // Stable renderItem — only re-created when the values cells actually depend
-  // on change. Modal open/close, goal state, etc. don't affect cells at all.
-  //
-  // Individual color values (not the whole colors object) keep deps stable —
-  // the colors object reference changes on every context render even when the
-  // actual hex values haven't changed.
-  //
-  // onOpenChapter is passed straight through to HeatCell which binds its own
-  // args internally — no inline arrow here so memo's equality check holds.
-  const renderItem = useCallback(({ item, index }) => {
-    const isCurrent =
-      currentChapter &&
-      currentChapter.bookId === item.bookId &&
-      currentChapter.chapterNumber === item.chapterNumber;
-    const isLastInRow = (index + 1) % numCols === 0;
-    return (
-      <HeatCell
-        item={item}
-        readSet={readSet}
-        isDark={isDark}
-        isCurrent={isCurrent}
-        boxSize={boxSize}
-        isLastInRow={isLastInRow}
-        colorSurface={colors.surface}
-        colorAccent={colors.accent}
-        colorBorder={colors.border}
-        colorText={colors.text}
-        colorMutedText={colors.mutedText}
-        onPress={onOpenChapter}
-      />
-    );
-  }, [readSet, currentChapter, boxSize, numCols,
-      colors.surface, colors.accent, colors.border, colors.text, colors.mutedText,
-      isDark, onOpenChapter]);
-
-  // Tells FlatList the exact pixel height of every row without any measurement —
-  // this is what enables true virtualization (only visible rows rendered).
-  const getItemLayout = useCallback((_, index) => {
-    const rowHeight = boxSize + BOX_GAP;
-    return { length: rowHeight, offset: computeCellOffset(index, numCols, boxSize), index };
-  }, [boxSize, numCols]);
 
   // Only show the spinner on the very first cold launch before preloads have
   // had a chance to complete. On all subsequent visits the cache is warm and
@@ -367,34 +325,46 @@ export default function StatsScreen({ onOpenChapter, initialChapter, currentChap
       </View>
 
       {/* Heat-map grid — opacity controlled by App.js so header stays visible
-          during the scroll-to-chapter jump. Virtualized via FlatList so only
-          the visible rows are mounted (typically ~4-6 rows vs all 1,189 cells).
-          getItemLayout provides exact row heights so FlatList never needs to
-          measure cells — enabling instant scrollToOffset for any chapter.
-          The outer View always renders (captures onLayout to measure gridWidth);
-          FlatList only mounts once gridWidth > 0 so numCols is stable from the
-          very first render and the key prop never changes — preventing the
-          double-mount that previously created ~240 native views on every visit. */}
+          during the scroll-to-chapter jump. The outer View always renders to
+          capture onLayout and measure gridWidth; ScrollView only mounts once
+          gridWidth > 0 so numCols is stable from the very first render. */}
       <View
         style={{ flex: 1, opacity: gridVisible ? 1 : 0 }}
         onLayout={(e) => setGridWidth(e.nativeEvent.layout.width)}
       >
         {gridWidth > 0 && (
-          <FlatList
+          <ScrollView
             ref={flatListRef}
-            data={ALL_CHAPTERS}
-            keyExtractor={(item) => `${item.bookId}-${item.chapterNumber}`}
-            renderItem={renderItem}
-            getItemLayout={getItemLayout}
-            numColumns={numCols}
-            key={numCols}
             contentContainerStyle={styles.heatGrid}
-            initialNumToRender={30}
-            maxToRenderPerBatch={30}
-            windowSize={5}
-            removeClippedSubviews={true}
             showsVerticalScrollIndicator={false}
-          />
+          >
+            <View style={styles.heatRow}>
+              {ALL_CHAPTERS.map((item, index) => {
+                const isCurrent =
+                  currentChapter &&
+                  currentChapter.bookId === item.bookId &&
+                  currentChapter.chapterNumber === item.chapterNumber;
+                const isLastInRow = (index + 1) % numCols === 0;
+                return (
+                  <HeatCell
+                    key={`${item.bookId}-${item.chapterNumber}`}
+                    item={item}
+                    readSet={readSet}
+                    isDark={isDark}
+                    isCurrent={isCurrent}
+                    boxSize={boxSize}
+                    isLastInRow={isLastInRow}
+                    colorSurface={colors.surface}
+                    colorAccent={colors.accent}
+                    colorBorder={colors.border}
+                    colorText={colors.text}
+                    colorMutedText={colors.mutedText}
+                    onPress={onOpenChapter}
+                  />
+                );
+              })}
+            </View>
+          </ScrollView>
         )}
       </View>
 
@@ -750,6 +720,7 @@ const styles = StyleSheet.create({
     paddingTop: BOX_GAP,
     paddingBottom: 24,
   },
+  heatRow: { flexDirection: "row", flexWrap: "wrap" },
   heatBox: {
     borderRadius: 5,
     alignItems: "center",
