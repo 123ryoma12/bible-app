@@ -95,8 +95,6 @@ export default function StatsScreen({ onOpenChapter, isActive = true, initialCha
   const { colors, mode } = useTheme();
   const isDark = mode === "dark";
   const [progressByBook, setProgressByBook] = useState(null); // null = loading
-  // { bookId, chapterNumber, bookName, count } | null
-  const [selected, setSelected] = useState(null);
   const [rangeSetting, setRangeSettingState] = useState(null); // null = loading
   const [rangeModalOpen, setRangeModalOpen] = useState(false);
   const [goalDate, setGoalDateState] = useState(null);
@@ -109,8 +107,6 @@ export default function StatsScreen({ onOpenChapter, isActive = true, initialCha
   const scrollViewRef = useRef(null);
   // Per-chapter y-offsets, populated as cells lay out.
   const chapterOffsets = useRef({});
-  // Current scroll position of the heat-map, tracked for tooltip positioning.
-  const scrollYRef = useRef(0);
 
   // When we have an initialChapter target, hide the grid until that cell has
   // laid out and the scroll has been applied — prevents a flicker of the grid
@@ -142,7 +138,6 @@ export default function StatsScreen({ onOpenChapter, isActive = true, initialCha
   const applyRangeSetting = useCallback((next) => {
     setRangeSettingState(next);
     setRangeSetting(next);
-    setSelected(null);
   }, []);
 
   const countsByKey = useMemo(() => {
@@ -257,27 +252,17 @@ export default function StatsScreen({ onOpenChapter, isActive = true, initialCha
         </TouchableOpacity>
       </View>
 
-      {/* Heat-map grid wrapper — relative so tooltip can be absolutely
-          positioned below the tapped cell. */}
+      {/* Heat-map grid */}
       <View style={{ flex: 1 }}>
         <ScrollView
           ref={scrollViewRef}
           style={{ flex: 1, opacity: gridReady ? 1 : 0 }}
           contentContainerStyle={styles.heatGrid}
           onLayout={(e) => setGridWidth(e.nativeEvent.layout.width)}
-          onScroll={(e) => {
-            scrollYRef.current = e.nativeEvent.contentOffset.y;
-            if (selected) setSelected(null);
-          }}
-          scrollEventThrottle={16}
         >
         {ALL_CHAPTERS.map((item, idx) => {
             const count = countsByKey[`${item.bookId}:${item.chapterNumber}`] || 0;
             const bg = heatColor(count, maxCount, isDark);
-            const isSelected =
-              selected &&
-              selected.bookId === item.bookId &&
-              selected.chapterNumber === item.chapterNumber;
             const isCurrent =
               currentChapter &&
               currentChapter.bookId === item.bookId &&
@@ -287,21 +272,11 @@ export default function StatsScreen({ onOpenChapter, isActive = true, initialCha
             return (
               <TouchableOpacity
                 key={`${item.bookId}-${item.chapterNumber}`}
-                onPress={() =>
-                  setSelected({
-                    bookId: item.bookId,
-                    chapterNumber: item.chapterNumber,
-                    bookName: item.bookName,
-                    count,
-                    cellX: chapterOffsets.current[`${item.bookId}:${item.chapterNumber}:x`] ?? 0,
-                    cellY: chapterOffsets.current[`${item.bookId}:${item.chapterNumber}`] ?? 0,
-                  })
-                }
+                onPress={() => onOpenChapter(item.bookId, item.chapterNumber)}
                 onLayout={(e) => {
                   const key = `${item.bookId}:${item.chapterNumber}`;
-                  const { y, x } = e.nativeEvent.layout;
+                  const { y } = e.nativeEvent.layout;
                   chapterOffsets.current[key] = y;
-                  chapterOffsets.current[`${key}:x`] = x;
                   // If this is the target cell, scroll to it then reveal the grid.
                   if (
                     !gridReady &&
@@ -321,7 +296,6 @@ export default function StatsScreen({ onOpenChapter, isActive = true, initialCha
                     ? { backgroundColor: bg }
                     : { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border },
                   isCurrent && { borderWidth: 2, borderColor: colors.accent },
-                  isSelected && { borderWidth: 2, borderColor: colors.text },
                 ]}
               >
                 <Text
@@ -346,46 +320,6 @@ export default function StatsScreen({ onOpenChapter, isActive = true, initialCha
           })
         }
         </ScrollView>
-
-        {/* Tooltip anchored below the tapped cell */}
-        {selected && (
-          <View
-            pointerEvents="box-none"
-            style={[
-              styles.tooltip,
-              {
-                backgroundColor: colors.surface,
-                borderColor: colors.border,
-                top: selected.cellY - scrollYRef.current + boxSize + 4,
-                left: SCREEN_PADDING,
-                right: SCREEN_PADDING,
-              },
-            ]}
-          >
-            <Text style={[styles.tooltipText, { color: colors.surfaceText }]}>
-              {selected.bookName} {selected.chapterNumber}
-              {' · '}
-              {selected.count > 0
-                ? `${selected.count} read${selected.count === 1 ? '' : 's'}`
-                : 'not read yet'}
-            </Text>
-            <View style={styles.tooltipActions}>
-              <TouchableOpacity
-                onPress={() => onOpenChapter(selected.bookId, selected.chapterNumber)}
-                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-              >
-                <Text style={[styles.tooltipOpen, { color: colors.accent }]}>Open ›</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                onPress={() => setSelected(null)}
-                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                style={{ marginLeft: 16 }}
-              >
-                <Text style={[styles.tooltipClose, { color: colors.mutedText }]}>✕</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        )}
       </View>
 
       <DateRangeModal
@@ -735,26 +669,10 @@ const styles = StyleSheet.create({
     lineHeight: 19,
     marginBottom: 12,
   },
-  tooltip: {
-    position: "absolute",
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 8,
-    borderWidth: StyleSheet.hairlineWidth,
-    zIndex: 10,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.12,
     shadowRadius: 4,
     elevation: 4,
   },
-  tooltipText: { fontSize: 13, fontFamily: uiFont(600), flexShrink: 1 },
-  tooltipActions: { flexDirection: "row", alignItems: "center" },
-  tooltipOpen: { fontSize: 13, fontFamily: uiFont(700) },
-  tooltipClose: { fontSize: 13, fontFamily: uiFont(400) },
   heatGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
