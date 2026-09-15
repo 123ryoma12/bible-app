@@ -34,6 +34,7 @@ import {
   lastPrayedLabel,
   repetitionLabel,
   frequencyLabel,
+  frequencyShortLabel,
   formatDate,
 } from "../data/prayerStore";
 import PrayerAdd from "./prayer/PrayerAdd";
@@ -480,7 +481,12 @@ function PrayerRow({ point, ready, colors, onPress, onLongPress }) {
           {point.name}
         </Text>
         <Text style={[styles.rowMeta, { color: colors.secondaryText }]} numberOfLines={1}>
-          {ready ? waitingLabel(point) : availabilityLabel(point)} · {repetitionLabel(point)}
+          {ready ? waitingLabel(point) : availabilityLabel(point)}
+        </Text>
+        {/* Schedule on its own line: the line above changes as time passes,
+            this one describes how the point is set up. */}
+        <Text style={[styles.rowSub, { color: colors.mutedText }]} numberOfLines={1}>
+          {frequencyShortLabel(point)} · {repetitionLabel(point)}
         </Text>
       </View>
       {/* A clock on resting rows signals "you can look, but not start yet". */}

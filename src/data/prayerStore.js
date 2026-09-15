@@ -75,6 +75,11 @@ export function frequencyLabel(point) {
   return resolveFrequency(point?.frequency).label;
 }
 
+/** Compact frequency label for list rows, e.g. "3 days". */
+export function frequencyShortLabel(point) {
+  return resolveFrequency(point?.frequency).short;
+}
+
 // --- Session durations -----------------------------------------------------
 
 /** Selectable prayer session lengths, in minutes. */
