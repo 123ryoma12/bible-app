@@ -14,6 +14,7 @@
 // offering the sermon in a browser rather than presenting a dead end.
 
 import React, { useEffect, useState, useCallback, useRef } from "react";
+import SermonPlayerScreen from "../screens/SermonPlayerScreen";
 import {
   View,
   Text,
@@ -24,6 +25,7 @@ import {
   Platform,
   PermissionsAndroid,
   Animated,
+  Modal,
 } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useAudioPlayer, useAudioPlayerStatus, setAudioModeAsync } from "expo-audio";
@@ -94,6 +96,7 @@ function formatTime(seconds) {
 export default function SermonPlayer({
   sermon,
   onClose,
+  onExpand,
   visible = true,
   // How far to slide down when hiding. Defaults to the bar's own height, but
   // callers that stack something below it (the tab bar) pass the full distance
@@ -112,6 +115,7 @@ export default function SermonPlayer({
   const [failure, setFailure] = useState(null);
   const [speedIndex, setSpeedIndex] = useState(0);
   const [barWidth, setBarWidth] = useState(0);
+  const [expanded, setExpanded] = useState(false);
   // Measured full height of the bar so it can slide exactly off-screen when the
   // reader hides its chrome. Only the view is hidden — playback continues.
   const [playerHeight, setPlayerHeight] = useState(0);
@@ -354,6 +358,16 @@ export default function SermonPlayer({
     }
   }, [player, speedIndex]);
 
+  // Called from SermonPlayerScreen with a 0–1 ratio.
+  const seekByRatio = useCallback(
+    (ratio) => {
+      const duration = status?.duration ?? 0;
+      if (!duration) return;
+      player.seekTo(Math.min(Math.max(ratio, 0), 1) * duration);
+    },
+    [player, status?.duration]
+  );
+
   // Tap anywhere on the progress bar to seek there. Avoids pulling in a slider
   // dependency for what is a single interaction.
   const seekToPosition = useCallback(
@@ -431,7 +445,13 @@ export default function SermonPlayer({
       </TouchableOpacity>
 
       <View style={styles.row}>
-        <View style={styles.info}>
+        <TouchableOpacity
+          style={styles.info}
+          onPress={() => { onExpand?.(); setExpanded(true); }}
+          activeOpacity={0.7}
+          accessibilityRole="button"
+          accessibilityLabel="Open full player"
+        >
           <Text
             style={[styles.title, { color: colors.surfaceText }]}
             numberOfLines={1}
@@ -456,7 +476,7 @@ export default function SermonPlayer({
                         .filter(Boolean)
                         .join(" · ")}
           </Text>
-        </View>
+        </TouchableOpacity>
 
         {failure || playbackError ? (
           // Dead end avoided: hand the sermon over to the browser.
@@ -527,6 +547,31 @@ export default function SermonPlayer({
           <MaterialCommunityIcons name="close" size={20} color={colors.mutedText} />
         </TouchableOpacity>
       </View>
+
+      {/* Full-screen expanded player */}
+      <Modal
+        visible={expanded}
+        animationType="slide"
+        presentationStyle="fullScreen"
+        onRequestClose={() => setExpanded(false)}
+        statusBarTranslucent
+      >
+        <SermonPlayerScreen
+          sermon={sermon}
+          status={status}
+          speedIndex={speedIndex}
+          speeds={SPEEDS}
+          onCycleSpeed={cycleSpeed}
+          onTogglePlay={togglePlay}
+          onSkip={skip}
+          onSeekRatio={seekByRatio}
+          onBack={() => setExpanded(false)}
+          onClose={() => { setExpanded(false); handleClose(); }}
+          busy={busy}
+          failure={failure}
+          playbackError={playbackError}
+        />
+      </Modal>
     </Animated.View>
   );
 }
