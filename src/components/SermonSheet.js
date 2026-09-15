@@ -32,11 +32,9 @@ import { uiFont } from "../theme/fonts";
 import { useTheme } from "../theme/ThemeContext";
 import {
   fetchSermonsForChapter,
-  fetchMoreBookSermons,
   clearSermonCache,
   isAbortError,
   ErrorKind,
-  BOOK_PAGE_SIZE,
   CONGREGATIONS,
 } from "../data/combinedSermonApi";
 import {
@@ -110,9 +108,9 @@ export default function SermonSheet({
   const [chapterSermons, setChapterSermons] = useState([]);
   const [bookSermons, setBookSermons] = useState([]);
   const [bookTotal, setBookTotal] = useState(0);
-  const [bookTotalPages, setBookTotalPages] = useState(0);
-  const [page, setPage] = useState(1);
-  const [loadingMore, setLoadingMore] = useState(false);
+  // true once every GiL page has been fetched (or cache was used). While false
+  // the book section shows a small inline spinner instead of a truncated list.
+  const [bookReady, setBookReady] = useState(false);
 
   const abortRef = useRef(null);
   const bookName = book?.name;
@@ -136,6 +134,7 @@ export default function SermonSheet({
 
     setStatus("loading");
     setFailureKind(null);
+    setBookReady(false);
 
     // Read prefs synchronously from the ref — always current, never stale.
     const enabledSources = enabledSourcesRef.current.slice();
@@ -146,14 +145,19 @@ export default function SermonSheet({
         signal: controller.signal,
         enabledSources,
         cornerstoneCongregations,
+        onBookReady: ({ bookSermons: bs, bookTotal: bt }) => {
+          if (controller.signal.aborted) return;
+          setBookSermons(bs);
+          setBookTotal(bt);
+          setBookReady(true);
+        },
       });
       if (controller.signal.aborted) return;
 
       setChapterSermons(result.chapterSermons);
       setBookSermons(result.bookSermons);
       setBookTotal(result.bookTotal);
-      setBookTotalPages(result.bookTotalPages);
-      setPage(result.page ?? 1);
+      setBookReady(result.bookReady);
       setStatus("ready");
     } catch (err) {
       if (isAbortError(err) || controller.signal.aborted) return;
@@ -212,41 +216,16 @@ export default function SermonSheet({
     []
   );
 
-  const loadMore = useCallback(async () => {
-    if (status !== "ready" || loadingMore) return;
-    if (page >= bookTotalPages) return;
-
-    setLoadingMore(true);
-    const next = page + 1;
-    try {
-      const result = await fetchMoreBookSermons(bookName, next, {
-        signal: abortRef.current?.signal,
-      });
-      // Guard against duplicates if a page somehow arrives twice.
-      setBookSermons((prev) => {
-        const seen = new Set(prev.map((s) => s.id));
-        return [...prev, ...result.sermons.filter((s) => !seen.has(s.id))];
-      });
-      setPage(next);
-    } catch {
-      // Failing to extend the list is not worth destroying what's already on
-      // screen. `page` is left unchanged, so scrolling again simply retries.
-    } finally {
-      setLoadingMore(false);
-    }
-  }, [status, loadingMore, page, bookTotalPages, bookName]);
-
   // A book with no sermons at all. Resolved without hitting the sermon
   // endpoint, so this appears immediately rather than after a spinner.
   const bookIsEmpty =
-    status === "ready" && bookTotal === 0 && chapterSermons.length === 0;
+    status === "ready" && bookReady && bookTotal === 0 && chapterSermons.length === 0;
 
   const sections = useMemo(() => {
     if (status !== "ready" || bookIsEmpty) return [];
 
     // Anything already listed under the chapter is dropped from the book list
-    // below, so no sermon appears twice. Filtering here (rather than at fetch
-    // time) means every page loaded by infinite scroll is covered too.
+    // so no sermon appears twice.
     const shownAbove = new Set(chapterSermons.map((s) => s.id));
     const remaining = shownAbove.size
       ? bookSermons.filter((s) => !shownAbove.has(s.id))
@@ -259,12 +238,13 @@ export default function SermonSheet({
     // When no chapter is specified (e.g. book intro screen), skip the chapter
     // section entirely and just show all book sermons.
     if (!chapterNumber) {
-      return bookSermons.length ? [
+      return bookSermons.length || !bookReady ? [
         {
           key: "book",
           title: `All of ${bookName}`,
-          count: bookTotal,
-          data: bookSermons,
+          count: bookReady ? bookTotal : 0,
+          bookLoading: !bookReady,
+          data: bookSermons.length ? bookSermons : [{ __bookSpinner: true }],
         },
       ] : [];
     }
@@ -279,22 +259,23 @@ export default function SermonSheet({
       },
     ];
 
-    // In short books every sermon can belong to the chapter you're reading —
-    // Amos, Hosea, Malachi and Zechariah all do — which would leave a bare
-    // "Elsewhere" heading over nothing. Drop the section entirely instead.
-    if (remainingTotal > 0) {
+    // Show the book section if either: we have sermons to show, or the book is
+    // still loading (so the spinner is visible). In short books every sermon
+    // may belong to the current chapter — once fully loaded and nothing remains,
+    // drop the section entirely.
+    const showBookSection = !bookReady || remainingTotal > 0;
+    if (showBookSection) {
       built.push({
         key: "book",
-        // "All of John" would be a lie once the chapter's sermons have been
-        // lifted out of it, so the wording follows what's actually shown.
         title: shownAbove.size ? `Elsewhere in ${bookName}` : `All of ${bookName}`,
-        count: remainingTotal,
-        data: remaining,
+        count: bookReady ? remainingTotal : 0,
+        bookLoading: !bookReady,
+        data: bookReady && remaining.length ? remaining : [{ __bookSpinner: true }],
       });
     }
 
     return built;
-  }, [status, bookIsEmpty, bookName, chapterNumber, chapterSermons, bookSermons, bookTotal]);
+  }, [status, bookIsEmpty, bookName, chapterNumber, chapterSermons, bookSermons, bookTotal, bookReady]);
 
   // Both views render the same row, and each row needs the same download
   // wiring, so it's assembled in one place.
@@ -454,19 +435,23 @@ export default function SermonSheet({
         }
         extraData={downloads}
         stickySectionHeadersEnabled={false}
-        onEndReached={loadMore}
-        onEndReachedThreshold={0.6}
         contentContainerStyle={{ paddingBottom: 12 }}
         renderSectionHeader={({ section }) => (
           <View style={[styles.sectionHeader, { backgroundColor: colors.background }]}>
             <Text style={[styles.sectionTitle, { color: colors.mutedText }]}>
               {section.title}
             </Text>
-            {section.count > 0 && (
+            {section.bookLoading ? (
+              <ActivityIndicator
+                size="small"
+                color={colors.mutedText}
+                style={styles.sectionSpinner}
+              />
+            ) : section.count > 0 ? (
               <Text style={[styles.sectionCount, { color: colors.mutedText }]}>
                 {section.count}
               </Text>
-            )}
+            ) : null}
           </View>
         )}
         renderItem={({ item }) => {
@@ -477,13 +462,16 @@ export default function SermonSheet({
               </Text>
             );
           }
+          if (item.__bookSpinner) {
+            return (
+              <ActivityIndicator
+                style={{ marginVertical: 20 }}
+                color={colors.accent}
+              />
+            );
+          }
           return renderSermonRow(item);
         }}
-        ListFooterComponent={
-          loadingMore ? (
-            <ActivityIndicator style={{ marginVertical: 16 }} color={colors.accent} />
-          ) : null
-        }
       />
     );
   };
@@ -976,6 +964,9 @@ const styles = StyleSheet.create({
   sectionCount: {
     fontSize: 11,
     fontFamily: uiFont(500),
+  },
+  sectionSpinner: {
+    marginLeft: 6,
   },
 
   // Rows

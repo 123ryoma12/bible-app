@@ -47,7 +47,8 @@ export const SOURCE_URL = SITE_ROOT;
 // "taking too long" state instead of an indefinite spinner.
 const REQUEST_TIMEOUT_MS = 15000;
 
-// Page size for the "all of <book>" list. The chapter list is fetched whole.
+// Per-request page size when fetching the full book list (all pages are fetched
+// automatically). The chapter list is fetched in one shot with its own limit.
 export const BOOK_PAGE_SIZE = 50;
 const CHAPTER_PAGE_SIZE = 100;
 
@@ -367,70 +368,62 @@ async function fetchSermonsForTerms(termIds, { page = 1, perPage, signal } = {})
 }
 
 /**
- * Everything the sheet needs for one open, in two waves.
+ * Fetch only the chapter sermons for the given chapter — used for the fast
+ * first paint before the full book list is ready.
  *
- * Wave 1 resolves the taxonomy. Wave 2 runs the chapter and book queries
- * concurrently. The chapter list is a query in its own right rather than a
- * client-side filter of page 1, because a book like John has 202 sermons across
- * five pages and filtering a single page would silently miss matches.
- */
-export async function fetchSermonsForChapter(bookName, chapterNumber, { signal } = {}) {
-  const { termIds, chapterTermIds } = await resolveBookTerms(bookName, { signal });
-
-  // No terms at all: this book has no content on the site. Skip the sermon
-  // queries entirely and let the caller render its empty state immediately.
-  if (!termIds.length) {
-    return { chapterSermons: [], bookSermons: [], bookTotal: 0, bookTotalPages: 0 };
-  }
-
-  const chapterTermId = chapterTermIds.get(Number(chapterNumber));
-
-  const [chapterResult, bookResult] = await Promise.all([
-    chapterTermId
-      ? fetchSermonsForTerms([chapterTermId], {
-          perPage: CHAPTER_PAGE_SIZE,
-          signal,
-        })
-      : Promise.resolve({ sermons: [], total: 0, totalPages: 0 }),
-    fetchSermonsForTerms(termIds, { page: 1, perPage: BOOK_PAGE_SIZE, signal }),
-  ]);
-
-  return {
-    chapterSermons: chapterResult.sermons,
-    bookSermons: bookResult.sermons,
-    bookTotal: bookResult.total,
-    bookTotalPages: bookResult.totalPages,
-  };
-}
-
-/**
- * Fetch only the chapter list for a book, skipping the book query entirely.
- *
- * Used when the book-level results are already cached but a different chapter
- * is now being viewed: the chapter list is chapter-specific and cannot be
- * derived from the (paginated) book list, but re-fetching the whole book would
- * throw away a perfectly good cache entry.
+ * Returns `{ sermons, bookTermIds }` — the caller can pass `bookTermIds`
+ * straight into `fetchAllBookSermons` to skip the term-resolution round trip.
  */
 export async function fetchChapterSermons(bookName, chapterNumber, { signal } = {}) {
-  if (!chapterNumber) return { sermons: [] };
-
   const { termIds, chapterTermIds } = await resolveBookTerms(bookName, { signal });
-  if (!termIds.length) return { sermons: [] };
+
+  if (!termIds.length) return { sermons: [], bookTermIds: [] };
+
+  if (!chapterNumber) return { sermons: [], bookTermIds: termIds };
 
   const chapterTermId = chapterTermIds.get(Number(chapterNumber));
-  if (!chapterTermId) return { sermons: [] };
+  if (!chapterTermId) return { sermons: [], bookTermIds: termIds };
 
   const { sermons } = await fetchSermonsForTerms([chapterTermId], {
     perPage: CHAPTER_PAGE_SIZE,
     signal,
   });
-  return { sermons };
+  return { sermons, bookTermIds: termIds };
 }
 
-/** Load a further page of the book list for infinite scroll. */
-export async function fetchMoreBookSermons(bookName, page, { signal } = {}) {
-  const { termIds } = await resolveBookTerms(bookName, { signal });
-  return fetchSermonsForTerms(termIds, { page, perPage: BOOK_PAGE_SIZE, signal });
+/**
+ * Fetch every page of sermons for a book and return them as a flat array.
+ * Pages are fetched sequentially (page 1 → 2 → …) so the server is not
+ * hammered, and the loop stops as soon as the signal is aborted.
+ *
+ * Pass `bookTermIds` (from a prior `fetchChapterSermons` call) to skip the
+ * term-resolution round trip.
+ */
+export async function fetchAllBookSermons(bookName, { signal, bookTermIds } = {}) {
+  const termIds =
+    bookTermIds ?? (await resolveBookTerms(bookName, { signal })).termIds;
+
+  if (!termIds.length) return { sermons: [], total: 0 };
+
+  const all = [];
+  let page = 1;
+  let totalPages = 1;
+
+  do {
+    if (signal?.aborted) throw new SermonError(ErrorKind.UNKNOWN, "Aborted");
+
+    const { sermons, total, totalPages: tp } = await fetchSermonsForTerms(termIds, {
+      page,
+      perPage: BOOK_PAGE_SIZE,
+      signal,
+    });
+
+    all.push(...sermons);
+    totalPages = tp;
+    page += 1;
+  } while (page <= totalPages);
+
+  return { sermons: all, total: all.length };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
