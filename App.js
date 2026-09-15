@@ -7,8 +7,10 @@ import ReaderScreen from "./src/screens/ReaderScreen";
 import HistoryScreen from "./src/screens/HistoryScreen";
 import StatsScreen from "./src/screens/StatsScreen";
 import MemoryScreen from "./src/screens/MemoryScreen";
+import PrayerScreen from "./src/screens/PrayerScreen";
 import BottomTabBar from "./src/components/BottomTabBar";
 import SermonPlayer from "./src/components/SermonPlayer";
+import PrayerMiniBar from "./src/components/PrayerMiniBar";
 import * as SplashScreen from "expo-splash-screen";
 import { useFonts } from "@expo-google-fonts/lora/useFonts";
 import { Lora_400Regular } from "@expo-google-fonts/lora/400Regular";
@@ -42,6 +44,8 @@ import { SourceSerif4_700Bold } from "@expo-google-fonts/source-serif-4/700Bold"
 import { getLastPosition, setLastPosition, setLastScroll } from "./src/data/lastPositionStore";
 import { getSermonPlayback } from "./src/data/sermonPlaybackStore";
 import { loadMemoryPrefs } from "./src/data/memoryPrefsStore";
+import { loadPrayerSettings } from "./src/data/prayerStore";
+import { PrayerSessionProvider, usePrayerSession } from "./src/data/prayerSession";
 import { loadReadingVersion } from "./src/data/bibleVersionStore";
 import { preloadAllProgress } from "./src/data/progressStore";
 import { preloadStatsSettings } from "./src/data/statsSettingsStore";
@@ -111,6 +115,9 @@ export default function App() {
     loadReadingVersion().catch(() => {
       // Non-fatal: the reader falls back to the default version (NIV).
     });
+    loadPrayerSettings().catch(() => {
+      // Non-fatal: the Prayer tab falls back to the default daily goal.
+    });
   }, []);
 
   useEffect(() => {
@@ -129,7 +136,10 @@ export default function App() {
     <SafeAreaProvider>
       <ThemeProvider>
         <BackHandlerProvider>
-          <AppContent />
+          {/* Above AppContent so a running prayer timer survives tab switches. */}
+          <PrayerSessionProvider>
+            <AppContent />
+          </PrayerSessionProvider>
         </BackHandlerProvider>
       </ThemeProvider>
     </SafeAreaProvider>
@@ -140,8 +150,11 @@ const AppContent = memo(function AppContent() {
   const { mode, colors } = useTheme();
   const backRegistry = useBackHandlerRegistry();
   const { width: windowWidth } = useWindowDimensions();
+  // Drives the mini prayer bar in the bottom chrome. The countdown itself lives
+  // in the provider, so this only re-renders App when a session starts/stops.
+  const prayerSession = usePrayerSession();
 
-  // activeTab: "bible" | "memory" | "settings"
+  // activeTab: "bible" | "memory" | "prayer"
   // "bible" is the heat-map / reading progress screen (formerly "stats").
   const [activeTab, setActiveTab] = useState("bible");
 
@@ -731,6 +744,10 @@ const AppContent = memo(function AppContent() {
           <MemoryScreen />
         </LazyScreen>
 
+        <LazyScreen active={activeTab === "prayer"}>
+          <PrayerScreen />
+        </LazyScreen>
+
         {/* History overlays everything — must come last so it renders on top. */}
         {screen === "history" && (
           <HistoryScreen onSelectEntry={openChapterDirect} onBack={closeHistory} />
@@ -772,6 +789,17 @@ const AppContent = memo(function AppContent() {
             // Session restore — skip page scrape and seek to saved position.
             initialAudioUrl={restoredAudioUrl}
             seekTo={restoredSeekTo}
+          />
+        )}
+
+        {/* Prayer session strip — only while a session is live AND the user has
+            navigated away from the Prayer tab (on that tab the full timer is
+            already on screen). Tapping it returns to the timer. */}
+        {prayerSession.isActive && activeTab !== "prayer" && (
+          <PrayerMiniBar
+            onPress={() => onTabBarChange("prayer")}
+            visible={chromeState.visible}
+            hideDistance={chromeState.height}
           />
         )}
 

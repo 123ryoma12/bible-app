@@ -1,14 +1,16 @@
 import React, { useEffect, useRef, useState } from "react";
 import { View, Text, TouchableOpacity, StyleSheet, Animated } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
+import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTheme } from "../theme/ThemeContext";
 import { uiFont } from "../theme/fonts";
 
 // Each tab has a filled icon (active) and an outline icon (inactive) for a
 // clear selected state alongside the accent color.
+// library: "Ionicons" (default) | "MaterialCommunityIcons"
 const TABS = [
   { key: "bible", label: "Bible", icon: "stats-chart", iconOutline: "stats-chart-outline" },
+  { key: "prayer", label: "Prayer", icon: "hands-pray", iconOutline: "hands-pray", library: "MaterialCommunityIcons" },
   { key: "memory", label: "Memory", icon: "bulb", iconOutline: "bulb-outline" },
 ];
 
@@ -70,12 +72,21 @@ export default function BottomTabBar({ active, onChange, visible = true }) {
             onPress={() => onChange(tab.key)}
             hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
           >
-            <Ionicons
-              name={isActive ? tab.icon : tab.iconOutline}
-              size={22}
-              color={isActive ? colors.accent : colors.secondaryText}
-              style={styles.icon}
-            />
+            {tab.library === "MaterialCommunityIcons" ? (
+              <MaterialCommunityIcons
+                name={isActive ? tab.icon : tab.iconOutline}
+                size={22}
+                color={isActive ? colors.accent : colors.secondaryText}
+                style={styles.icon}
+              />
+            ) : (
+              <Ionicons
+                name={isActive ? tab.icon : tab.iconOutline}
+                size={22}
+                color={isActive ? colors.accent : colors.secondaryText}
+                style={styles.icon}
+              />
+            )}
             <Text
               numberOfLines={1}
               adjustsFontSizeToFit
