@@ -229,9 +229,7 @@ export default function BookIntroScreen({
           accessibilityRole="button"
           accessibilityLabel="Back"
         >
-          <Text style={[styles.topBarBack, { color: colors.accent, fontFamily: uiFont(500) }]}>
-            ‹ Back
-          </Text>
+          <MaterialCommunityIcons name="chevron-left" size={26} color={colors.accent} />
         </TouchableOpacity>
 
         <Text
@@ -325,10 +323,6 @@ const styles = StyleSheet.create({
   topBarBtn: {
     minWidth: 56,
     alignItems: "center",
-  },
-  topBarBack: {
-    fontSize: 16,
-    alignSelf: "flex-start",
   },
   topBarTitle: {
     fontSize: 17,

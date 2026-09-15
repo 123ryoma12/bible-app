@@ -11,6 +11,7 @@ import {
   Alert,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { BOOKS } from "../../data/books";
 import {
   getVersesInRange,
@@ -156,10 +157,14 @@ export default function MemoryAdd({ onDone, onCancel }) {
         edges={["top", "left", "right"]}
       >
         <View style={[styles.header, { borderBottomColor: colors.border }]}>
-          <TouchableOpacity style={styles.backBtn} onPress={onCancel} hitSlop={hit}>
-            <Text style={[styles.back, { color: colors.accent }]} numberOfLines={1}>
-              {"‹ Cancel"}
-            </Text>
+          <TouchableOpacity
+            style={styles.backBtn}
+            onPress={onCancel}
+            hitSlop={hit}
+            accessibilityRole="button"
+            accessibilityLabel="Cancel"
+          >
+            <MaterialCommunityIcons name="chevron-left" size={26} color={colors.accent} />
           </TouchableOpacity>
           <Text style={[styles.title, { color: colors.text }]}>Pick a version</Text>
           <View style={styles.headerSpacer} />
@@ -208,10 +213,10 @@ export default function MemoryAdd({ onDone, onCancel }) {
             style={styles.backBtn}
             onPress={() => pickVersion(null)}
             hitSlop={hit}
+            accessibilityRole="button"
+            accessibilityLabel="Back to version picker"
           >
-            <Text style={[styles.back, { color: colors.accent }]} numberOfLines={1}>
-              {"‹ Version"}
-            </Text>
+            <MaterialCommunityIcons name="chevron-left" size={26} color={colors.accent} />
           </TouchableOpacity>
           <Text style={[styles.title, { color: colors.text }]}>
             Pick a book · {versionAbbr(version)}
@@ -261,10 +266,14 @@ export default function MemoryAdd({ onDone, onCancel }) {
       edges={["top", "left", "right"]}
     >
       <View style={[styles.header, { borderBottomColor: colors.border }]}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => pickBook(null)} hitSlop={hit}>
-          <Text style={[styles.back, { color: colors.accent }]} numberOfLines={1}>
-            {"‹ Books"}
-          </Text>
+        <TouchableOpacity
+          style={styles.backBtn}
+          onPress={() => pickBook(null)}
+          hitSlop={hit}
+          accessibilityRole="button"
+          accessibilityLabel="Back to books"
+        >
+          <MaterialCommunityIcons name="chevron-left" size={26} color={colors.accent} />
         </TouchableOpacity>
         <Text
           style={[styles.title, { color: colors.text }]}
@@ -538,9 +547,8 @@ const styles = StyleSheet.create({
     paddingBottom: 8,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
-  backBtn: { width: 84 },
-  headerSpacer: { width: 84 },
-  back: { fontSize: 16, fontFamily: uiFont(500) },
+  backBtn: { width: 40 },
+  headerSpacer: { width: 40 },
   title: { flex: 1, fontSize: 20, fontFamily: uiFont(700), textAlign: "center" },
   sectionHeader: {
     fontSize: 13,

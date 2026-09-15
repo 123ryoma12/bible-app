@@ -448,8 +448,10 @@ export default function StatsScreen({ onOpenChapter, initialChapter, currentChap
             onPress={onBack}
             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
             style={styles.navSide}
+            accessibilityRole="button"
+            accessibilityLabel="Back"
           >
-            <Text style={[styles.navBack, { color: colors.accent }]}>‹ Back</Text>
+            <MaterialCommunityIcons name="chevron-left" size={26} color={colors.accent} />
           </TouchableOpacity>
         ) : (
           <View style={styles.navSide} />
@@ -460,8 +462,10 @@ export default function StatsScreen({ onOpenChapter, initialChapter, currentChap
           <TouchableOpacity
             onPress={onOpenHistory}
             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            accessibilityRole="button"
+            accessibilityLabel="History"
           >
-            <Text style={[styles.navHistory, { color: colors.accent }]}>History</Text>
+            <MaterialCommunityIcons name="history" size={24} color={colors.accent} />
           </TouchableOpacity>
         </View>
       </View>
@@ -866,19 +870,11 @@ const styles = StyleSheet.create({
   navSideRight: {
     alignItems: "flex-end",
   },
-  navBack: {
-    fontSize: 16,
-    fontFamily: uiFont(500),
-  },
   navTitle: {
     flex: 1,
     textAlign: "center",
     fontSize: 17,
     fontFamily: uiFont(700),
-  },
-  navHistory: {
-    fontSize: 16,
-    fontFamily: uiFont(500),
   },
   statsRow: {
     flexDirection: "row",

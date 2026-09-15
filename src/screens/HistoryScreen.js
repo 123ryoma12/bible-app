@@ -8,6 +8,7 @@ import {
   ActivityIndicator,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { BOOKS } from "../data/books";
 import { getHistoryPage, PAGE_SIZE } from "../data/historyStore";
 
@@ -147,10 +148,10 @@ export default function HistoryScreen({ onSelectEntry, onBack }) {
           style={styles.backBtn}
           onPress={onBack}
           hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          accessibilityRole="button"
+          accessibilityLabel="Back"
         >
-          <Text style={[styles.back, { color: colors.accent }]} numberOfLines={1}>
-            {"‹ Back"}
-          </Text>
+          <MaterialCommunityIcons name="chevron-left" size={26} color={colors.accent} />
         </TouchableOpacity>
         <Text style={[styles.title, { color: colors.text }]}>History</Text>
         <View style={styles.headerSpacer} />
@@ -188,9 +189,8 @@ const styles = StyleSheet.create({
     paddingBottom: 8,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
-  backBtn: { width: 70 },
-  headerSpacer: { width: 70 },
-  back: { fontSize: 16, fontFamily: uiFont(400) },
+  backBtn: { width: 40 },
+  headerSpacer: { width: 40 },
   title: { flex: 1, fontSize: 20, fontFamily: uiFont(700), textAlign: "center" },
   empty: {
     flex: 1,

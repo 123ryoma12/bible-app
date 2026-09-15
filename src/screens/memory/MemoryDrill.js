@@ -11,7 +11,7 @@ import {
   Platform,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { Ionicons } from "@expo/vector-icons";
+import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { readingFont, uiFont } from "../../theme/fonts";
 import { useTheme } from "../../theme/ThemeContext";
 import {
@@ -461,10 +461,14 @@ export default function MemoryDrill({ list, startIndex = 0, onExit }) {
       edges={["top", "left", "right"]}
     >
       <View style={[styles.header, { borderBottomColor: colors.border }]}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => onExit()} hitSlop={hit}>
-          <Text style={[styles.back, { color: colors.accent }]} numberOfLines={1}>
-            {"‹ Memory"}
-          </Text>
+        <TouchableOpacity
+          style={styles.backBtn}
+          onPress={() => onExit()}
+          hitSlop={hit}
+          accessibilityRole="button"
+          accessibilityLabel="Back to memory"
+        >
+          <MaterialCommunityIcons name="chevron-left" size={26} color={colors.accent} />
         </TouchableOpacity>
         <View style={styles.headerCenter}>
           <Text numberOfLines={1} style={[styles.title, { color: colors.text }]}>
@@ -709,10 +713,9 @@ const styles = StyleSheet.create({
     paddingBottom: 8,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
-  backBtn: { width: 84 },
+  backBtn: { width: 40 },
   resetBtn: { width: 84, alignItems: "flex-end" },
   headerCenter: { flex: 1, alignItems: "center", paddingHorizontal: 4 },
-  back: { fontSize: 16, fontFamily: uiFont() },
   title: { fontSize: 17, fontFamily: uiFont(700) },
   subtitle: { fontSize: 12, marginTop: 2, fontFamily: uiFont() },
   // The verses ScrollView fills the space between the header and the hint/input.
