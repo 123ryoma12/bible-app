@@ -11,6 +11,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
+import { AppSettingsButton } from "../components/AppSettingsModal";
 import { useTheme } from "../theme/ThemeContext";
 import { uiFont } from "../theme/fonts";
 import { useScreenBackHandler } from "../navigation/BackHandlerRegistry";
@@ -213,15 +214,16 @@ export default function MemoryScreen() {
       <View style={styles.headerRow}>
         <Text style={[styles.title, { color: colors.text }]}>Memory</Text>
         <View style={styles.headerActions}>
+          <AppSettingsButton />
           <TouchableOpacity
             onPress={() => setShowPriority(true)}
             hitSlop={hit}
             accessibilityLabel="Prioritisation settings"
           >
-            <Ionicons name="settings-outline" size={22} color={colors.mutedText} />
+            <Ionicons name="options-outline" size={22} color={colors.mutedText} />
           </TouchableOpacity>
-          <TouchableOpacity onPress={() => setView("add")} hitSlop={hit}>
-            <Text style={[styles.addLink, { color: colors.accent }]}>+ Add</Text>
+          <TouchableOpacity onPress={() => setView("add")} hitSlop={hit} accessibilityLabel="Add verse">
+            <Ionicons name="add-circle-outline" size={26} color={colors.accent} />
           </TouchableOpacity>
         </View>
       </View>
@@ -352,7 +354,7 @@ export default function MemoryScreen() {
             No memory verses yet
           </Text>
           <Text style={[styles.emptySub, { color: colors.secondaryText }]}>
-            Tap “+ Add” to choose a verse or a range of consecutive verses to
+            Tap the + button above to choose a verse or a range of consecutive verses to
             start memorising.
           </Text>
         </View>
@@ -470,9 +472,17 @@ const styles = StyleSheet.create({
     paddingTop: 12,
     paddingBottom: 8,
   },
+  headerSettingsLeft: {
+    position: "absolute",
+    left: 20,
+    top: 0,
+    bottom: 0,
+    justifyContent: "center",
+    zIndex: 1,
+  },
   title: { fontSize: 28, fontFamily: uiFont(700) },
   addLink: { fontSize: 16, fontFamily: uiFont(600) },
-  headerActions: { flexDirection: "row", alignItems: "center", gap: 16 },
+  headerActions: { flexDirection: "row", alignItems: "center", gap: 22 },
   modalBackdrop: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.45)",

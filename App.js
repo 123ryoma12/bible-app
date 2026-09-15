@@ -7,7 +7,6 @@ import ReaderScreen from "./src/screens/ReaderScreen";
 import HistoryScreen from "./src/screens/HistoryScreen";
 import StatsScreen from "./src/screens/StatsScreen";
 import MemoryScreen from "./src/screens/MemoryScreen";
-import SettingsScreen from "./src/screens/SettingsScreen";
 import BottomTabBar from "./src/components/BottomTabBar";
 import SermonPlayer from "./src/components/SermonPlayer";
 import * as SplashScreen from "expo-splash-screen";
@@ -591,7 +590,7 @@ const AppContent = memo(function AppContent() {
         return true;
       }
 
-      // 3. On Memory/Settings, back returns to exactly the bible sub-screen
+      // 3. On Memory, back returns to exactly the bible sub-screen
       // that was active when the user left.
       setActiveTab("bible");
       if (lastBibleScreen.current === "reader") {
@@ -608,7 +607,7 @@ const AppContent = memo(function AppContent() {
   }, [activeTab, screen, backRegistry, readerTabs.length, activeTabId]);
 
   // Flush scroll position to storage whenever the user leaves the reader —
-  // navigating to any other screen (stats, history, settings, memory, bible
+  // navigating to any other screen (stats, history, memory, bible
   // heatmap) counts as "leaving". We only need the write when screen changes
   // away from "reader"; arriving back at "reader" doesn't need a flush.
   const prevScreenRef = useRef(screen);
@@ -719,10 +718,6 @@ const AppContent = memo(function AppContent() {
             their mount cost on startup and keeps tab switching instant. */}
         <LazyScreen active={activeTab === "memory"}>
           <MemoryScreen />
-        </LazyScreen>
-
-        <LazyScreen active={activeTab === "settings"}>
-          <SettingsScreen />
         </LazyScreen>
 
         {/* History overlays everything — must come last so it renders on top. */}

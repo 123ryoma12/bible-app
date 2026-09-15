@@ -27,7 +27,7 @@ export function getBookInfo(bookName) {
 // ---------------------------------------------------------------------------
 // Outline item — flat indented list
 // ---------------------------------------------------------------------------
-function OutlineItem({ item, colors, readingFontKey }) {
+function OutlineItem({ item, colors, readingFontKey, fontScale }) {
   const indent = (item.level - 1) * 16;
   const isTopLevel = item.level === 1;
   return (
@@ -38,7 +38,8 @@ function OutlineItem({ item, colors, readingFontKey }) {
           {
             color: colors.accent,
             fontFamily: uiFont(isTopLevel ? 600 : 400),
-            width: isTopLevel ? 28 : 22,
+            fontSize: 13 * fontScale,
+            width: isTopLevel ? 28 * fontScale : 22 * fontScale,
           },
         ]}
       >
@@ -50,13 +51,15 @@ function OutlineItem({ item, colors, readingFontKey }) {
           {
             color: isTopLevel ? colors.text : colors.secondaryText,
             fontFamily: readingFont(readingFontKey, isTopLevel ? "semiBold" : "regular"),
+            fontSize: 13 * fontScale,
+            lineHeight: 20 * fontScale,
             flex: 1,
           },
         ]}
       >
         {item.text}
         {item.reference ? (
-          <Text style={[styles.outlineRef, { color: colors.mutedText }]}>
+          <Text style={[styles.outlineRef, { color: colors.mutedText, fontSize: 12 * fontScale }]}>
             {"  "}({item.reference})
           </Text>
         ) : null}
@@ -68,7 +71,7 @@ function OutlineItem({ item, colors, readingFontKey }) {
 // ---------------------------------------------------------------------------
 // Section — heading label + content, no box, no collapse
 // ---------------------------------------------------------------------------
-function Section({ section, colors, readingFontKey, sectionRef }) {
+function Section({ section, colors, readingFontKey, fontScale, sectionRef }) {
   const isOutline = section.heading === "Outline";
   return (
     <View ref={sectionRef} style={styles.section}>
@@ -78,7 +81,7 @@ function Section({ section, colors, readingFontKey, sectionRef }) {
       {isOutline ? (
         <View style={styles.outlineList}>
           {section.content.map((item, i) => (
-            <OutlineItem key={i} item={item} colors={colors} readingFontKey={readingFontKey} />
+            <OutlineItem key={i} item={item} colors={colors} readingFontKey={readingFontKey} fontScale={fontScale} />
           ))}
         </View>
       ) : (
@@ -89,7 +92,12 @@ function Section({ section, colors, readingFontKey, sectionRef }) {
               style={[
                 styles.sectionText,
                 i > 0 && styles.sectionTextParagraph,
-                { color: colors.text, fontFamily: readingFont(readingFontKey, "regular") },
+                {
+                  color: colors.text,
+                  fontFamily: readingFont(readingFontKey, "regular"),
+                  fontSize: 15 * fontScale,
+                  lineHeight: 25 * fontScale,
+                },
               ]}
             >
               {para}
@@ -110,7 +118,7 @@ export function TocSheet({ sections, onSelect, onClose, colors }) {
     <Modal
       transparent
       visible
-      animationType="slide"
+      animationType="none"
       onRequestClose={onClose}
       statusBarTranslucent
     >
@@ -162,7 +170,7 @@ export default function BookIntroView({
   onOpenChapter,
   onSectionRefs,
 }) {
-  const { colors, readingFontKey } = useTheme();
+  const { colors, readingFontKey, fontScale } = useTheme();
   const info = getBookInfo(book.name);
   const sectionRefs = useRef([]);
 
@@ -180,7 +188,7 @@ export default function BookIntroView({
         <Text
           style={[
             styles.heroTitle,
-            { color: colors.text, fontFamily: readingFont(readingFontKey, "bold") },
+            { color: colors.text, fontFamily: readingFont(readingFontKey, "bold"), fontSize: 28 * fontScale },
           ]}
         >
           {book.name}
@@ -195,6 +203,7 @@ export default function BookIntroView({
           section={section}
           colors={colors}
           readingFontKey={readingFontKey}
+          fontScale={fontScale}
           sectionRef={(ref) => handleSectionRef(ref, i)}
         />
       ))}

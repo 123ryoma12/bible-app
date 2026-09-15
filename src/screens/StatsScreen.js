@@ -11,6 +11,7 @@ import {
 } from "react-native";
 import { uiFont } from "../theme/fonts";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
+import { AppSettingsButton } from "../components/AppSettingsModal";
 import { SafeAreaView } from "react-native-safe-area-context";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { BOOKS } from "../data/books";
@@ -454,13 +455,15 @@ export default function StatsScreen({ onOpenChapter, initialChapter, currentChap
           <View style={styles.navSide} />
         )}
         <Text style={[styles.navTitle, { color: colors.text }]}>Bible</Text>
-        <TouchableOpacity
-          onPress={onOpenHistory}
-          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-          style={[styles.navSide, styles.navSideRight]}
-        >
-          <Text style={[styles.navHistory, { color: colors.accent }]}>History</Text>
-        </TouchableOpacity>
+        <View style={[styles.navSide, styles.navSideRight, { flexDirection: "row", alignItems: "center", justifyContent: "flex-end", gap: 14 }]}>
+          <AppSettingsButton />
+          <TouchableOpacity
+            onPress={onOpenHistory}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          >
+            <Text style={[styles.navHistory, { color: colors.accent }]}>History</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* Compact stats row: progress bar + percent + range + goal icons */}
@@ -851,6 +854,14 @@ const styles = StyleSheet.create({
   },
   navSide: {
     minWidth: 70,
+  },
+  navSettingsLeft: {
+    position: "absolute",
+    left: 16,
+    top: 0,
+    bottom: 0,
+    justifyContent: "center",
+    zIndex: 1,
   },
   navSideRight: {
     alignItems: "flex-end",

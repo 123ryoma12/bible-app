@@ -14,11 +14,6 @@ import { uiFont } from "../theme/fonts";
 import { exportBackup, importBackup } from "../data/backupStore";
 import { BUILD_DATE, BUILD_COMMIT, APP_VERSION } from "../data/buildInfo";
 
-const APPEARANCE_OPTIONS = [
-  { key: "light", label: "Light Mode" },
-  { key: "dark", label: "Dark Mode" },
-];
-
 function SectionHeader({ title, colors, first = false }) {
   return (
     <>
@@ -31,7 +26,7 @@ function SectionHeader({ title, colors, first = false }) {
 }
 
 export default function SettingsScreen() {
-  const { mode, setMode, colors } = useTheme();
+  const { colors } = useTheme();
   // "idle" | "backing-up" | "restoring" - drives the row spinners and disables
   // both actions while one is running.
   const [busy, setBusy] = useState("idle");
@@ -98,35 +93,10 @@ export default function SettingsScreen() {
       <ScrollView contentContainerStyle={{ paddingBottom: 24 }}>
         <Text style={[styles.title, { color: colors.text }]}>Settings</Text>
 
-        {/* Appearance */}
-        <SectionHeader title="Appearance" colors={colors} first />
-        <View style={[styles.appearanceToggle, { borderColor: colors.border }]}>
-          {APPEARANCE_OPTIONS.map((opt) => {
-            const isActive = mode === opt.key;
-            return (
-              <TouchableOpacity
-                key={opt.key}
-                style={[
-                  styles.appearanceOption,
-                  { backgroundColor: isActive ? colors.accent : "transparent" },
-                ]}
-                onPress={() => setMode(opt.key)}
-                accessibilityRole="button"
-                accessibilityState={{ selected: isActive }}
-                accessibilityLabel={opt.label}
-              >
-                <Text style={[styles.appearanceOptionText, { color: isActive ? colors.accentContrast : colors.text }]}>
-                  {opt.key === "light" ? "Light" : "Dark"}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
-        </View>
-
         {/* Data: local backup & restore. All app data lives on this device;
             these let the user save a JSON backup file and restore it later or
             on another device. */}
-        <SectionHeader title="Data" colors={colors} />
+        <SectionHeader title="Data" colors={colors} first />
 
         <TouchableOpacity
           style={[styles.row, { borderBottomColor: colors.border }]}
@@ -215,24 +185,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingTop: 16,
     paddingBottom: 8,
-  },
-  appearanceToggle: {
-    flexDirection: "row",
-    marginHorizontal: 20,
-    borderWidth: 1,
-    borderRadius: 12,
-    padding: 3,
-  },
-  appearanceOption: {
-    flex: 1,
-    minHeight: 42,
-    borderRadius: 9,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  appearanceOptionText: {
-    fontSize: 14,
-    fontFamily: uiFont(600),
   },
   row: {
     flexDirection: "row",

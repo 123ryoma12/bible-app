@@ -27,7 +27,7 @@ function getBookInfo(bookName) {
 // ---------------------------------------------------------------------------
 // Outline item — renders one entry with indentation by level
 // ---------------------------------------------------------------------------
-function OutlineItem({ item, colors, readingFontKey }) {
+function OutlineItem({ item, colors, fontScale, readingFontKey }) {
   const indentPerLevel = 16;
   const indent = (item.level - 1) * indentPerLevel;
   const isTopLevel = item.level === 1;
@@ -36,8 +36,14 @@ function OutlineItem({ item, colors, readingFontKey }) {
     <View style={[styles.outlineItem, { paddingLeft: indent }]}>
       <Text
         style={[
-          isTopLevel ? styles.outlineTopMarker : styles.outlineSubMarker,
-          { color: colors.accent, fontFamily: uiFont(isTopLevel ? 600 : 400) },
+          styles.outlineMarker,
+          {
+            color: colors.accent,
+            fontFamily: uiFont(isTopLevel ? 600 : 400),
+            width: isTopLevel ? 28 : 22,
+            fontSize: 13 * fontScale,
+            lineHeight: 20 * fontScale,
+          },
         ]}
       >
         {item.marker}.
@@ -45,16 +51,18 @@ function OutlineItem({ item, colors, readingFontKey }) {
       <View style={styles.outlineItemBody}>
         <Text
           style={[
-            isTopLevel ? styles.outlineTopText : styles.outlineSubText,
+            styles.outlineText,
             {
               color: isTopLevel ? colors.text : colors.secondaryText,
               fontFamily: readingFont(readingFontKey, isTopLevel ? "semiBold" : "regular"),
+              fontSize: 13 * fontScale,
+              lineHeight: 20 * fontScale,
             },
           ]}
         >
           {item.text}
           {item.reference ? (
-            <Text style={[styles.outlineRef, { color: colors.mutedText }]}>
+            <Text style={[styles.outlineRef, { color: colors.mutedText, fontSize: 12 * fontScale }]}>
               {"  "}({item.reference})
             </Text>
           ) : null}
@@ -67,7 +75,7 @@ function OutlineItem({ item, colors, readingFontKey }) {
 // ---------------------------------------------------------------------------
 // Section card — collapsible section with heading + content
 // ---------------------------------------------------------------------------
-function SectionCard({ section, colors, readingFontKey }) {
+function SectionCard({ section, colors, fontScale, readingFontKey }) {
   const [expanded, setExpanded] = useState(section.heading === "Title" || section.heading === "Title and Author");
   const toggle = useCallback(() => setExpanded((v) => !v), []);
 
@@ -100,6 +108,7 @@ function SectionCard({ section, colors, readingFontKey }) {
                 key={i}
                 item={item}
                 colors={colors}
+                fontScale={fontScale}
                 readingFontKey={readingFontKey}
               />
             ))
@@ -111,6 +120,8 @@ function SectionCard({ section, colors, readingFontKey }) {
                 {
                   color: colors.text,
                   fontFamily: readingFont(readingFontKey, "regular"),
+                  fontSize: 15 * fontScale,
+                  lineHeight: 24 * fontScale,
                 },
               ]}
             >
@@ -165,7 +176,7 @@ export default function BookIntroScreen({
   onOpenChapter,    // open chapter 1
   bottomChromeHeight = 0,
 }) {
-  const { colors, readingFontKey } = useTheme();
+  const { colors, fontScale, readingFontKey } = useTheme();
   const insets = useSafeAreaInsets();
   const scrollRef = useRef(null);
   const sectionRefs = useRef([]);
@@ -253,7 +264,7 @@ export default function BookIntroScreen({
       >
         {/* Decorative book title */}
         <View style={styles.hero}>
-          <Text style={[styles.heroTitle, { color: colors.text, fontFamily: readingFont(readingFontKey, "bold") }]}>
+          <Text style={[styles.heroTitle, { color: colors.text, fontFamily: readingFont(readingFontKey, "bold"), fontSize: 26 * fontScale, lineHeight: 34 * fontScale }]}>
             {decorativeTitle}
           </Text>
           <View style={[styles.heroRule, { backgroundColor: colors.accent }]} />
@@ -268,6 +279,7 @@ export default function BookIntroScreen({
             <SectionCard
               section={section}
               colors={colors}
+              fontScale={fontScale}
               readingFontKey={readingFontKey}
             />
           </View>
@@ -337,9 +349,7 @@ const styles = StyleSheet.create({
     paddingVertical: 28,
   },
   heroTitle: {
-    fontSize: 26,
     textAlign: "center",
-    lineHeight: 34,
   },
   heroRule: {
     width: 48,
@@ -373,41 +383,23 @@ const styles = StyleSheet.create({
     paddingBottom: 14,
     paddingTop: 2,
   },
-  cardText: {
-    fontSize: 15,
-    lineHeight: 24,
-  },
+  cardText: {},
 
   // Outline
   outlineItem: {
     flexDirection: "row",
     marginBottom: 6,
   },
-  outlineTopMarker: {
-    fontSize: 13,
-    width: 28,
-    paddingTop: 1,
-  },
-  outlineSubMarker: {
-    fontSize: 13,
-    width: 22,
+  outlineMarker: {
     paddingTop: 1,
   },
   outlineItemBody: {
     flex: 1,
   },
-  outlineTopText: {
-    fontSize: 13,
-    lineHeight: 20,
+  outlineText: {
     letterSpacing: 0.1,
   },
-  outlineSubText: {
-    fontSize: 13,
-    lineHeight: 20,
-  },
-  outlineRef: {
-    fontSize: 12,
-  },
+  outlineRef: {},
 
   // Read CTA
   readBtn: {

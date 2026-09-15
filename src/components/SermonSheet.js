@@ -256,6 +256,19 @@ export default function SermonSheet({
     // to shed them as well or the header would promise more than it lists.
     const remainingTotal = Math.max(bookTotal - shownAbove.size, 0);
 
+    // When no chapter is specified (e.g. book intro screen), skip the chapter
+    // section entirely and just show all book sermons.
+    if (!chapterNumber) {
+      return bookSermons.length ? [
+        {
+          key: "book",
+          title: `All of ${bookName}`,
+          count: bookTotal,
+          data: bookSermons,
+        },
+      ] : [];
+    }
+
     const built = [
       {
         key: "chapter",
@@ -491,7 +504,7 @@ export default function SermonSheet({
         : "Available offline"
       : view === "sources"
         ? "Choose your sermon sources"
-        : `${bookName} ${chapterNumber}`;
+        : chapterNumber ? `${bookName} ${chapterNumber}` : `All of ${bookName}`;
 
   return (
     <Modal

@@ -10,7 +10,6 @@ import { uiFont } from "../theme/fonts";
 const TABS = [
   { key: "bible", label: "Bible", icon: "stats-chart", iconOutline: "stats-chart-outline" },
   { key: "memory", label: "Memory", icon: "bulb", iconOutline: "bulb-outline" },
-  { key: "settings", label: "Settings", icon: "settings", iconOutline: "settings-outline" },
 ];
 
 export default function BottomTabBar({ active, onChange, visible = true }) {

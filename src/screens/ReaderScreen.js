@@ -148,7 +148,7 @@ export default function ReaderScreen({
     if (ref && scrollRef.current) {
       ref.measureLayout(
         scrollRef.current,
-        (_x, y) => scrollRef.current?.scrollTo({ y, animated: true }),
+        (_x, y) => scrollRef.current?.scrollTo({ y, animated: false }),
         () => {}
       );
     }
@@ -460,7 +460,7 @@ export default function ReaderScreen({
         onHeightChange={setTopBarHeight}
         activeVersion={version}
         onVersionChange={() => setVersionKey((k) => k + 1)}
-        onOpenSermons={isIntro ? undefined : () => setSermonsOpen(true)}
+        onOpenSermons={() => setSermonsOpen(true)}
         onOpenHistory={onOpenHistory}
         notesOpen={notesOpen}
         onToggleNotes={isIntro ? undefined : handleToggleNotes}
@@ -487,7 +487,7 @@ export default function ReaderScreen({
           visible={sermonsOpen}
           onClose={() => setSermonsOpen(false)}
           book={book}
-          chapterNumber={chapterNumber}
+          chapterNumber={isIntro ? null : chapterNumber}
           onSelectSermon={handleSelectSermon}
           activeSermonId={activeSermonId}
         />

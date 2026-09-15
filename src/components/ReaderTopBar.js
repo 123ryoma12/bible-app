@@ -30,13 +30,14 @@ import {
   FONT_SCALE_STEP,
 } from "../theme/ThemeContext";
 import { setReadingVersion } from "../data/bibleVersionStore";
+import { AppSettingsButton } from "./AppSettingsModal";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Sub-component: Appearance dropdown (font typeface + size)
 // ─────────────────────────────────────────────────────────────────────────────
 
 function AppearanceMenu({ visible, onClose, dropdownTop }) {
-  const { colors, fontScale, setFontScale, readingFontKey, setReadingFontKey } = useTheme();
+  const { colors, mode, setMode, fontScale, setFontScale, readingFontKey, setReadingFontKey } = useTheme();
 
   if (!visible) return null;
 
@@ -50,6 +51,36 @@ function AppearanceMenu({ visible, onClose, dropdownTop }) {
     >
       <TouchableOpacity style={styles.fullScreen} activeOpacity={1} onPress={onClose}>
         <TouchableOpacity activeOpacity={1} onPress={() => {}} style={[styles.menuCard, { backgroundColor: colors.surface, borderColor: colors.border, top: dropdownTop, left: 12, right: 12 }]}>
+
+        {/* Theme toggle */}
+        <View style={styles.menuSection}>
+          <Text style={[styles.menuLabel, { color: colors.mutedText }]}>Theme</Text>
+          <View style={[styles.themeToggle, { borderColor: colors.border }]}>
+            {[{ key: "light", label: "Light" }, { key: "dark", label: "Dark" }].map((opt) => {
+              const isActive = mode === opt.key;
+              return (
+                <TouchableOpacity
+                  key={opt.key}
+                  style={[
+                    styles.themeOption,
+                    { backgroundColor: isActive ? colors.accent : "transparent" },
+                  ]}
+                  onPress={() => setMode(opt.key)}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: isActive }}
+                  accessibilityLabel={opt.label + " mode"}
+                >
+                  <Text style={[styles.themeOptionText, { color: isActive ? colors.accentContrast : colors.text }]}>
+                    {opt.label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </View>
+
+        <View style={[styles.menuDivider, { backgroundColor: colors.border }]} />
+
         {/* Font size row */}
         <View style={styles.menuSection}>
           <Text style={[styles.menuLabel, { color: colors.mutedText }]}>Font size</Text>
@@ -317,19 +348,22 @@ export default function ReaderTopBar({
           </TouchableOpacity>
         ) : null}
 
-        {/* Listen button — hidden on book intro tabs. */}
-        {!onToggleToc && (
-          <TouchableOpacity
-            style={styles.listenBtn}
-            onPress={handleOpenSermons}
-            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-            accessibilityRole="button"
-            accessibilityLabel="Listen to sermons"
-            accessibilityHint="Opens sermons for this book"
-          >
-            <MaterialCommunityIcons name="headphones" size={24} color={colors.text} />
-          </TouchableOpacity>
-        )}
+        {/* Listen button */}
+        <TouchableOpacity
+          style={styles.listenBtn}
+          onPress={handleOpenSermons}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          accessibilityRole="button"
+          accessibilityLabel="Listen to sermons"
+          accessibilityHint="Opens sermons for this book"
+        >
+          <MaterialCommunityIcons name="headphones" size={24} color={colors.text} />
+        </TouchableOpacity>
+
+        {/* App settings */}
+        <View style={styles.settingsBtn}>
+          <AppSettingsButton color={colors.text} />
+        </View>
 
         {/* Aa Appearance button */}
         <TouchableOpacity
@@ -369,6 +403,7 @@ export default function ReaderTopBar({
             {activeVersion?.toUpperCase() ?? "NIV"}
           </Text>
         </TouchableOpacity>
+
       </Animated.View>
 
       <AppearanceMenu
@@ -401,11 +436,27 @@ const styles = StyleSheet.create({
     zIndex: 10,
   },
 
+  // Settings button — pinned to the left edge of the bar
+  settingsLeft: {
+    position: "absolute",
+    left: 14,
+    top: 0,
+    bottom: 0,
+    justifyContent: "center",
+  },
+  settingsBtn: {
+    paddingVertical: 6,
+    paddingHorizontal: 8,
+    marginRight: 6,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+
   // Study notes toggle button
   notesBtn: {
     paddingVertical: 6,
-    paddingHorizontal: 6,
-    marginRight: 4,
+    paddingHorizontal: 8,
+    marginRight: 6,
     justifyContent: "center",
     alignItems: "center",
   },
@@ -413,8 +464,8 @@ const styles = StyleSheet.create({
   // Listen (sermons) button
   listenBtn: {
     paddingVertical: 6,
-    paddingHorizontal: 6,
-    marginRight: 4,
+    paddingHorizontal: 8,
+    marginRight: 6,
     justifyContent: "center",
     alignItems: "center",
   },
@@ -422,8 +473,8 @@ const styles = StyleSheet.create({
   // Aa (appearance) button
   appearanceBtn: {
     paddingVertical: 6,
-    paddingHorizontal: 6,
-    marginRight: 2,
+    paddingHorizontal: 8,
+    marginRight: 6,
     justifyContent: "center",
     alignItems: "center",
   },
@@ -431,8 +482,8 @@ const styles = StyleSheet.create({
   // History button
   historyBtn: {
     paddingVertical: 6,
-    paddingHorizontal: 6,
-    marginRight: 6,
+    paddingHorizontal: 8,
+    marginRight: 8,
     justifyContent: "center",
     alignItems: "center",
   },
@@ -481,6 +532,25 @@ const styles = StyleSheet.create({
     letterSpacing: 0.8,
     textTransform: "uppercase",
     marginBottom: 10,
+  },
+
+  // Theme toggle
+  themeToggle: {
+    flexDirection: "row",
+    borderWidth: 1,
+    borderRadius: 10,
+    padding: 3,
+  },
+  themeOption: {
+    flex: 1,
+    height: 36,
+    borderRadius: 7,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  themeOptionText: {
+    fontSize: 13,
+    fontFamily: uiFont(600),
   },
 
   // Font size row
