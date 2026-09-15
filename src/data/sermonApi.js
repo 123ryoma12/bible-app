@@ -403,6 +403,30 @@ export async function fetchSermonsForChapter(bookName, chapterNumber, { signal }
   };
 }
 
+/**
+ * Fetch only the chapter list for a book, skipping the book query entirely.
+ *
+ * Used when the book-level results are already cached but a different chapter
+ * is now being viewed: the chapter list is chapter-specific and cannot be
+ * derived from the (paginated) book list, but re-fetching the whole book would
+ * throw away a perfectly good cache entry.
+ */
+export async function fetchChapterSermons(bookName, chapterNumber, { signal } = {}) {
+  if (!chapterNumber) return { sermons: [] };
+
+  const { termIds, chapterTermIds } = await resolveBookTerms(bookName, { signal });
+  if (!termIds.length) return { sermons: [] };
+
+  const chapterTermId = chapterTermIds.get(Number(chapterNumber));
+  if (!chapterTermId) return { sermons: [] };
+
+  const { sermons } = await fetchSermonsForTerms([chapterTermId], {
+    perPage: CHAPTER_PAGE_SIZE,
+    signal,
+  });
+  return { sermons };
+}
+
 /** Load a further page of the book list for infinite scroll. */
 export async function fetchMoreBookSermons(bookName, page, { signal } = {}) {
   const { termIds } = await resolveBookTerms(bookName, { signal });

@@ -5,10 +5,17 @@
 // the results, and returns them in the same shape that SermonSheet already
 // expects (chapterSermons, bookSermons, bookTotal, bookTotalPages).
 //
-// Gospel in Life provides chapter-level filtering natively. Cornerstone does
-// not — their API only filters by book — so chapter sermons from Cornerstone
-// are derived client-side by checking whether the sermon's passage field
-// contains the chapter number.
+// Fetching is per *book*; the split between the "Book Chapter" and "All of
+// Book" sections is a presentation decision made client-side, by reading each
+// sermon's passage. That keeps a single cached book payload correct for every
+// chapter in it, instead of the section contents depending on whichever chapter
+// happened to be open when the fetch ran.
+//
+// Gospel in Life also offers a native chapter query. It is still used on the
+// first load of a book (and for books large enough to paginate, where the
+// cached page-one list cannot be assumed to contain every chapter sermon), but
+// its results are merged into the same pool rather than being handed straight
+// to the chapter section.
 //
 // The "load more" concept only applies to Gospel in Life (which paginates).
 // Cornerstone returns all results for a book at once. The combined total and
@@ -17,6 +24,7 @@
 
 import {
   fetchSermonsForChapter as gilFetchForChapter,
+  fetchChapterSermons as gilFetchChapterOnly,
   fetchMoreBookSermons as gilFetchMore,
   isAbortError,
   ErrorKind,
@@ -34,10 +42,10 @@ import {
 export { isAbortError, ErrorKind, BOOK_PAGE_SIZE };
 
 // Re-export source constants so SermonSheet can use them for attribution UI.
-export {
-  GOSPEL_IN_LIFE_SOURCE_ID,
-  CORNERSTONE_SOURCE_ID,
-} from "./sermonSourcesStore";
+// CORNERSTONE_SOURCE_ID is only imported (not re-exported) by
+// sermonSourcesStore, so it has to come from its defining module.
+export { GOSPEL_IN_LIFE_SOURCE_ID } from "./sermonSourcesStore";
+export { CORNERSTONE_SOURCE_ID } from "./cornerstoneApi";
 
 // ── Session cache ─────────────────────────────────────────────────────────────
 //
@@ -50,6 +58,17 @@ export {
 // benefits from the cache.
 
 const sessionCache = new Map();
+
+/**
+ * Normalised key for the per-chapter slice of a cached book entry.
+ *
+ * The book intro screen opens the sheet with no chapter at all, which is a
+ * distinct case from "chapter 1" and needs its own slot.
+ */
+function chapterSlot(chapterNumber) {
+  const n = Number(chapterNumber);
+  return Number.isFinite(n) && n > 0 ? String(n) : "none";
+}
 
 function cacheKey(bookName, enabledSources, cornerstoneCongregations) {
   const sources = [...enabledSources].sort().join(",");
@@ -72,6 +91,9 @@ export function appendCachedBookSermons(bookName, enabledSources, cornerstoneCon
   if (!entry) return;
   const seen = new Set(entry.bookSermons.map((s) => s.id));
   entry.bookSermons = [...entry.bookSermons, ...newSermons.filter((s) => !seen.has(s.id))];
+  // Also into the pool, so a later chapter is placed using everything loaded so
+  // far rather than just the first page.
+  addToPool(entry, newSermons);
   entry.page = (entry.page ?? 1) + 1;
 }
 
@@ -86,63 +108,96 @@ export {
   CONGREGATIONS,
 } from "./cornerstoneApi";
 
-// ── Chapter-level filter for Cornerstone ─────────────────────────────────────
+// ── Chapter placement ────────────────────────────────────────────────────────
+//
+// Which section a sermon belongs in is decided here, from its passage, for
+// every source alike. Both sources supply a passage: Gospel in Life builds one
+// from its scripture taxonomy ("Judges 7", or "John 3 · Romans 8" when a sermon
+// spans books), Cornerstone gives a verse reference ("Judges 7:1–25").
 
 /**
- * Extract all chapter numbers explicitly referenced in a passage string.
+ * Chapter numbers covered by a single scripture reference, with the book name
+ * already stripped off.
  *
- * Passage strings from Cornerstone look like:
- *   "Luke 5:12–5:26"       → chapters [5]
- *   "Luke 5:1-11"          → chapters [5]
- *   "Romans 3:21–31"       → chapters [3]
- *   "Luke 1:1-4"           → chapters [1]
- *   "Leviticus 12:1-12:8"  → chapters [12]
- *   "John 3:16-4:2"        → chapters [3, 4]  (cross-chapter)
- *   "Isaiah 36:1-37:7"     → chapters [36, 37]
+ * The parse walks the numbers in order and uses the separator between them,
+ * because the same digits mean different things depending on what precedes:
  *
- * Strategy: find every occurrence of a digit sequence that is immediately
- * followed by a colon — these are chapter:verse references. The number before
- * the colon is the chapter. We also handle bare chapter references like
- * "Luke 15" (no verse) by looking for a number at the end of the string or
- * before a dash/em-dash that isn't followed by a colon.
+ *   " 7"            → [7]
+ *   " 7:1-25"       → [7]            trailing 25 is a verse, not chapter 25
+ *   " 12:1-12:8"    → [12]
+ *   " 3:16-4:2"     → [3, 4]         cross-chapter range
+ *   " 36:1-37:7"    → [36, 37]
+ *   " 15–17"        → [15, 16, 17]   bare chapter range, filled in
  */
-function extractChapterNumbers(passage) {
-  if (!passage) return new Set();
+function chaptersInReference(reference) {
   const chapters = new Set();
+  if (!reference) return chapters;
 
-  // Primary: chapter:verse pattern — number immediately before a colon.
-  // e.g. "5:12", "12:1", "37:7"
-  const chapterVerseRe = /(\d+):/g;
-  let m;
-  while ((m = chapterVerseRe.exec(passage)) !== null) {
-    chapters.add(Number(m[1]));
-  }
+  // Each token is a chapter, optionally followed by ":verse".
+  const tokenRe = /(\d+)(?::(\d+))?/g;
+  let match;
+  let previousChapter = null;
+  let previousHadVerse = false;
+  let cursor = 0;
 
-  // Secondary: bare chapter references with no verse (e.g. "Luke 15" or
-  // "Luke 15–16"). These appear as a number preceded by a space and followed
-  // by end-of-string, a dash, en-dash, em-dash, or another space — but NOT
-  // followed by a colon (already handled above).
-  const bareChapterRe = /(?<=\s)(\d+)(?=[–—\-\s]|$)(?!:)/g;
-  try {
-    while ((m = bareChapterRe.exec(passage)) !== null) {
-      chapters.add(Number(m[1]));
+  while ((match = tokenRe.exec(reference)) !== null) {
+    const value = Number(match[1]);
+    const hasVerse = match[2] !== undefined;
+    const separator = reference.slice(cursor, match.index);
+    const isRange = /[-–—]/.test(separator);
+    cursor = tokenRe.lastIndex;
+
+    // "7:1-25" — a bare number after a chapter:verse token continues the verse
+    // range within the same chapter, so it is not a chapter of its own.
+    if (isRange && !hasVerse && previousHadVerse) continue;
+
+    chapters.add(value);
+
+    // A range between two chapters covers everything in between as well.
+    if (isRange && previousChapter !== null && value > previousChapter) {
+      for (let c = previousChapter + 1; c < value; c++) chapters.add(c);
     }
-  } catch {
-    // Lookbehind not supported on older JS engines — skip, primary covers most cases.
+
+    previousChapter = value;
+    previousHadVerse = hasVerse;
   }
 
   return chapters;
 }
 
 /**
- * Returns true if a Cornerstone sermon's passage explicitly covers the given
- * chapter number. Uses chapter:verse parsing rather than a loose regex so that
- * e.g. chapter 1 doesn't accidentally match "Leviticus 12:1-12:8".
+ * Does this sermon belong in the "<Book> <Chapter>" section?
+ *
+ * Matching is book-aware: a passage is split on the "·" separator used for
+ * multi-book sermons, and only the references naming the book currently open
+ * are consulted. Without that, "1 John 3" would register as chapter 1 (from the
+ * book's own name) and "John 3 · Romans 8" would put a Romans sermon under
+ * John 8.
  */
-function cornerstoneSermonMatchesChapter(sermon, chapterNumber) {
-  if (!sermon.passage || !chapterNumber) return false;
-  const chapters = extractChapterNumbers(sermon.passage);
-  return chapters.has(Number(chapterNumber));
+function sermonMatchesChapter(sermon, bookName, chapterNumber) {
+  const chapter = Number(chapterNumber);
+  if (!sermon?.passage || !Number.isFinite(chapter) || chapter <= 0) return false;
+
+  const references = String(sermon.passage)
+    .split("·")
+    .map((ref) => ref.trim())
+    .filter(Boolean);
+
+  const book = String(bookName ?? "").trim().toLowerCase();
+  let namedTheBook = false;
+
+  for (const reference of references) {
+    const lower = reference.toLowerCase();
+    if (!book || !(lower === book || lower.startsWith(`${book} `))) continue;
+    namedTheBook = true;
+    if (chaptersInReference(reference.slice(book.length)).has(chapter)) return true;
+  }
+
+  // No reference named the book — either the source abbreviates it or omits it
+  // because the whole feed is already book-scoped. Fall back to reading the
+  // chapter out of the reference as a whole.
+  if (namedTheBook) return false;
+  return references.some((reference) => chaptersInReference(reference).has(chapter));
 }
 
 // ── Main fetch ────────────────────────────────────────────────────────────────
@@ -170,28 +225,40 @@ export async function fetchSermonsForChapter(bookName, chapterNumber, { signal, 
 
   console.log("[combinedSermonApi] fetchSermonsForChapter", { bookName, chapterNumber, enabledSources, cornerstoneCongregations: cornerstoneCongregations.length });
   const key = cacheKey(bookName, enabledSources, cornerstoneCongregations);
+  const slot = chapterSlot(chapterNumber);
   const cached = sessionCache.get(key);
-  console.log("[combinedSermonApi] cache", cached ? "HIT" : "MISS", key);
+  const gilEnabled = enabledSources.includes("gospel-in-life");
+  console.log("[combinedSermonApi] cache", cached ? "HIT" : "MISS", key, "chapter", slot);
+
   if (cached) {
-    // Re-derive chapter sermons from the cached book list so changing chapters
-    // within the same book is instant without re-fetching.
-    const csChapterSermons = cached.csSermons.filter((s) =>
-      cornerstoneSermonMatchesChapter(s, chapterNumber)
-    );
-    const chapterSermons = dedupeById([
-      ...cached.gilChapterSermons,
-      ...csChapterSermons,
-    ]);
+    // The whole book is already cached, so the chapter section is just a filter
+    // over it — no matter which chapter was open when the fetch happened.
+    //
+    // The one case the cache cannot answer by itself is a book big enough to
+    // paginate: only page one of the Gospel in Life list is held, so a chapter
+    // sermon sitting on page three would be missed. There, the native chapter
+    // query is run once per chapter and folded into the pool.
+    const needsChapterQuery =
+      gilEnabled &&
+      chapterSlot(chapterNumber) !== "none" &&
+      !cached.gilChaptersFetched.has(slot) &&
+      (cached.page ?? 1) < cached.bookTotalPages;
+
+    if (needsChapterQuery) {
+      const { sermons } = await gilFetchChapterOnly(bookName, chapterNumber, { signal });
+      if (signal?.aborted) throw abortError();
+      addToPool(cached, sermons);
+      cached.gilChaptersFetched.add(slot);
+    }
+
     return {
-      chapterSermons,
+      chapterSermons: chapterSermonsFrom(cached, bookName, chapterNumber),
       bookSermons: cached.bookSermons,
       bookTotal: cached.bookTotal,
       bookTotalPages: cached.bookTotalPages,
       page: cached.page ?? 1,
     };
   }
-
-  const gilEnabled = enabledSources.includes("gospel-in-life");
 
   // Run enabled sources in parallel.
   const [gilResult, csResult] = await Promise.all([
@@ -204,19 +271,8 @@ export async function fetchSermonsForChapter(bookName, chapterNumber, { signal, 
       : Promise.resolve({ sermons: [], total: 0 }),
   ]);
 
-  // Derive chapter-level results from Cornerstone's book results client-side.
-  const csChapterSermons = csResult.sermons.filter((s) =>
-    cornerstoneSermonMatchesChapter(s, chapterNumber)
-  );
-
-  // Merge: GiL chapter first (most specific), then CS chapter.
-  // For the book list: GiL page 1 first, then all CS results appended.
+  // The book list: GiL page 1 first, then all CS results appended.
   // Deduplicate by ID in case somehow the same sermon appears twice.
-  const chapterSermons = dedupeById([
-    ...gilResult.chapterSermons,
-    ...csChapterSermons,
-  ]);
-
   const bookSermons = dedupeById([
     ...gilResult.bookSermons,
     ...csResult.sermons,
@@ -228,18 +284,30 @@ export async function fetchSermonsForChapter(bookName, chapterNumber, { signal, 
   // Page count is purely GiL's — CS always delivers everything upfront.
   const bookTotalPages = gilResult.bookTotalPages;
 
-  // Store in session cache. We keep the raw GiL chapter sermons and CS book
-  // sermons separately so chapter re-derivation on cache hits is accurate.
-  sessionCache.set(key, {
-    gilChapterSermons: gilResult.chapterSermons,
-    csSermons: csResult.sermons,
+  // One entry per book. `pool` holds every sermon seen for it — the book list,
+  // Cornerstone's full set, and any chapter-query results — and is the single
+  // thing the chapter section is derived from, so the split stays right for
+  // whichever chapter is open. GiL chapter results lead the pool so they keep
+  // their position at the top of the chapter section.
+  const entry = {
+    pool: new Map(),
+    gilChaptersFetched: new Set(gilEnabled && slot !== "none" ? [slot] : []),
     bookSermons,
     bookTotal,
     bookTotalPages,
     page: 1,
-  });
+  };
+  addToPool(entry, gilResult.chapterSermons);
+  addToPool(entry, bookSermons);
+  sessionCache.set(key, entry);
 
-  return { chapterSermons, bookSermons, bookTotal, bookTotalPages, page: 1 };
+  return {
+    chapterSermons: chapterSermonsFrom(entry, bookName, chapterNumber),
+    bookSermons,
+    bookTotal,
+    bookTotalPages,
+    page: 1,
+  };
 }
 
 /**
@@ -280,6 +348,35 @@ export async function fetchAudioUrl(sermon, { signal } = {}) {
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
+
+/** Merge sermons into a cache entry's pool, keeping first-seen order. */
+function addToPool(entry, sermons) {
+  for (const sermon of sermons ?? []) {
+    const id = String(sermon.id);
+    if (!entry.pool.has(id)) entry.pool.set(id, sermon);
+  }
+}
+
+/** The chapter section for a cache entry: everything in the pool that matches. */
+function chapterSermonsFrom(entry, bookName, chapterNumber) {
+  if (chapterSlot(chapterNumber) === "none") return [];
+  const matches = [];
+  for (const sermon of entry.pool.values()) {
+    if (sermonMatchesChapter(sermon, bookName, chapterNumber)) matches.push(sermon);
+  }
+  return matches;
+}
+
+/**
+ * An abort-shaped error, recognised by `isAbortError` so callers discard it
+ * silently. Built by hand rather than with DOMException, which is not
+ * guaranteed to exist on every JS engine the app runs on.
+ */
+function abortError() {
+  const err = new Error("Aborted");
+  err.name = "AbortError";
+  return err;
+}
 
 function dedupeById(sermons) {
   const seen = new Set();
