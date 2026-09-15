@@ -603,6 +603,11 @@ export default function MemoryDrill({ list, startIndex = 0, onExit }) {
             autoCorrect={false}
             autoComplete="off"
             spellCheck={false}
+            textContentType="none"
+            keyboardType="visible-password"
+            secureTextEntry={true}
+            importantForAutofill="no"
+            selectTextOnFocus={false}
             caretHidden
             blurOnSubmit={false}
             style={styles.hiddenInput}

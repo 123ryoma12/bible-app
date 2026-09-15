@@ -512,7 +512,18 @@ const AppContent = memo(function AppContent() {
 
   // Stable BottomTabBar onChange.
   const onTabBarChange = useCallback((tab) => {
-    if (tab === activeTab) return;
+    if (tab === activeTab) {
+      if (tab === "bible") {
+        if (screen === "bible" && readerTabs.length > 0) {
+          // On StatsScreen → go back to the open chapter (like back button).
+          setScreen("reader");
+        } else if (screen === "reader") {
+          // On chapter view → go to StatsScreen.
+          openBibleHeatmap();
+        }
+      }
+      return;
+    }
     if (tab === "bible") {
       if (lastBibleScreen.current === "reader") {
         tabBarScrollToActive.current = true;
@@ -524,7 +535,7 @@ const AppContent = memo(function AppContent() {
       lastBibleScreen.current = (screen === "history") ? "bible" : screen;
     }
     setActiveTab(tab);
-  }, [activeTab, screen, openBibleHeatmap]);
+  }, [activeTab, screen, readerTabs.length, openBibleHeatmap]);
 
   const goPrev = useCallback(() => {
     setInitialScrollY(0);
