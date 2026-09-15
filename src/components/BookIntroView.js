@@ -82,14 +82,20 @@ function Section({ section, colors, readingFontKey, sectionRef }) {
           ))}
         </View>
       ) : (
-        <Text
-          style={[
-            styles.sectionText,
-            { color: colors.text, fontFamily: readingFont(readingFontKey, "regular") },
-          ]}
-        >
-          {section.content}
-        </Text>
+        <View>
+          {section.content.map((para, i) => (
+            <Text
+              key={i}
+              style={[
+                styles.sectionText,
+                i > 0 && styles.sectionTextParagraph,
+                { color: colors.text, fontFamily: readingFont(readingFontKey, "regular") },
+              ]}
+            >
+              {para}
+            </Text>
+          ))}
+        </View>
       )}
     </View>
   );
@@ -232,6 +238,9 @@ const styles = StyleSheet.create({
   sectionText: {
     fontSize: 15,
     lineHeight: 25,
+  },
+  sectionTextParagraph: {
+    marginTop: 12,
   },
 
   // Outline
