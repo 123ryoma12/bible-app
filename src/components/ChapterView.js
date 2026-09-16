@@ -3,6 +3,11 @@ import { StyleSheet, Text, View } from "react-native";
 import { useTheme } from "../theme/ThemeContext";
 import { readingFont, uiFont } from "../theme/fonts";
 
+// MaterialCommunityIcons glyph rendered as inline <Text> — the only way to
+// place an icon inside a React Native <Text> tree (no View allowed).
+// "information-outline": circled i outline, clean and unobtrusive.
+const INFO_ICON_GLYPH = String.fromCodePoint(0xf02fd);
+
 const BODY_SIZE = 18;
 const BODY_LINE_HEIGHT = 30;
 const VERSE_NUMBER_SIZE = 10;
@@ -12,13 +17,43 @@ const VERSE_CONTINUATION_INDENT = 20;
  * A stable, reading-first chapter layout. Each source paragraph or poetry line
  * owns one native Text layout, preserving continuous Bible paragraph flow.
  */
-export default function ChapterView({ chapter }) {
+export default function ChapterView({ chapter, noteVerses, onNotePress }) {
   const { colors, fontScale, readingFontKey } = useTheme();
   const typography = useMemo(
     () => createTypography(fontScale, readingFontKey),
     [fontScale, readingFontKey]
   );
   const blocks = useMemo(() => prepareBlocks(chapter?.blocks), [chapter]);
+
+  // For each block, pre-compute which verse numbers should show the ⓘ icon.
+  // A verse spans multiple blocks (each poetry line is its own block), so we
+  // find the LAST block that contains each verse and assign the icon only there.
+  // This is all done at the ChapterView level so ChapterBlock/FlowingVerses
+  // receive a simple, stable Set of verse numbers — no mutable shared state
+  // needed during render.
+  const noteIconsPerBlock = useMemo(() => {
+    if (!noteVerses || noteVerses.size === 0) return null;
+    // Find the last block index for each verse number that has a note.
+    const lastBlockForVerse = new Map();
+    blocks.forEach((entry, blockIndex) => {
+      entry.verses.forEach((verse) => {
+        if (verse.number == null || verse.isEditorialNote) return;
+        const verseNum = parseInt(verse.number, 10);
+        if (noteVerses.has(verseNum)) {
+          lastBlockForVerse.set(verseNum, blockIndex);
+        }
+      });
+    });
+    // Build a per-block Set of verse numbers whose icon belongs in that block.
+    const perBlock = blocks.map((_, blockIndex) => {
+      const verseSet = new Set();
+      lastBlockForVerse.forEach((lastIdx, verseNum) => {
+        if (lastIdx === blockIndex) verseSet.add(verseNum);
+      });
+      return verseSet;
+    });
+    return perBlock;
+  }, [blocks, noteVerses]);
 
   if (!chapter) {
     return (
@@ -39,6 +74,8 @@ export default function ChapterView({ chapter }) {
           colors={colors}
           fontScale={fontScale}
           typography={typography}
+          blockNoteVerses={noteIconsPerBlock ? noteIconsPerBlock[index] : null}
+          onNotePress={onNotePress}
         />
       ))}
     </View>
@@ -53,6 +90,8 @@ const ChapterBlock = memo(function ChapterBlock({
   colors,
   fontScale,
   typography,
+  blockNoteVerses,
+  onNotePress,
 }) {
   const sourceStyle = block?.style || "p";
   const kind = getBlockKind(sourceStyle);
@@ -112,13 +151,16 @@ const ChapterBlock = memo(function ChapterBlock({
           appearance={appearance}
           colors={colors}
           typography={typography}
+          fontScale={fontScale}
+          blockNoteVerses={blockNoteVerses}
+          onNotePress={onNotePress}
         />
       ) : null}
     </View>
   );
 });
 
-const FlowingVerses = memo(function FlowingVerses({ verses, beginsWithContinuation, appearance, colors, typography }) {
+const FlowingVerses = memo(function FlowingVerses({ verses, beginsWithContinuation, appearance, colors, typography, fontScale, blockNoteVerses, onNotePress }) {
   const segments = useMemo(() => verses.map((verse, index) => {
     const previousNumber = index > 0 ? verses[index - 1].number : null;
     const repeatedOpeningVerse = index === 0 && beginsWithContinuation;
@@ -139,6 +181,8 @@ const FlowingVerses = memo(function FlowingVerses({ verses, beginsWithContinuati
   // on the inner Text nodes even though colors almost never change.
   const textColorStyle = useMemo(() => ({ color: colors.text }), [colors.text]);
   const mutedColorStyle = useMemo(() => ({ color: colors.mutedText }), [colors.mutedText]);
+  const accentColorStyle = useMemo(() => ({ color: colors.accent }), [colors.accent]);
+  const noteIconSizeStyle = useMemo(() => ({ fontSize: 13 * fontScale }), [fontScale]);
 
   return (
     <Text
@@ -149,20 +193,37 @@ const FlowingVerses = memo(function FlowingVerses({ verses, beginsWithContinuati
         textColorStyle,
       ]}
     >
-      {segments.map((segment, index) => (
-        <Text
-          key={`${segment.number ?? "text"}-${index}`}
-          style={segment.editorialNote ? typography.editorialText : null}
-        >
-          {index > 0 ? " " : null}
-          {segment.showNumber ? (
-            <Text style={[styles.verseNumber, typography.verseNumber, mutedColorStyle]}>
-              {segment.number}{"\u00A0\u00A0"}
-            </Text>
-          ) : null}
-          {segment.text}
-        </Text>
-      ))}
+      {segments.map((segment, index) => {
+        const verseNum = segment.number != null ? parseInt(segment.number, 10) : null;
+        // blockNoteVerses is pre-computed per block at the ChapterView level:
+        // it contains only the verse numbers whose icon belongs in THIS block
+        // (the last block that contains that verse). So a simple .has() check
+        // is sufficient — no cross-block deduplication needed here.
+        const showNoteIcon = blockNoteVerses && verseNum != null && blockNoteVerses.has(verseNum);
+
+        return (
+          <Text
+            key={`${segment.number ?? "text"}-${index}`}
+            style={segment.editorialNote ? typography.editorialText : null}
+          >
+            {index > 0 ? " " : null}
+            {segment.showNumber ? (
+              <Text style={[styles.verseNumber, typography.verseNumber, mutedColorStyle]}>
+                {segment.number}{"\u00A0\u00A0"}
+              </Text>
+            ) : null}
+            {segment.text}
+            {showNoteIcon ? (
+              <Text
+                style={[styles.noteIcon, noteIconSizeStyle, accentColorStyle]}
+                onPress={(e) => onNotePress?.(verseNum, e.nativeEvent.pageY)}
+              >
+                {"\u00A0" + INFO_ICON_GLYPH}
+              </Text>
+            ) : null}
+          </Text>
+        );
+      })}
     </Text>
   );
 });
@@ -363,6 +424,9 @@ const styles = StyleSheet.create({
   },
   verseNumber: {
     letterSpacing: 0.1,
+  },
+  noteIcon: {
+    fontFamily: "MaterialCommunityIcons",
   },
   centeredText: {
     textAlign: "center",

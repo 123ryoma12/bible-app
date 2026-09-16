@@ -234,6 +234,9 @@ export default function ReaderTopBar({
   onOpenHistory,
   notesOpen,
   onToggleNotes,
+  // Inline verse note icons toggle
+  verseNotesActive,
+  onToggleVerseNotes,
   // Book intro tab: TOC button replaces the notes button
   tocOpen,
   onToggleToc,
@@ -284,6 +287,12 @@ export default function ReaderTopBar({
     onToggleNotes?.();
   }, [onToggleNotes]);
 
+  const handleToggleVerseNotesCb = useCallback(() => {
+    setAppearanceOpen(false);
+    setVersionOpen(false);
+    onToggleVerseNotes?.();
+  }, [onToggleVerseNotes]);
+
   const handleCloseAppearance = useCallback(() => setAppearanceOpen(false), []);
   const handleCloseVersion = useCallback(() => setVersionOpen(false), []);
 
@@ -330,23 +339,45 @@ export default function ReaderTopBar({
               color={tocOpen ? colors.accent : colors.text}
             />
           </TouchableOpacity>
-        ) : onToggleNotes ? (
-          /* Study notes toggle — opens/closes the bottom notes panel. */
-          <TouchableOpacity
-            style={styles.notesBtn}
-            onPress={handleToggleNotesCb}
-            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-            accessibilityRole="button"
-            accessibilityLabel={notesOpen ? "Close study notes" : "Open study notes"}
-            accessibilityState={{ expanded: notesOpen }}
-          >
-            <MaterialCommunityIcons
-              name="book-open-page-variant"
-              size={22}
-              color={notesOpen ? colors.accent : colors.text}
-            />
-          </TouchableOpacity>
-        ) : null}
+        ) : (
+          <>
+            {/* Inline verse note icons toggle */}
+            {onToggleVerseNotes ? (
+              <TouchableOpacity
+                style={styles.notesBtn}
+                onPress={handleToggleVerseNotesCb}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                accessibilityRole="button"
+                accessibilityLabel={verseNotesActive ? "Hide verse note icons" : "Show verse note icons"}
+                accessibilityState={{ checked: verseNotesActive }}
+              >
+                <MaterialCommunityIcons
+                  name="information-outline"
+                  size={22}
+                  color={verseNotesActive ? colors.accent : colors.text}
+                />
+              </TouchableOpacity>
+            ) : null}
+
+            {/* Study notes toggle — opens/closes the full notes modal. */}
+            {onToggleNotes ? (
+              <TouchableOpacity
+                style={styles.notesBtn}
+                onPress={handleToggleNotesCb}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                accessibilityRole="button"
+                accessibilityLabel={notesOpen ? "Close study notes" : "Open study notes"}
+                accessibilityState={{ expanded: notesOpen }}
+              >
+                <MaterialCommunityIcons
+                  name="book-open-page-variant"
+                  size={22}
+                  color={notesOpen ? colors.accent : colors.text}
+                />
+              </TouchableOpacity>
+            ) : null}
+          </>
+        )}
 
         {/* Listen button */}
         <TouchableOpacity

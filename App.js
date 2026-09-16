@@ -47,6 +47,7 @@ import { loadMemoryPrefs } from "./src/data/memoryPrefsStore";
 import { loadPrayerSettings } from "./src/data/prayerStore";
 import { PrayerSessionProvider, usePrayerSession } from "./src/data/prayerSession";
 import { loadReadingVersion } from "./src/data/bibleVersionStore";
+import { loadReaderPrefs } from "./src/data/readerPrefsStore";
 import { preloadAllProgress } from "./src/data/progressStore";
 import { preloadStatsSettings } from "./src/data/statsSettingsStore";
 import { preloadTheme } from "./src/theme/ThemeContext";
@@ -117,6 +118,9 @@ export default function App() {
     });
     loadPrayerSettings().catch(() => {
       // Non-fatal: the Prayer tab falls back to the default daily goal.
+    });
+    loadReaderPrefs().catch(() => {
+      // Non-fatal: reader prefs fall back to defaults (verse notes off, etc.).
     });
   }, []);
 

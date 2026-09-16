@@ -21,8 +21,10 @@ import { incrementReadCount } from "../data/progressStore";
 import { addToHistory } from "../data/historyStore";
 import { useTheme } from "../theme/ThemeContext";
 import { getActiveReadingVersion } from "../data/bibleVersionStore";
-import { getStudyNotes } from "../data/studyNotesData";
+import { getStudyNotes, getStudyNotesByVerse, getHeadingNote } from "../data/studyNotesData";
+import { getReaderPrefs, setReaderPref } from "../data/readerPrefsStore";
 import StudyNotesModal from "../components/StudyNotesModal";
+import VerseNotePopover from "../components/VerseNotePopover";
 // lastPositionStore is intentionally not imported here — the global
 // lastPosition record is only needed at cold-launch time (handled in App.js).
 // Per-tab scroll offsets are passed in via the initialScrollY prop so each
@@ -33,6 +35,10 @@ import StudyNotesModal from "../components/StudyNotesModal";
 // subtree. Only re-renders when the actual chapter data changes.
 const ChapterView = memo(ChapterViewBase);
 
+
+// Same glyph as the inline verse note icons in ChapterView.
+const INFO_ICON_GLYPH = String.fromCodePoint(0xf02fd);
+
 const SWIPE_THRESHOLD = 50;
 // How far you must scroll down before the chrome hides (avoids twitchy hiding).
 const HIDE_SCROLL_DELTA = 12;
@@ -40,6 +46,8 @@ const HIDE_SCROLL_DELTA = 12;
 const FAST_UP_VELOCITY = 1.2;
 // Distance from the bottom that counts as "reached the end".
 const END_THRESHOLD = 48;
+// How many px the user must scroll before the verse note popover dismisses.
+const POPOVER_SCROLL_DISMISS = 40;
 
 export default function ReaderScreen({
   book,
@@ -126,7 +134,7 @@ export default function ReaderScreen({
   // so audio survives navigation.
   const [sermonsOpen, setSermonsOpen] = useState(false);
 
-  // Study notes panel visibility + notes for the current chapter.
+  // Study notes modal visibility + notes for the current chapter.
   const [notesOpen, setNotesOpen] = useState(false);
   const studyNotes = useMemo(
     () => getStudyNotes(book.name, chapterNumber),
@@ -135,6 +143,35 @@ export default function ReaderScreen({
   const handleToggleNotes = useCallback(() => {
     setNotesOpen((o) => !o);
   }, []);
+
+  // Heading note — shown as a ⓘ icon next to the chapter number in the heading.
+  // Only present for Psalms and a handful of other books with title notes.
+  const headingNote = useMemo(
+    () => getHeadingNote(book.name, chapterNumber),
+    [book.name, chapterNumber]
+  );
+
+  // Inline verse note icons — toggled by the ⓘ button in the top bar.
+  // Initialised from the persisted store so the setting survives app restarts
+  // and tab switches. Written back to the store on every toggle.
+  const [verseNotesActive, setVerseNotesActive] = useState(
+    () => getReaderPrefs().verseNotesActive
+  );
+  const verseNotesByVerse = useMemo(
+    () => verseNotesActive ? getStudyNotesByVerse(book.name, chapterNumber) : null,
+    [verseNotesActive, book.name, chapterNumber]
+  );
+  const handleToggleVerseNotes = useCallback(() => {
+    setVerseNotesActive((o) => {
+      const next = !o;
+      setReaderPref("verseNotesActive", next);
+      return next;
+    });
+  }, []);
+
+  // Verse note popover state — handlers defined after setChrome below.
+  const [popover, setPopover] = useState({ visible: false, notes: [], anchorY: 0 });
+  const scrollYAtOpen = useRef(0);
 
   // TOC for book intro tabs
   const [tocOpen, setTocOpen] = useState(false);
@@ -189,6 +226,21 @@ export default function ReaderScreen({
     [onChromeChange]
   );
 
+  // Verse note popover handlers — defined here because they depend on setChrome.
+  const handleNotePress = useCallback((verseNum, pageY) => {
+    const notes = verseNotesByVerse?.get(verseNum) ?? [];
+    if (notes.length === 0) return;
+    scrollYAtOpen.current = lastOffset.current;
+    setPopover({ visible: true, notes, anchorY: pageY });
+    // Hide chrome for an immersive reading experience while the note is open.
+    setChrome(false);
+  }, [verseNotesByVerse, setChrome]);
+
+  const handleDismissPopover = useCallback(() => {
+    setPopover((p) => ({ ...p, visible: false }));
+    setChrome(true);
+  }, [setChrome]);
+
   // Reset transient UI state whenever the chapter changes. Previously these
   // were reset "for free" by the full ReaderScreen remount (key prop). Now that
   // the screen persists across chapter changes we reset them explicitly.
@@ -197,6 +249,7 @@ export default function ReaderScreen({
     setChrome(true);
     setSermonsOpen(false);
     setNotesOpen(false);
+    setPopover({ visible: false, notes: [], anchorY: 0 });
   }, [book.id, chapterNumber, setChrome]);
 
   // Decide what scroll offset to restore whenever the chapter changes.
@@ -287,6 +340,15 @@ export default function ReaderScreen({
       const dy = y - prevY;
       lastOffset.current = y;
 
+      // Dismiss the verse note popover if the user scrolls away from where they tapped.
+      if (Math.abs(y - scrollYAtOpen.current) > POPOVER_SCROLL_DISMISS) {
+        setPopover((p) => {
+          if (!p.visible) return p;
+          setChrome(true);
+          return { ...p, visible: false };
+        });
+      }
+
       // Persist the reading position (debounced) so we can resume at this exact
       // spot next launch. While a restore is still owed (pendingScrollY set), we
       // skip saving so a spurious mount-time onScroll at y=0 can't clobber the
@@ -332,7 +394,15 @@ export default function ReaderScreen({
   );
 
   const toggleChrome = useCallback(() => {
-    setChrome(!chromeVisible);
+    // If the verse note popover is open, tap dismisses it instead of toggling chrome.
+    setPopover((p) => {
+      if (p.visible) {
+        setChrome(true);
+        return { ...p, visible: false };
+      }
+      setChrome(!chromeVisible);
+      return p;
+    });
   }, [chromeVisible, setChrome]);
 
   const handleMarkRead = useCallback(async () => {
@@ -399,12 +469,14 @@ export default function ReaderScreen({
         {...(isIntro ? {} : panResponder.panHandlers)}
       >
         {isIntro ? (
-          <BookIntroView
-            book={book}
-            onOpenChapter={onOpenChapterOne}
-            scrollRef={scrollRef}
-            onSectionRefs={handleIntroSectionRefs}
-          />
+          <TouchableOpacity activeOpacity={1} onPress={toggleChrome}>
+            <BookIntroView
+              book={book}
+              onOpenChapter={onOpenChapterOne}
+              scrollRef={scrollRef}
+              onSectionRefs={handleIntroSectionRefs}
+            />
+          </TouchableOpacity>
         ) : (
           /* Tapping the reading area toggles the chrome (immersive reading). */
           <TouchableOpacity activeOpacity={1} onPress={toggleChrome}>
@@ -419,18 +491,44 @@ export default function ReaderScreen({
               >
                 {book.name}
               </Text>
-              <Text
-                style={[
-                  styles.chapterHeadingNumber,
-                  { color: colors.accent, fontFamily: readingFont(readingFontKey, "semiBold") },
-                ]}
-              >
-                Chapter {chapterNumber}
-              </Text>
+              <View style={styles.chapterHeadingNumberRow}>
+                <Text
+                  style={[
+                    styles.chapterHeadingNumber,
+                    { color: colors.accent, fontFamily: readingFont(readingFontKey, "semiBold") },
+                  ]}
+                >
+                  Chapter {chapterNumber}
+                </Text>
+                {headingNote && verseNotesActive ? (
+                  <TouchableOpacity
+                    onPress={(e) => {
+                      e.stopPropagation?.();
+                      scrollYAtOpen.current = lastOffset.current;
+                      setPopover({
+                        visible: true,
+                        notes: [headingNote],
+                        anchorY: e.nativeEvent.pageY,
+                      });
+                      setChrome(false);
+                    }}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    activeOpacity={0.6}
+                  >
+                    <Text style={[styles.headingNoteIcon, { color: colors.accent }]}>
+                      {INFO_ICON_GLYPH}
+                    </Text>
+                  </TouchableOpacity>
+                ) : null}
+              </View>
               <View style={[styles.chapterHeadingRule, { backgroundColor: colors.border }]} />
             </View>
 
-            <ChapterView chapter={chapter} />
+            <ChapterView
+              chapter={chapter}
+              noteVerses={verseNotesByVerse}
+              onNotePress={handleNotePress}
+            />
           </TouchableOpacity>
         )}
 
@@ -464,6 +562,8 @@ export default function ReaderScreen({
         onOpenHistory={onOpenHistory}
         notesOpen={notesOpen}
         onToggleNotes={isIntro ? undefined : handleToggleNotes}
+        verseNotesActive={verseNotesActive}
+        onToggleVerseNotes={isIntro ? undefined : handleToggleVerseNotes}
         tocOpen={tocOpen}
         onToggleToc={isIntro ? () => setTocOpen((o) => !o) : undefined}
       />
@@ -493,13 +593,22 @@ export default function ReaderScreen({
         />
       )}
 
-      {/* Study notes modal — full-screen sheet, same pattern as SermonSheet. */}
+      {/* Study notes modal — full-screen sheet for viewing all chapter notes. */}
       <StudyNotesModal
         visible={notesOpen}
         onClose={() => setNotesOpen(false)}
         book={book}
         chapterNumber={chapterNumber}
         notes={studyNotes}
+      />
+
+      {/* Verse note popover — contextual card anchored near a tapped ⓘ icon.
+          Dismisses on tap-outside or when the user scrolls away. */}
+      <VerseNotePopover
+        visible={popover.visible}
+        notes={popover.notes}
+        anchorY={popover.anchorY}
+        onDismiss={handleDismissPopover}
       />
 
       {/* Persistent chapter navigator: ‹  [ Book Chapter ]  ›. The center pill
@@ -627,11 +736,22 @@ const styles = StyleSheet.create({
     letterSpacing: 0.1,
     textAlign: "center",
   },
+  chapterHeadingNumberRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    marginTop: 4,
+  },
   chapterHeadingNumber: {
     fontSize: 15,
     letterSpacing: 0.8,
     textTransform: "uppercase",
-    marginTop: 4,
+  },
+  headingNoteIcon: {
+    fontFamily: "MaterialCommunityIcons",
+    fontSize: 15,
+    lineHeight: 18,
   },
   chapterHeadingRule: {
     width: 40,
