@@ -401,10 +401,10 @@ export default function ReaderScreen({
   );
 
   const toggleChrome = useCallback(() => {
-    // If the verse note popover is open, tap dismisses it instead of toggling chrome.
+    // If the verse note popover is open, tap dismisses it but leaves chrome
+    // hidden — the user must tap again to reveal the chrome.
     setPopover((p) => {
       if (p.visible) {
-        setChrome(true);
         return { ...p, visible: false };
       }
       // When hiding via tap, set byTap:true so scroll-based reveals are suppressed.
