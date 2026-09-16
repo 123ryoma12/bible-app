@@ -185,6 +185,10 @@ const FlowingVerses = memo(function FlowingVerses({ verses, beginsWithContinuati
   const mutedColorStyle = useMemo(() => ({ color: colors.mutedText }), [colors.mutedText]);
   const accentColorStyle = useMemo(() => ({ color: colors.accent }), [colors.accent]);
   const noteIconSizeStyle = useMemo(() => ({ fontSize: 13 * fontScale }), [fontScale]);
+  const noteIconHitSlop = useMemo(
+    () => ({ top: 12, bottom: 12, left: 10, right: 10 }),
+    []
+  );
 
   return (
     <Text
@@ -219,8 +223,9 @@ const FlowingVerses = memo(function FlowingVerses({ verses, beginsWithContinuati
               <Text
                 style={[styles.noteIcon, noteIconSizeStyle, accentColorStyle]}
                 onPress={(e) => onNotePress?.(verseNum, e.nativeEvent.pageY)}
+                hitSlop={noteIconHitSlop}
               >
-                {"\u00A0" + INFO_ICON_GLYPH}
+                {"\u00A0" + INFO_ICON_GLYPH + "\u00A0"}
               </Text>
             ) : null}
           </Text>
