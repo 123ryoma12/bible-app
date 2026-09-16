@@ -12,14 +12,14 @@
 //     frequency,               // one of FREQUENCY keys (cooldown length)
 //     repetition,              // "ongoing" | positive integer (target count)
 //     prayedCount,             // completed sessions so far
-//     totalMinutes,            // lifetime confirmed minutes for this point
+//     totalSeconds,            // lifetime confirmed seconds for this point
 //     createdAt,               // ISO string
 //     lastPrayedAt,            // ISO string | null
 //     archivedAt,              // ISO string | null (set = retired)
 //   }
 //   prayer:logIndex       -> ["YYYY-MM-DD", ...] every day with activity
 //   prayer:log:<date>     -> { date, minutes, sessions: [{ pointId, minutes, at }] }
-//   prayer:settings       -> { dailyGoalMinutes }
+//   prayer:settings       -> { dailyGoalSeconds }
 //
 // This maps cleanly onto Firestore later (users/{uid}/prayer/{id}); because
 // this module is the only place that knows the key format and record shape,
@@ -88,20 +88,27 @@ export const SESSION_MINUTES = Object.freeze([1, 3, 5, 10]);
 // --- Settings --------------------------------------------------------------
 
 export const DEFAULT_SETTINGS = Object.freeze({
-  dailyGoalMinutes: 10,
+  // Stored in seconds; the UI lets the user set it in minutes.
+  dailyGoalSeconds: 10 * 60,
 });
 
 let settingsCache = { ...DEFAULT_SETTINGS };
 let settingsLoaded = false;
 
 function normaliseSettings(raw) {
-  const goal = Number(raw?.dailyGoalMinutes);
-  return {
-    dailyGoalMinutes:
-      Number.isFinite(goal) && goal > 0
-        ? Math.min(600, Math.round(goal))
-        : DEFAULT_SETTINGS.dailyGoalMinutes,
-  };
+  // Accept either the new dailyGoalSeconds field or the legacy dailyGoalMinutes
+  // field (so existing stored data migrates automatically on first read).
+  const seconds = Number(raw?.dailyGoalSeconds);
+  const legacyMinutes = Number(raw?.dailyGoalMinutes);
+  let goal;
+  if (Number.isFinite(seconds) && seconds > 0) {
+    goal = Math.min(36000, Math.round(seconds)); // cap at 10 hours
+  } else if (Number.isFinite(legacyMinutes) && legacyMinutes > 0) {
+    goal = Math.min(36000, Math.round(legacyMinutes * 60)); // migrate minutes → seconds
+  } else {
+    goal = DEFAULT_SETTINGS.dailyGoalSeconds;
+  }
+  return { dailyGoalSeconds: goal };
 }
 
 /** Warm the settings cache. Safe to call repeatedly / fire-and-forget. */
@@ -283,7 +290,7 @@ export async function addPrayer({ name, description, frequency, repetition }) {
     frequency: resolveFrequency(frequency).key,
     repetition: normaliseRepetition(repetition),
     prayedCount: 0,
-    totalMinutes: 0,
+    totalSeconds: 0,
     createdAt: new Date().toISOString(),
     lastPrayedAt: null,
     archivedAt: null,
@@ -354,9 +361,9 @@ export async function removePrayer(id) {
       continue; // day drops out of the index entirely
     }
 
-    const minutes = sessions.reduce((sum, s) => sum + (s.minutes || 0), 0);
+    const seconds = sessions.reduce((sum, s) => sum + (s.seconds ?? (s.minutes || 0) * 60), 0);
     // eslint-disable-next-line no-await-in-loop
-    await backend.setItem(logKey(key), { date: key, minutes, sessions });
+    await backend.setItem(logKey(key), { date: key, seconds, sessions });
     remainingDays.push(key);
   }
 
@@ -414,14 +421,21 @@ async function getLogIndex() {
 export async function getDailyLog(key = dateKey()) {
   const log = await backend.getItem(logKey(key));
   return log && typeof log === "object"
-    ? { date: key, minutes: log.minutes || 0, sessions: log.sessions || [] }
-    : { date: key, minutes: 0, sessions: [] };
+    ? {
+        date: key,
+        seconds: log.seconds ?? (log.minutes || 0) * 60,
+        sessions: log.sessions || [],
+      }
+    : { date: key, seconds: 0, sessions: [] };
 }
 
 /** Total confirmed minutes prayed on a given day. */
-export async function getDailyMinutes(key = dateKey()) {
+/** Returns the total seconds prayed today. */
+export async function getDailySeconds(key = dateKey()) {
   const log = await getDailyLog(key);
-  return log.minutes;
+  // Fall back to minutes * 60 for any pre-migration logs that still have
+  // only a `minutes` field.
+  return log.seconds ?? (log.minutes || 0) * 60;
 }
 
 /**
@@ -439,7 +453,12 @@ export async function getDailyHistory(days = 14) {
     const key = dateKey(date);
     // eslint-disable-next-line no-await-in-loop
     const log = await getDailyLog(key);
-    out.push({ date: key, minutes: log.minutes, sessions: log.sessions.length });
+    out.push({
+    date: key,
+    // Fall back to minutes * 60 for pre-migration logs.
+    seconds: log.seconds ?? (log.minutes || 0) * 60,
+    sessions: log.sessions.length,
+  });
   }
   return out;
 }
@@ -455,18 +474,19 @@ export async function getDailyHistory(days = 14) {
  *
  * @returns { point, archived, dayMinutes }
  */
-export async function recordPrayerSession(id, minutes) {
+export async function recordPrayerSession(id, seconds) {
   const point = await getPoint(id);
   if (!point) return null;
 
-  const mins = Math.max(0, Math.round(Number(minutes) || 0));
+  const secs = Math.max(0, Math.round(Number(seconds) || 0));
   const at = new Date();
   const iso = at.toISOString();
 
   const updated = {
     ...point,
     prayedCount: (point.prayedCount || 0) + 1,
-    totalMinutes: (point.totalMinutes || 0) + mins,
+    // Migrate legacy totalMinutes → totalSeconds on first write.
+    totalSeconds: (point.totalSeconds ?? (point.totalMinutes || 0) * 60) + secs,
     lastPrayedAt: iso,
   };
 
@@ -484,8 +504,8 @@ export async function recordPrayerSession(id, minutes) {
   const log = await getDailyLog(key);
   const nextLog = {
     date: key,
-    minutes: log.minutes + mins,
-    sessions: [...log.sessions, { pointId: id, minutes: mins, at: iso }],
+    seconds: log.seconds + secs,
+    sessions: [...log.sessions, { pointId: id, seconds: secs, at: iso }],
   };
   await backend.setItem(logKey(key), nextLog);
 
@@ -494,7 +514,7 @@ export async function recordPrayerSession(id, minutes) {
     await backend.setItem(LOG_INDEX_KEY, [...logIndex, key].sort());
   }
 
-  return { point: updated, archived, dayMinutes: nextLog.minutes };
+  return { point: updated, archived, daySeconds: nextLog.seconds };
 }
 
 // --- Formatting helpers ----------------------------------------------------
@@ -544,6 +564,29 @@ export function waitingLabel(point, now = Date.now()) {
 }
 
 /** Absolute date label, e.g. "3 Mar 2026", for archive rows. */
+/**
+ * Format a number of seconds into a compact human string.
+ *   0        → "0s"
+ *   45       → "45s"
+ *   90       → "1m 30s"
+ *   3600     → "1h 0m"
+ *   3661     → "1h 1m"
+ *
+ * Hours are shown only when the value reaches 60 minutes. Seconds are
+ * hidden once hours appear (we don't need that precision at that scale).
+ */
+export function formatPrayerTime(totalSeconds) {
+  const s = Math.max(0, Math.round(totalSeconds));
+  if (s === 0) return "0s";
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = s % 60;
+  if (h > 0) return `${h}h ${m}m`;
+  if (m > 0 && sec === 0) return `${m}m`;
+  if (m > 0) return `${m}m ${sec}s`;
+  return `${sec}s`;
+}
+
 export function formatDate(iso) {
   const date = iso ? new Date(iso) : null;
   if (!date || Number.isNaN(date.getTime())) return "—";

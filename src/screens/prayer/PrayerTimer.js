@@ -1,14 +1,14 @@
-// Prayer point detail + countdown timer.
+// Prayer point detail + count-up timer.
 //
-// Three states in one screen, driven by the global prayer session:
-//   1. Picking   — the point's name and notes, plus the duration choices.
-//   2. Counting  — a large calm countdown with pause / reset / cancel.
-//   3. Finished  — the Amen button, the only thing that logs time.
+// Two states in one screen, driven by the global prayer session:
+//   1. Ready     — the point's name and notes, plus a single "Begin" button.
+//   2. Praying   — a large calm count-up with pause / resume and an always-
+//                  available Amen button so the user can finish whenever they feel done.
 //
 // Resting points work exactly the same — they just carry a note saying when
 // they were next due. The cooldown orders the list; it never blocks prayer.
 
-import React, { useState } from "react";
+import React from "react";
 import { View, Text, TouchableOpacity, StyleSheet, ScrollView } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -17,52 +17,42 @@ import { useTheme } from "../../theme/ThemeContext";
 import { uiFont } from "../../theme/fonts";
 import {
   usePrayerSession,
-  formatCountdown,
+  formatCountup,
   RUNNING,
   PAUSED,
-  FINISHED,
+  IDLE,
 } from "../../data/prayerSession";
 import {
-  SESSION_MINUTES,
   availabilityLabel,
+  formatPrayerTime,
   frequencyLabel,
   isDue,
   lastPrayedLabel,
   repetitionLabel,
 } from "../../data/prayerStore";
+import { useState } from "react";
 
 export default function PrayerTimer({ onConfirm, onEdit }) {
   const { colors } = useTheme();
-  // Chosen length, held locally until the user actually presses Start — the
-  // session context only learns about it once the countdown begins.
-  const [selected, setSelected] = useState(null);
   const [confirmingClose, setConfirmingClose] = useState(false);
   const {
     point,
     status,
-    durationMinutes,
-    remainingMs,
+    elapsedMs,
     start,
     pause,
     resume,
-    reset,
-    clearDuration,
     cancel,
   } = usePrayerSession();
 
   if (!point) return null;
 
   const due = isDue(point);
-  const counting = status === RUNNING || status === PAUSED;
-  const finished = status === FINISHED;
-  // Anything past the duration picker: a timer is running, paused, or sitting
-  // finished and waiting to be confirmed. All three have something to lose.
-  const sessionUnderway = counting || finished;
+  const praying = status === RUNNING || status === PAUSED;
 
-  // Leaving mid-session throws the time away, so make the user mean it.
-  // Leaving from the detail view has nothing to lose.
+  // Leaving while praying discards time, so make the user mean it.
   function handleClose() {
-    if (!sessionUnderway) cancel();
+    if (!praying) cancel();
     else setConfirmingClose(true);
   }
 
@@ -71,12 +61,9 @@ export default function PrayerTimer({ onConfirm, onEdit }) {
       style={[styles.safe, { backgroundColor: colors.background }]}
       edges={["top", "left", "right"]}
     >
-      {/* The affordance has to match the consequence. Browsing the point is
-          ordinary navigation, so it gets a back chevron on the left. Once a
-          timer is under way, leaving ENDS it — so that becomes a dismissing X
-          on the right, matching the sermon sheet. */}
+      {/* Back chevron while on the detail view; dismissing X once timer is running. */}
       <View style={styles.headerRow}>
-        {sessionUnderway ? (
+        {praying ? (
           <>
             <View style={styles.headerSpacer} />
             <TouchableOpacity
@@ -129,68 +116,47 @@ export default function PrayerTimer({ onConfirm, onEdit }) {
           </View>
         )}
 
-        {counting || finished ? (
+        {praying ? (
           <View style={styles.timerBlock}>
-            <Text
-              style={[
-                styles.countdown,
-                { color: finished ? colors.accent : colors.text },
-              ]}
+            {/* Count-up display */}
+            <Text style={[styles.elapsed, { color: colors.text }]}>
+              {formatCountup(elapsedMs)}
+            </Text>
+            <Text style={[styles.elapsedMeta, { color: colors.secondaryText }]}>
+              {status === PAUSED ? "Paused" : "Praying…"}
+            </Text>
+
+            {/* Amen — always available, the moment the user feels done */}
+            <TouchableOpacity
+              style={[styles.amen, { backgroundColor: colors.accent, borderColor: colors.accentBorder }]}
+              onPress={onConfirm}
+              accessibilityRole="button"
+              accessibilityLabel="Finish prayer and log time"
             >
-              {formatCountdown(remainingMs)}
-            </Text>
-            <Text style={[styles.countdownMeta, { color: colors.secondaryText }]}>
-              {finished
-                ? `${durationMinutes} minute${durationMinutes === 1 ? "" : "s"} of prayer`
-                : status === PAUSED
-                  ? "Paused"
-                  : `${durationMinutes} minute${durationMinutes === 1 ? "" : "s"}`}
-            </Text>
+              <Text style={[styles.amenText, { color: colors.accentContrast }]}>Amen</Text>
+            </TouchableOpacity>
 
-            {finished ? (
-              <TouchableOpacity
-                style={[styles.amen, { backgroundColor: colors.accent, borderColor: colors.accentBorder }]}
-                onPress={onConfirm}
-                accessibilityRole="button"
-                accessibilityLabel="Confirm prayer complete"
-              >
-                <Text style={[styles.amenText, { color: colors.accentContrast }]}>Amen</Text>
-              </TouchableOpacity>
-            ) : (
-              <View style={styles.controls}>
-                <ControlButton
-                  icon="refresh"
-                  label="Reset"
-                  onPress={reset}
-                  colors={colors}
-                />
-                <ControlButton
-                  icon={status === RUNNING ? "pause" : "play"}
-                  label={status === RUNNING ? "Pause" : "Resume"}
-                  onPress={status === RUNNING ? pause : resume}
-                  colors={colors}
-                  primary
-                />
-                <ControlButton
-                  icon="close"
-                  label="Cancel"
-                  onPress={clearDuration}
-                  colors={colors}
-                />
-              </View>
-            )}
-
-            {!finished && (
-              <Text style={[styles.hint, { color: colors.mutedText }]}>
-                Time only counts once the countdown finishes.
+            {/* Pause / Resume */}
+            <TouchableOpacity
+              style={styles.pauseRow}
+              onPress={status === RUNNING ? pause : resume}
+              hitSlop={hit}
+              accessibilityRole="button"
+              accessibilityLabel={status === RUNNING ? "Pause timer" : "Resume timer"}
+            >
+              <Ionicons
+                name={status === RUNNING ? "pause-circle-outline" : "play-circle-outline"}
+                size={28}
+                color={colors.mutedText}
+              />
+              <Text style={[styles.pauseLabel, { color: colors.mutedText }]}>
+                {status === RUNNING ? "Pause" : "Resume"}
               </Text>
-            )}
+            </TouchableOpacity>
           </View>
         ) : (
-          <View style={styles.pickBlock}>
-            {/* Resting is a nudge, not a lock: it says this one isn't due yet
-                and sinks it down the list, but you can always pray for
-                something the moment it's on your heart. */}
+          <View style={styles.readyBlock}>
+            {/* Resting is a nudge, not a lock */}
             {!due && (
               <View style={[styles.restingNote, { borderColor: colors.border }]}>
                 <Ionicons name="time-outline" size={16} color={colors.mutedText} />
@@ -200,79 +166,20 @@ export default function PrayerTimer({ onConfirm, onEdit }) {
               </View>
             )}
 
-            <Text style={[styles.pickLabel, { color: colors.secondaryText }]}>
-              How long will you pray?
-            </Text>
-            <View style={styles.durations}>
-              {SESSION_MINUTES.map((minutes) => {
-                const chosen = minutes === selected;
-                return (
-                  <TouchableOpacity
-                    key={minutes}
-                    style={[
-                      styles.duration,
-                      {
-                        borderColor: chosen ? colors.accentBorder : colors.border,
-                        backgroundColor: chosen ? colors.accent : "transparent",
-                      },
-                    ]}
-                    onPress={() => setSelected(minutes)}
-                    accessibilityRole="radio"
-                    accessibilityState={{ selected: chosen }}
-                    accessibilityLabel={`${minutes} minutes`}
-                  >
-                    <Text
-                      style={[
-                        styles.durationValue,
-                        { color: chosen ? colors.accentContrast : colors.accent },
-                      ]}
-                    >
-                      {minutes}
-                    </Text>
-                    <Text
-                      style={[
-                        styles.durationUnit,
-                        { color: chosen ? colors.accentContrast : colors.secondaryText },
-                      ]}
-                    >
-                      min
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-
-            {/* Picking a length only arms the timer — nothing counts down until
-                the user deliberately starts it. */}
             <TouchableOpacity
-              style={[
-                styles.start,
-                selected
-                  ? { backgroundColor: colors.accent, borderColor: colors.accentBorder }
-                  : { backgroundColor: colors.disabledBg, borderColor: colors.border },
-              ]}
-              onPress={() => selected && start(selected)}
-              disabled={!selected}
+              style={[styles.begin, { backgroundColor: colors.accent, borderColor: colors.accentBorder }]}
+              onPress={start}
               accessibilityRole="button"
-              accessibilityLabel={
-                selected ? `Start ${selected} minute prayer` : "Choose a length first"
-              }
+              accessibilityLabel="Begin praying"
             >
-              <Text
-                style={[
-                  styles.startText,
-                  { color: selected ? colors.accentContrast : colors.disabledText },
-                ]}
-              >
-                {selected ? `Start ${selected} min` : "Choose a length"}
-              </Text>
+              <Text style={[styles.beginText, { color: colors.accentContrast }]}>Begin</Text>
             </TouchableOpacity>
           </View>
         )}
 
         <View style={[styles.stats, { borderTopColor: colors.border }]}>
           <Stat label="Times prayed" value={String(point.prayedCount || 0)} colors={colors} />
-          <Stat label="Total minutes" value={String(point.totalMinutes || 0)} colors={colors} />
+          <Stat label="Total time" value={formatPrayerTime(point.totalSeconds ?? (point.totalMinutes || 0) * 60)} colors={colors} />
         </View>
         <Text style={[styles.lastPrayed, { color: colors.mutedText }]}>
           {lastPrayedLabel(point)}
@@ -282,48 +189,14 @@ export default function PrayerTimer({ onConfirm, onEdit }) {
       <ChoiceModal
         visible={confirmingClose}
         onDismiss={() => setConfirmingClose(false)}
-        title={finished ? "Leave without finishing?" : "End this prayer session?"}
-        message={
-          finished
-            ? `You've prayed the full ${durationMinutes} minute${
-                durationMinutes === 1 ? "" : "s"
-              }, but it won't be counted until you tap Amen.`
-            : "The countdown will stop and this time won't be counted. You'll need to start again."
-        }
+        title="End this prayer session?"
+        message="The timer will stop and this time won't be counted. You can tap Amen to save your time instead."
         actions={[
-          { label: finished ? "Discard" : "End session", style: "destructive", onPress: cancel },
-          { label: finished ? "Go back" : "Keep praying", style: "cancel" },
+          { label: "End session", style: "destructive", onPress: cancel },
+          { label: "Keep praying", style: "cancel" },
         ]}
       />
     </SafeAreaView>
-  );
-}
-
-function ControlButton({ icon, label, onPress, colors, primary }) {
-  return (
-    <TouchableOpacity
-      style={styles.control}
-      onPress={onPress}
-      accessibilityRole="button"
-      accessibilityLabel={label}
-    >
-      <View
-        style={[
-          styles.controlCircle,
-          {
-            borderColor: primary ? colors.accentBorder : colors.border,
-            backgroundColor: primary ? colors.accent : "transparent",
-          },
-        ]}
-      >
-        <Ionicons
-          name={icon}
-          size={primary ? 26 : 20}
-          color={primary ? colors.accentContrast : colors.secondaryText}
-        />
-      </View>
-      <Text style={[styles.controlLabel, { color: colors.secondaryText }]}>{label}</Text>
-    </TouchableOpacity>
   );
 }
 
@@ -336,7 +209,7 @@ function Stat({ label, value, colors }) {
   );
 }
 
-const hit = { top: 10, bottom: 10, left: 10, right: 10 };
+const hit = { top: 12, bottom: 12, left: 12, right: 12 };
 
 const styles = StyleSheet.create({
   safe: { flex: 1 },
@@ -349,7 +222,6 @@ const styles = StyleSheet.create({
     paddingBottom: 4,
     minHeight: 40,
   },
-  // Pushes a lone close button over to the right edge.
   headerSpacer: { flex: 1 },
   body: { paddingHorizontal: 24, paddingBottom: 40 },
   name: { fontSize: 26, fontFamily: uiFont(700), marginTop: 8 },
@@ -357,57 +229,26 @@ const styles = StyleSheet.create({
   notes: { borderRadius: 12, padding: 16, marginTop: 18 },
   notesText: { fontSize: 15, fontFamily: uiFont(400), lineHeight: 22 },
 
-  pickBlock: { marginTop: 32 },
-  pickLabel: {
-    fontSize: 13,
-    fontFamily: uiFont(700),
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
-    marginBottom: 14,
-  },
-  durations: { flexDirection: "row", gap: 12 },
-  duration: {
-    flex: 1,
-    borderWidth: 1.5,
-    borderRadius: 12,
-    paddingVertical: 16,
-    alignItems: "center",
-  },
-  durationValue: { fontSize: 22, fontFamily: uiFont(700) },
-  durationUnit: { fontSize: 11, fontFamily: uiFont(500), marginTop: 2 },
-  start: {
-    marginTop: 24,
+  // Ready state
+  readyBlock: { marginTop: 40, alignItems: "center" },
+  begin: {
     borderWidth: 1.5,
     borderRadius: 14,
     paddingVertical: 16,
+    paddingHorizontal: 64,
     alignItems: "center",
   },
-  startText: { fontSize: 16, fontFamily: uiFont(700), letterSpacing: 0.3 },
+  beginText: { fontSize: 18, fontFamily: uiFont(700), letterSpacing: 0.5 },
 
+  // Praying state
   timerBlock: { alignItems: "center", marginTop: 36 },
-  countdown: {
+  elapsed: {
     fontSize: 72,
     fontFamily: uiFont(700),
     fontVariant: ["tabular-nums"],
     letterSpacing: 1,
   },
-  countdownMeta: { fontSize: 14, fontFamily: uiFont(500), marginTop: 4 },
-  controls: {
-    flexDirection: "row",
-    justifyContent: "center",
-    gap: 32,
-    marginTop: 36,
-  },
-  control: { alignItems: "center" },
-  controlCircle: {
-    width: 62,
-    height: 62,
-    borderRadius: 31,
-    borderWidth: 1.5,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  controlLabel: { fontSize: 12, fontFamily: uiFont(500), marginTop: 8 },
+  elapsedMeta: { fontSize: 14, fontFamily: uiFont(500), marginTop: 4 },
   amen: {
     marginTop: 36,
     borderWidth: 1.5,
@@ -416,7 +257,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 64,
   },
   amenText: { fontSize: 18, fontFamily: uiFont(700), letterSpacing: 0.5 },
-  hint: { fontSize: 12, fontFamily: uiFont(400), marginTop: 22, textAlign: "center" },
+  pauseRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginTop: 24,
+  },
+  pauseLabel: { fontSize: 14, fontFamily: uiFont(500) },
 
   restingNote: {
     flexDirection: "row",
@@ -426,7 +273,7 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     paddingVertical: 10,
     paddingHorizontal: 12,
-    marginBottom: 20,
+    marginBottom: 24,
   },
   restingNoteText: { flex: 1, fontSize: 13, fontFamily: uiFont(400) },
 

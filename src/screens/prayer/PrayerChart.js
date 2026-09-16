@@ -9,23 +9,24 @@ import React from "react";
 import { View, Text, StyleSheet } from "react-native";
 import { useTheme } from "../../theme/ThemeContext";
 import { uiFont } from "../../theme/fonts";
+import { formatPrayerTime } from "../../data/prayerStore";
 
 const DAY_INITIALS = ["S", "M", "T", "W", "T", "F", "S"];
 
-export default function PrayerChart({ history, goalMinutes }) {
+export default function PrayerChart({ history, goalSeconds }) {
   const { colors } = useTheme();
 
   if (!history || history.length === 0) return null;
 
-  const best = history.reduce((max, day) => Math.max(max, day.minutes), 0);
+  const best = history.reduce((max, day) => Math.max(max, day.seconds), 0);
   // Keep the goal on-scale so the dashed target line always has somewhere to
   // sit, and never divide by zero on a week with no prayer logged.
-  const scale = Math.max(best, goalMinutes || 0, 1);
-  const goalRatio = goalMinutes > 0 ? Math.min(1, goalMinutes / scale) : null;
+  const scale = Math.max(best, goalSeconds || 0, 1);
+  const goalRatio = goalSeconds > 0 ? Math.min(1, goalSeconds / scale) : null;
 
-  const total = history.reduce((sum, day) => sum + day.minutes, 0);
-  const daysMet = goalMinutes > 0
-    ? history.filter((day) => day.minutes >= goalMinutes).length
+  const total = history.reduce((sum, day) => sum + day.seconds, 0);
+  const daysMet = goalSeconds > 0
+    ? history.filter((day) => day.seconds >= goalSeconds).length
     : 0;
 
   return (
@@ -35,7 +36,7 @@ export default function PrayerChart({ history, goalMinutes }) {
           Last {history.length} days
         </Text>
         <Text style={[styles.summary, { color: colors.mutedText }]}>
-          {total} min{goalMinutes > 0 ? ` · ${daysMet} day${daysMet === 1 ? "" : "s"} on goal` : ""}
+          {formatPrayerTime(total)}{goalSeconds > 0 ? ` · ${daysMet} day${daysMet === 1 ? "" : "s"} on goal` : ""}
         </Text>
       </View>
 
@@ -56,8 +57,8 @@ export default function PrayerChart({ history, goalMinutes }) {
 
         <View style={styles.bars}>
           {history.map((day) => {
-            const ratio = day.minutes / scale;
-            const met = goalMinutes > 0 && day.minutes >= goalMinutes;
+            const ratio = day.seconds / scale;
+            const met = goalSeconds > 0 && day.seconds >= goalSeconds;
             return (
               <View key={day.date} style={styles.barSlot}>
                 <View
@@ -65,8 +66,8 @@ export default function PrayerChart({ history, goalMinutes }) {
                     styles.bar,
                     {
                       // A hairline stub keeps empty days visible as a baseline.
-                      height: day.minutes > 0 ? `${Math.max(3, ratio * 100)}%` : 2,
-                      backgroundColor: day.minutes === 0
+                      height: day.seconds > 0 ? `${Math.max(3, ratio * 100)}%` : 2,
+                      backgroundColor: day.seconds === 0
                         ? colors.border
                         : met
                           ? colors.accent

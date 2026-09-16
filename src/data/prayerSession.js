@@ -1,18 +1,16 @@
-// Global prayer-session state (the countdown timer).
+// Global prayer-session state (the count-up timer).
 //
 // The timer lives ABOVE the screen tree so a session keeps running while the
 // user moves between the Bible, Memory, and Prayer tabs — exactly like the
 // sermon player. The Prayer tab renders the full timer UI; every other tab
-// shows the compact PrayerMiniBar. Both read from this one context, so there
-// is never a second, drifting copy of the countdown.
+// shows the compact PrayerMiniBar. Both read from this one context.
 //
 // Deliberate rules baked in here:
-//   * Ending a session early logs NOTHING and leaves the point untouched.
-//     The user has to see the countdown through to 0:00 to get credit.
-//   * Reaching 0:00 does not auto-complete: the session parks in a "finished"
-//     state until the user confirms with the Amen button.
+//   * The user taps "Begin" to start — no duration is chosen upfront.
+//   * The timer counts UP from 0:00.
+//   * "Amen" is available at any time once the timer is running or paused.
 //   * Wall-clock based, not tick-counted, so backgrounding the app or a janky
-//     JS thread can never make the countdown drift.
+//     JS thread can never make the elapsed time drift.
 
 import React, {
   createContext,
@@ -29,23 +27,25 @@ const PrayerSessionContext = createContext(null);
 
 /** No session running. */
 export const IDLE = "idle";
-/** Counting down. */
+/** Counting up. */
 export const RUNNING = "running";
-/** Counting down, but held. */
+/** Counting up, but held. */
 export const PAUSED = "paused";
-/** Hit 0:00 and waiting for the user to confirm with Amen. */
-export const FINISHED = "finished";
 
 export function PrayerSessionProvider({ children }) {
   // The prayer point being prayed for, or null when idle.
   const [point, setPoint] = useState(null);
   const [status, setStatus] = useState(IDLE);
-  const [durationMinutes, setDurationMinutes] = useState(null);
-  const [remainingMs, setRemainingMs] = useState(0);
+  // Displayed elapsed ms — only updated when the displayed second changes.
+  const [elapsedMs, setElapsedMs] = useState(0);
 
-  // Wall-clock deadline while running; remaining ms is derived from it so the
-  // countdown stays accurate across backgrounding and dropped frames.
-  const deadlineRef = useRef(null);
+  // Wall-clock timestamp when the current running segment started.
+  // null when paused or idle.
+  const startRef = useRef(null);
+  // Ms banked from all completed segments (paused time excluded).
+  const bankedRef = useRef(0);
+  // The last whole-second value we pushed to state, to avoid needless renders.
+  const lastSecRef = useRef(-1);
   const intervalRef = useRef(null);
 
   const clearTicker = useCallback(() => {
@@ -55,31 +55,35 @@ export function PrayerSessionProvider({ children }) {
     }
   }, []);
 
-  // Recompute from the deadline and stop at zero.
-  const sync = useCallback(() => {
-    if (deadlineRef.current == null) return;
-    const left = Math.max(0, deadlineRef.current - Date.now());
-    setRemainingMs(left);
-    if (left <= 0) {
-      deadlineRef.current = null;
-      clearTicker();
-      setStatus(FINISHED);
-    }
-  }, [clearTicker]);
+  // Read the true elapsed ms right now (does not mutate anything).
+  const readElapsed = useCallback(() => {
+    const running = startRef.current != null ? Date.now() - startRef.current : 0;
+    return bankedRef.current + running;
+  }, []);
 
-  // Drive the countdown only while actually running.
+  // Push elapsed to state only when the displayed second ticks over.
+  const sync = useCallback(() => {
+    const ms = readElapsed();
+    const sec = Math.floor(ms / 1000);
+    if (sec !== lastSecRef.current) {
+      lastSecRef.current = sec;
+      setElapsedMs(ms);
+    }
+  }, [readElapsed]);
+
+  // Drive the count-up only while actually running.
   useEffect(() => {
     if (status !== RUNNING) {
       clearTicker();
       return undefined;
     }
+    // Kick immediately so the display doesn't lag on resume.
     sync();
     intervalRef.current = setInterval(sync, 250);
     return clearTicker;
   }, [status, sync, clearTicker]);
 
-  // Returning from the background can skip many ticks; resync immediately so
-  // the displayed time is correct the instant the app is visible again.
+  // Returning from the background can skip many ticks; resync immediately.
   useEffect(() => {
     const subscription = AppState.addEventListener("change", (next) => {
       if (next === "active") sync();
@@ -89,70 +93,57 @@ export function PrayerSessionProvider({ children }) {
 
   useEffect(() => clearTicker, [clearTicker]);
 
-  /** Open the timer for a prayer point without starting the countdown yet. */
+  /** Open the timer for a prayer point without starting the count-up yet. */
   const openSession = useCallback((nextPoint) => {
     clearTicker();
-    deadlineRef.current = null;
+    startRef.current = null;
+    bankedRef.current = 0;
+    lastSecRef.current = -1;
     setPoint(nextPoint);
-    setDurationMinutes(null);
-    setRemainingMs(0);
+    setElapsedMs(0);
     setStatus(IDLE);
   }, [clearTicker]);
 
-  /** Begin counting down for the chosen number of minutes. */
-  const start = useCallback((minutes) => {
-    const ms = Math.max(1, Math.round(Number(minutes) || 0)) * 60 * 1000;
-    deadlineRef.current = Date.now() + ms;
-    setDurationMinutes(Math.round(Number(minutes)));
-    setRemainingMs(ms);
+  /** Begin counting up. */
+  const start = useCallback(() => {
+    bankedRef.current = 0;
+    lastSecRef.current = -1;
+    startRef.current = Date.now();
+    setElapsedMs(0);
     setStatus(RUNNING);
   }, []);
 
-  /** Hold the countdown, banking whatever time is left. */
+  /** Hold the count-up, banking elapsed time so far. */
   const pause = useCallback(() => {
     setStatus((current) => {
       if (current !== RUNNING) return current;
-      const left = Math.max(0, (deadlineRef.current ?? Date.now()) - Date.now());
-      deadlineRef.current = null;
-      setRemainingMs(left);
+      // Bank the segment that just ended before clearing the start reference.
+      if (startRef.current != null) {
+        bankedRef.current += Date.now() - startRef.current;
+        startRef.current = null;
+      }
+      setElapsedMs(bankedRef.current);
       return PAUSED;
     });
   }, []);
 
-  /** Resume from wherever the countdown was paused. */
+  /** Resume counting up from wherever it was paused. */
   const resume = useCallback(() => {
     setStatus((current) => {
       if (current !== PAUSED) return current;
-      deadlineRef.current = Date.now() + remainingMs;
+      startRef.current = Date.now();
       return RUNNING;
     });
-  }, [remainingMs]);
-
-  /** Restart the countdown from the top of the chosen duration. */
-  const reset = useCallback(() => {
-    if (!durationMinutes) return;
-    const ms = durationMinutes * 60 * 1000;
-    deadlineRef.current = null;
-    setRemainingMs(ms);
-    setStatus(PAUSED);
-  }, [durationMinutes]);
-
-  /** Drop back to the duration picker, discarding the countdown. */
-  const clearDuration = useCallback(() => {
-    clearTicker();
-    deadlineRef.current = null;
-    setDurationMinutes(null);
-    setRemainingMs(0);
-    setStatus(IDLE);
-  }, [clearTicker]);
+  }, []);
 
   /** Abandon the session entirely. Nothing is logged — by design. */
   const cancel = useCallback(() => {
     clearTicker();
-    deadlineRef.current = null;
+    startRef.current = null;
+    bankedRef.current = 0;
+    lastSecRef.current = -1;
     setPoint(null);
-    setDurationMinutes(null);
-    setRemainingMs(0);
+    setElapsedMs(0);
     setStatus(IDLE);
   }, [clearTicker]);
 
@@ -160,32 +151,30 @@ export function PrayerSessionProvider({ children }) {
     () => ({
       point,
       status,
-      durationMinutes,
-      remainingMs,
+      elapsedMs,
+      // Live read of elapsed ms — use this when logging (e.g. on Amen tap)
+      // so you always get the true value, not a stale render snapshot.
+      readElapsed,
       // A session occupies the Prayer tab (and shows the mini bar elsewhere)
       // from the moment a point is opened until it is cancelled or confirmed.
       isActive: point != null,
-      // Only a countdown that ran all the way down can be confirmed.
-      canConfirm: status === FINISHED,
+      // Amen is available the moment the timer has been started.
+      canConfirm: status === RUNNING || status === PAUSED,
       openSession,
       start,
       pause,
       resume,
-      reset,
-      clearDuration,
       cancel,
     }),
     [
       point,
       status,
-      durationMinutes,
-      remainingMs,
+      elapsedMs,
+      readElapsed,
       openSession,
       start,
       pause,
       resume,
-      reset,
-      clearDuration,
       cancel,
     ]
   );
@@ -205,10 +194,15 @@ export function usePrayerSession() {
   return ctx;
 }
 
-/** Format milliseconds as m:ss for the countdown display. */
-export function formatCountdown(ms) {
-  const total = Math.max(0, Math.ceil(ms / 1000));
+/** Format milliseconds as m:ss for the elapsed-time display. */
+export function formatCountup(ms) {
+  const total = Math.floor(Math.max(0, ms) / 1000);
   const minutes = Math.floor(total / 60);
   const seconds = total % 60;
   return `${minutes}:${String(seconds).padStart(2, "0")}`;
+}
+
+/** Elapsed milliseconds converted to whole seconds (minimum 1). */
+export function elapsedSeconds(ms) {
+  return Math.max(1, Math.round(ms / 1000));
 }

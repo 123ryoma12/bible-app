@@ -26,6 +26,7 @@ import {
   updatePrayer,
   archivePrayer,
   removePrayer,
+  formatPrayerTime,
 } from "../../data/prayerStore";
 
 export default function PrayerAdd({ entry, onDone, onCancel }) {
@@ -73,13 +74,12 @@ export default function PrayerAdd({ entry, onDone, onCancel }) {
   }
 
   // "archive" | "delete" | null — which confirmation is on screen.
+  const totalSecs = entry?.totalSeconds ?? (entry?.totalMinutes || 0) * 60;
   const deleteMessage = entry
     ? `Permanently delete "${entry.name}"? This removes it along with ${
         entry.prayedCount || 0
       } recorded prayer${entry.prayedCount === 1 ? "" : "s"} and ${
-        entry.totalMinutes || 0
-      } minute${
-        (entry.totalMinutes || 0) === 1 ? "" : "s"
+        formatPrayerTime(totalSecs)
       } of logged time, which will also come off your daily totals. This cannot be undone.`
     : "";
 

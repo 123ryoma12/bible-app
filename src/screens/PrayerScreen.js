@@ -20,11 +20,12 @@ import { usePrayerSession } from "../data/prayerSession";
 import {
   getActivePrayers,
   getArchivedPrayers,
-  getDailyMinutes,
+  getDailySeconds,
   getDailyHistory,
   getPrayerSettings,
   setPrayerSettings,
   recordPrayerSession,
+  formatPrayerTime,
   removePrayer,
   archivePrayer,
   unarchivePrayer,
@@ -60,9 +61,9 @@ export default function PrayerScreen() {
 
   const [active, setActive] = useState([]);
   const [archived, setArchived] = useState([]);
-  const [todayMinutes, setTodayMinutes] = useState(0);
+  const [todaySeconds, setTodaySeconds] = useState(0);
   const [history, setHistory] = useState([]);
-  const [goalMinutes, setGoalMinutes] = useState(0);
+  const [goalSeconds, setGoalSeconds] = useState(0);
   const [loading, setLoading] = useState(true);
 
   const [showGoal, setShowGoal] = useState(false);
@@ -73,18 +74,18 @@ export default function PrayerScreen() {
   const [archivedNotice, setArchivedNotice] = useState(null);
 
   const refresh = useCallback(async () => {
-    const [activeList, archivedList, minutes, days, settings] = await Promise.all([
+    const [activeList, archivedList, secs, days, settings] = await Promise.all([
       getActivePrayers(),
       getArchivedPrayers(),
-      getDailyMinutes(),
+      getDailySeconds(),
       getDailyHistory(HISTORY_DAYS),
       getPrayerSettings(),
     ]);
     setActive(activeList);
     setArchived(archivedList);
-    setTodayMinutes(minutes);
+    setTodaySeconds(secs);
     setHistory(days);
-    setGoalMinutes(settings.dailyGoalMinutes);
+    setGoalSeconds(settings.dailyGoalSeconds);
     setLoading(false);
   }, []);
 
@@ -140,10 +141,11 @@ export default function PrayerScreen() {
 
   async function handleConfirmSession() {
     const point = session.point;
-    const minutes = session.durationMinutes;
+    const ms = session.readElapsed();
     session.cancel();
-    if (point && minutes) {
-      const result = await recordPrayerSession(point.id, minutes);
+    if (point && ms > 0) {
+      const seconds = Math.max(1, Math.round(ms / 1000));
+      const result = await recordPrayerSession(point.id, seconds);
       // Reaching the repetition target retires the point, which would otherwise
       // just silently vanish from the list.
       if (result?.archived) setArchivedNotice(result.point.name);
@@ -204,9 +206,10 @@ export default function PrayerScreen() {
           ];
 
   async function saveGoal() {
-    const parsed = Number.parseInt(goalDraft, 10);
-    if (Number.isFinite(parsed) && parsed > 0) {
-      await setPrayerSettings({ dailyGoalMinutes: parsed });
+    // User enters minutes; we store seconds.
+    const parsedMinutes = Number.parseInt(goalDraft, 10);
+    if (Number.isFinite(parsedMinutes) && parsedMinutes > 0) {
+      await setPrayerSettings({ dailyGoalSeconds: parsedMinutes * 60 });
     }
     setShowGoal(false);
     refresh();
@@ -236,7 +239,7 @@ export default function PrayerScreen() {
 
   // --- List -----------------------------------------------------------------
 
-  const goalPct = goalMinutes > 0 ? Math.min(1, todayMinutes / goalMinutes) : 0;
+  const goalPct = goalSeconds > 0 ? Math.min(1, todaySeconds / goalSeconds) : 0;
 
   return (
     <SafeAreaView
@@ -248,7 +251,7 @@ export default function PrayerScreen() {
         <View style={styles.headerActions}>
           <AppSettingsButton />
           <TouchableOpacity
-            onPress={() => { setGoalDraft(String(goalMinutes)); setShowGoal(true); }}
+            onPress={() => { setGoalDraft(String(Math.round(goalSeconds / 60))); setShowGoal(true); }}
             hitSlop={hit}
             accessibilityLabel="Daily prayer goal"
           >
@@ -257,7 +260,7 @@ export default function PrayerScreen() {
             <MaterialCommunityIcons
               name="flag-outline"
               size={22}
-              color={goalMinutes > 0 ? colors.accent : colors.mutedText}
+              color={goalSeconds > 0 ? colors.accent : colors.mutedText}
             />
           </TouchableOpacity>
           <TouchableOpacity
@@ -274,12 +277,12 @@ export default function PrayerScreen() {
       <View style={styles.goalBlock}>
         <View style={styles.goalRow}>
           <Text style={[styles.goalValue, { color: colors.text }]}>
-            {todayMinutes}
+            {formatPrayerTime(todaySeconds)}
             <Text style={[styles.goalTarget, { color: colors.secondaryText }]}>
-              {` / ${goalMinutes} min today`}
+              {` / ${Math.round(goalSeconds / 60)} min today`}
             </Text>
           </Text>
-          {goalMinutes > 0 && todayMinutes >= goalMinutes && (
+          {goalSeconds > 0 && todaySeconds >= goalSeconds && (
             <Ionicons name="checkmark-circle" size={18} color={colors.accent} />
           )}
         </View>
@@ -334,7 +337,7 @@ export default function PrayerScreen() {
           stickySectionHeadersEnabled={false}
           ListHeaderComponent={
             active.length > 0 ? (
-              <PrayerChart history={history} goalMinutes={goalMinutes} />
+              <PrayerChart history={history} goalSeconds={goalSeconds} />
             ) : null
           }
           renderSectionHeader={({ section }) => (
@@ -517,7 +520,7 @@ function ArchivedRow({ point, colors, onLongPress }) {
           {point.name}
         </Text>
         <Text style={[styles.rowMeta, { color: colors.secondaryText }]} numberOfLines={1}>
-          {point.prayedCount} prayer{point.prayedCount === 1 ? "" : "s"} · {point.totalMinutes} min · {frequencyLabel(point)}
+          {point.prayedCount} prayer{point.prayedCount === 1 ? "" : "s"} · {formatPrayerTime(point.totalSeconds ?? (point.totalMinutes || 0) * 60)} · {frequencyLabel(point)}
         </Text>
         <Text style={[styles.rowSub, { color: colors.mutedText }]} numberOfLines={1}>
           {lastPrayedLabel(point)} · archived {formatDate(point.archivedAt)}

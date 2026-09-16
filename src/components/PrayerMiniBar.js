@@ -13,15 +13,14 @@ import { useTheme } from "../theme/ThemeContext";
 import { uiFont } from "../theme/fonts";
 import {
   usePrayerSession,
-  formatCountdown,
+  formatCountup,
   RUNNING,
   PAUSED,
-  FINISHED,
 } from "../data/prayerSession";
 
 export default function PrayerMiniBar({ onPress, visible = true, hideDistance = 0 }) {
   const { colors } = useTheme();
-  const { point, status, remainingMs, pause, resume, cancel } = usePrayerSession();
+  const { point, status, elapsedMs, pause, resume, cancel } = usePrayerSession();
 
   // Slide away with the rest of the bottom chrome while the reader scrolls.
   const anim = useRef(new Animated.Value(0)).current;
@@ -42,7 +41,6 @@ export default function PrayerMiniBar({ onPress, visible = true, hideDistance = 
 
   if (!point) return null;
 
-  const finished = status === FINISHED;
   const running = status === RUNNING;
 
   return (
@@ -79,31 +77,28 @@ export default function PrayerMiniBar({ onPress, visible = true, hideDistance = 
             {point.name}
           </Text>
           <Text style={[styles.status, { color: colors.secondaryText }]}>
-            {finished ? "Time complete — tap to finish" : status === PAUSED ? "Paused" : "Praying"}
+            {status === PAUSED ? "Paused" : "Praying"}
           </Text>
         </View>
-        <Text style={[styles.time, { color: finished ? colors.accent : colors.surfaceText }]}>
-          {formatCountdown(remainingMs)}
+        <Text style={[styles.time, { color: colors.surfaceText }]}>
+          {formatCountup(elapsedMs)}
         </Text>
       </TouchableOpacity>
 
-      {/* Pause/resume is safe to expose here; confirming is not. Once the
-          countdown is finished there is nothing left to toggle. */}
-      {!finished && (
-        <TouchableOpacity
-          onPress={running ? pause : resume}
-          hitSlop={hit}
-          style={styles.action}
-          accessibilityRole="button"
-          accessibilityLabel={running ? "Pause prayer timer" : "Resume prayer timer"}
-        >
-          <Ionicons
-            name={running ? "pause" : "play"}
-            size={20}
-            color={colors.surfaceText}
-          />
-        </TouchableOpacity>
-      )}
+      {/* Pause/resume is always available from the mini bar. */}
+      <TouchableOpacity
+        onPress={running ? pause : resume}
+        hitSlop={hit}
+        style={styles.action}
+        accessibilityRole="button"
+        accessibilityLabel={running ? "Pause prayer timer" : "Resume prayer timer"}
+      >
+        <Ionicons
+          name={running ? "pause" : "play"}
+          size={20}
+          color={colors.surfaceText}
+        />
+      </TouchableOpacity>
 
       <TouchableOpacity
         onPress={cancel}
