@@ -14,7 +14,7 @@ Format per entry:
 import zipfile, re, json, os
 
 EPUB_PATH = os.path.join(os.path.dirname(__file__), '..', 'studybible.epub')
-OUT_PATH  = os.path.join(os.path.dirname(__file__), '..', 'data', 'study_notes_new.json')
+OUT_PATH  = os.path.join(os.path.dirname(__file__), '..', 'data', 'study_notes.json')
 
 # Map notesubhead book name -> canonical name matching existing study_notes.json keys
 BOOK_NAME_MAP = {
@@ -94,20 +94,89 @@ def strip_tags(html):
     return text.strip()
 
 
+def render_inline(html):
+    """
+    Convert inline HTML to plain text with markdown formatting:
+    - <span class="rsb-studynote-bold ...">...</span>  -> **...**
+    - <span class="i">...</span>                        -> _..._
+    - <span class="sc ..."><small>...</small></span>    -> plain text (small caps, e.g. B.C.)
+    - <span class="note-drop">...</span>                -> plain text (drop cap)
+    - <a ...>BACK TO ...</a>                            -> stripped entirely
+    - <a ...>text</a>                                   -> text (strip links)
+    - <br/>                                             -> (strip)
+    - all other tags stripped
+    """
+    # Remove "BACK TO ..." anchor links entirely (including surrounding whitespace)
+    html = re.sub(r'\s*<a[^>]*>\s*BACK TO[^<]*</a>', '', html)
+
+    # Remove <br/> tags
+    html = re.sub(r'<br\s*/>', ' ', html)
+
+    # Bold spans (rsb-studynote-bold, with or without extra classes)
+    def replace_bold(m):
+        inner = render_inline(m.group(1))
+        inner = inner.strip()
+        if not inner:
+            return ''
+        return f'**{inner}**'
+    html = re.sub(r'<span class="rsb-studynote-bold[^"]*">(.*?)</span>', replace_bold, html, flags=re.DOTALL)
+
+    # Italic spans
+    def replace_italic(m):
+        inner = strip_tags(m.group(1)).strip()
+        if not inner:
+            return ''
+        return f'_{inner}_'
+    html = re.sub(r'<span class="i">(.*?)</span>', replace_italic, html, flags=re.DOTALL)
+
+    # Strip all remaining tags (sc, note-drop, sgc-1, a, small, etc.)
+    text = re.sub(r'<[^>]+>', '', html)
+    text = re.sub(r'\s+', ' ', text)
+    return text.strip()
+
+
 def get_bold_span_text(para_html):
-    """Extract the text content of the rsb-studynote-bold span."""
-    m = re.search(r'<span class="rsb-studynote-bold">(.*?)</span>', para_html, re.DOTALL)
+    """Extract the plain-text content of the rsb-studynote-bold span (for header parsing)."""
+    m = re.search(r'<span class="rsb-studynote-bold[^"]*">(.*?)</span>', para_html, re.DOTALL)
     if m:
         return strip_tags(m.group(1))
     return ''
 
 
 def get_text_after_bold(para_html):
-    """Extract text that comes after the closing </span> of rsb-studynote-bold."""
-    m = re.search(r'<span class="rsb-studynote-bold">.*?</span>(.*)', para_html, re.DOTALL)
+    """Extract text (with markdown formatting) that comes after the closing </span> of rsb-studynote-bold."""
+    m = re.search(r'<span class="rsb-studynote-bold[^"]*">.*?</span>(.*)', para_html, re.DOTALL)
     if m:
-        return strip_tags(m.group(1))
-    return strip_tags(para_html)
+        return render_inline(m.group(1))
+    return render_inline(para_html)
+
+
+def render_para(para_html):
+    """
+    Render a full continuation paragraph to markdown text.
+    If the paragraph starts with a bold span, format it as **bold** + rest.
+    Otherwise render inline formatting only.
+    Skips sgc-only paragraphs (map/sidebar captions with no studynote-bold).
+    """
+    # Check if this is a sgc-only paragraph (map/image caption) — skip it
+    # sgc paragraphs have sgc-1/sgc-4 spans but no rsb-studynote-bold
+    stripped_classes = re.findall(r'<span class="([^"]+)"', para_html)
+    has_studynote_bold = any('rsb-studynote-bold' in c for c in stripped_classes)
+    has_sgc_only = any('sgc' in c for c in stripped_classes)
+    if has_sgc_only and not has_studynote_bold:
+        return ''
+
+    bold_m = re.search(r'<span class="rsb-studynote-bold[^"]*">(.*?)</span>(.*)', para_html, re.DOTALL)
+    if bold_m:
+        bold_text = strip_tags(bold_m.group(1)).strip()
+        rest = render_inline(bold_m.group(2))
+        if bold_text and rest:
+            return f'**{bold_text}** {rest}'
+        elif bold_text:
+            return f'**{bold_text}**'
+        else:
+            return rest
+    return render_inline(para_html)
 
 
 def parse_verse_ref_and_quote(bold_text, book_name_upper):
@@ -264,7 +333,7 @@ def parse_file(content, book_name_upper):
 
     def flush():
         if current_note:
-            note_text = ' '.join(p for p in current_note['parts'] if p)
+            note_text = '\n\n'.join(p for p in current_note['parts'] if p)
             # Remove trailing "BACK TO BOOK X:Y" links
             note_text = re.sub(r'\s*BACK TO [A-Z\s]+ [\d:–\-,\s]+\s*$', '', note_text).strip()
             notes.append({
@@ -343,8 +412,9 @@ def parse_file(content, book_name_upper):
                 text = strip_tags(body)
                 if re.match(r'^BACK TO [A-Z\s]+ [\d:–\-,\s]+$', text):
                     continue
-                if text:
-                    current_note['parts'].append(text)
+                rendered = render_para(body)
+                if rendered:
+                    current_note['parts'].append(rendered)
 
         else:
             # Layout A continuation paragraph
@@ -353,8 +423,9 @@ def parse_file(content, book_name_upper):
             text = strip_tags(body)
             if re.match(r'^BACK TO [A-Z\s]+ [\d:–\-]+$', text):
                 continue
-            if text:
-                current_note['parts'].append(text)
+            rendered = render_para(body)
+            if rendered:
+                current_note['parts'].append(rendered)
 
     flush()
     return notes
