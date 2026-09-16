@@ -16,10 +16,11 @@ import { uiFont } from "../theme/fonts";
 import NoteText from "./NoteText";
 
 const FONT_STYLES = StyleSheet.create({
-  verseRef:     { fontFamily: uiFont(600) },
-  verseQuote:   { fontFamily: uiFont(400, "italic") },
-  noteText:     { fontFamily: uiFont(400) },
-  noteTextBold: { fontFamily: uiFont(600) },
+  verseRef:       { fontFamily: uiFont(600) },
+  verseQuote:     { fontFamily: uiFont(400), fontStyle: "italic" },
+  noteText:       { fontFamily: uiFont(400) },
+  noteTextBold:   { fontFamily: uiFont(600) },
+  noteTextItalic: { fontFamily: uiFont(400), fontStyle: "italic" },
 });
 
 const POPOVER_MAX_HEIGHT_FRAC = 0.42;
@@ -108,6 +109,7 @@ export default function VerseNotePopover({ visible, notes, anchorY, onDismiss })
                 text={note.note}
                 style={[styles.noteText, FONT_STYLES.noteText, { color: colors.text }]}
                 boldStyle={FONT_STYLES.noteTextBold}
+                italicStyle={FONT_STYLES.noteTextItalic}
               />
             </View>
           ))}

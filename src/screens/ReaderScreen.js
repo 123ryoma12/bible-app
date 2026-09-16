@@ -208,8 +208,20 @@ export default function ReaderScreen({
   // the ScrollView content is still growing across layout passes.
   const lastContentHeight = useRef(0);
 
+  // Tracks whether the chrome was hidden by a deliberate tap (vs. by scrolling
+  // down). When true, scroll-based reveals (reaching top, reaching end, fast
+  // upward fling) are suppressed — only another tap can restore the chrome.
+  const hiddenByTap = useRef(false);
+
   const setChrome = useCallback(
-    (next) => {
+    (next, { byTap = false } = {}) => {
+      if (!next) {
+        // Hiding: record whether it was a tap-initiated hide.
+        hiddenByTap.current = byTap;
+      } else {
+        // Showing: clear the flag.
+        hiddenByTap.current = false;
+      }
       setChromeVisible((prev) => (prev === next ? prev : next));
       onChromeChange?.(next);
     },
@@ -223,7 +235,8 @@ export default function ReaderScreen({
     scrollYAtOpen.current = lastOffset.current;
     setPopover({ visible: true, notes, anchorY: pageY });
     // Hide chrome for an immersive reading experience while the note is open.
-    setChrome(false);
+    // Treated as a tap-hide so only a tap can restore it.
+    setChrome(false, { byTap: true });
   }, [verseNotesByVerse, setChrome]);
 
   const handleDismissPopover = useCallback(() => {
@@ -236,6 +249,7 @@ export default function ReaderScreen({
   // the screen persists across chapter changes we reset them explicitly.
   useEffect(() => {
     lastOffset.current = 0;
+    hiddenByTap.current = false;
     setChrome(true);
     setSermonsOpen(false);
     setPopover({ visible: false, notes: [], anchorY: 0 });
@@ -333,7 +347,9 @@ export default function ReaderScreen({
       if (Math.abs(y - scrollYAtOpen.current) > POPOVER_SCROLL_DISMISS) {
         setPopover((p) => {
           if (!p.visible) return p;
-          setChrome(true);
+          // Don't restore chrome via scroll if it was hidden by a tap —
+          // the popover dismisses silently and only a tap can show chrome again.
+          if (!hiddenByTap.current) setChrome(true);
           return { ...p, visible: false };
         });
       }
@@ -356,27 +372,29 @@ export default function ReaderScreen({
 
       // Always show at the very top.
       if (y <= 0) {
-        setChrome(true);
+        if (!hiddenByTap.current) setChrome(true);
         return;
       }
 
       // Always show once the end of the chapter is reached.
       const distanceToEnd = contentSize.height - (y + layoutMeasurement.height);
       if (distanceToEnd <= END_THRESHOLD) {
-        setChrome(true);
+        if (!hiddenByTap.current) setChrome(true);
         return;
       }
 
-      // Fast upward fling reveals chrome immediately.
+      // Fast upward fling reveals chrome immediately (scroll-initiated only).
       const vy = velocity ? velocity.y : 0;
       if (vy < -FAST_UP_VELOCITY || dy < -HIDE_SCROLL_DELTA * 2) {
-        setChrome(true);
+        if (!hiddenByTap.current) setChrome(true);
         return;
       }
 
-      // Scrolling down past the threshold hides chrome.
-      if (dy > HIDE_SCROLL_DELTA) {
-        setChrome(false);
+      // Scrolling down past the threshold hides chrome (scroll-initiated hide).
+      // Skip if already hidden — avoids clobbering a tap-initiated hide with
+      // byTap:false, which would allow scroll-up to re-show it incorrectly.
+      if (dy > HIDE_SCROLL_DELTA && !hiddenByTap.current) {
+        setChrome(false, { byTap: false });
       }
     },
     [setChrome, onScrollPositionChange]
@@ -389,7 +407,10 @@ export default function ReaderScreen({
         setChrome(true);
         return { ...p, visible: false };
       }
-      setChrome(!chromeVisible);
+      // When hiding via tap, set byTap:true so scroll-based reveals are suppressed.
+      // When showing via tap, byTap is irrelevant (setChrome clears hiddenByTap on show).
+      const next = !chromeVisible;
+      setChrome(next, { byTap: !next }); // hiding (next=false) → byTap:true
       return p;
     });
   }, [chromeVisible, setChrome]);
@@ -499,7 +520,7 @@ export default function ReaderScreen({
                         notes: [headingNote],
                         anchorY: e.nativeEvent.pageY,
                       });
-                      setChrome(false);
+                      setChrome(false, { byTap: true });
                     }}
                     hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                     activeOpacity={0.6}

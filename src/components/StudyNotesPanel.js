@@ -83,6 +83,9 @@ export default function StudyNotesPanel({ notes, visible, onClose, bottomOffset 
           boldStyle={{
             fontFamily: readingFont(readingFontKey, "bold"),
           }}
+          italicStyle={{
+            fontFamily: readingFont(readingFontKey, "italic"),
+          }}
         />
       </View>
     ),
