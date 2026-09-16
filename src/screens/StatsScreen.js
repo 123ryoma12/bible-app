@@ -4,6 +4,7 @@ import {
   Text,
   FlatList,
   TouchableOpacity,
+  Pressable,
   StyleSheet,
   ActivityIndicator,
   Modal,
@@ -596,8 +597,8 @@ function GoalModal({ visible, goalDate, readChapterCount, onClose, onApply }) {
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <View style={styles.modalBackdrop}>
-        <View style={[styles.modalCard, { backgroundColor: colors.surface }]}>
+      <Pressable style={styles.modalBackdrop} onPress={onClose}>
+        <Pressable style={[styles.modalCard, { backgroundColor: colors.surface }]} onPress={(e) => e.stopPropagation()}>
           <Text style={[styles.modalTitle, { color: colors.text }]}>Reading Goal</Text>
 
           <View style={styles.fieldRow}>
@@ -674,8 +675,8 @@ function GoalModal({ visible, goalDate, readChapterCount, onClose, onApply }) {
               </Text>
             </TouchableOpacity>
           </View>
-        </View>
-      </View>
+        </Pressable>
+      </Pressable>
     </Modal>
   );
 }

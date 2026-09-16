@@ -53,6 +53,8 @@ import { preloadAllProgress } from "./src/data/progressStore";
 import { preloadStatsSettings } from "./src/data/statsSettingsStore";
 import { preloadTheme } from "./src/theme/ThemeContext";
 
+import { Linking } from "react-native";
+import { syncWidgetData } from "./src/data/widgetBridge";
 import {
   getReaderTabs,
   setReaderTabs,
@@ -651,15 +653,58 @@ const AppContent = memo(function AppContent() {
   }, [screen, activeTabId]);
 
   // Also flush when the app goes to the background (home button, switcher, etc.)
+  // and sync widget data whenever the app becomes active.
   useEffect(() => {
     const sub = AppState.addEventListener("change", (nextState) => {
       if ((nextState === "background" || nextState === "inactive") && activeTabId) {
         const scrollY = tabScrollPositions.current[activeTabId] ?? 0;
         setLastScroll(scrollY);
       }
+      if (nextState === "active") {
+        syncWidgetData();
+      }
     });
     return () => sub.remove();
   }, [activeTabId]);
+
+  // Sync widget data on first mount (covers the initial launch case).
+  useEffect(() => {
+    syncWidgetData();
+  }, []);
+
+  // Handle deep links from widget taps: bibleapp://prayer?id=X,
+  // bibleapp://reader, bibleapp://memory.
+  const handleDeepLink = useCallback(({ url }) => {
+    if (!url) return;
+    try {
+      const parsed = new URL(url);
+      const host = parsed.hostname; // "prayer", "reader", "memory"
+      if (host === "prayer") {
+        setActiveTab("prayer");
+      } else if (host === "reader") {
+        setActiveTab("bible");
+        setScreen("reader");
+      } else if (host === "memory") {
+        setActiveTab("memory");
+      }
+    } catch {
+      // Malformed URL — ignore.
+    }
+  }, []);
+
+  // Handle deep links when app is already open.
+  useEffect(() => {
+    const sub = Linking.addEventListener("url", handleDeepLink);
+    return () => sub.remove();
+  }, [handleDeepLink]);
+
+  // Handle deep link that launched the app cold (widget tap from killed state).
+  useEffect(() => {
+    Linking.getInitialURL().then((url) => {
+      if (url) handleDeepLink({ url });
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   if (isRestoring) {
     return (
