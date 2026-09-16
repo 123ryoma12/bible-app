@@ -232,8 +232,6 @@ export default function ReaderTopBar({
   onVersionChange,
   onOpenSermons,
   onOpenHistory,
-  notesOpen,
-  onToggleNotes,
   // Inline verse note icons toggle
   verseNotesActive,
   onToggleVerseNotes,
@@ -280,12 +278,6 @@ export default function ReaderTopBar({
     setAppearanceOpen(false);
     setVersionOpen((o) => !o);
   }, []);
-
-  const handleToggleNotesCb = useCallback(() => {
-    setAppearanceOpen(false);
-    setVersionOpen(false);
-    onToggleNotes?.();
-  }, [onToggleNotes]);
 
   const handleToggleVerseNotesCb = useCallback(() => {
     setAppearanceOpen(false);
@@ -359,23 +351,6 @@ export default function ReaderTopBar({
               </TouchableOpacity>
             ) : null}
 
-            {/* Study notes toggle — opens/closes the full notes modal. */}
-            {onToggleNotes ? (
-              <TouchableOpacity
-                style={styles.notesBtn}
-                onPress={handleToggleNotesCb}
-                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                accessibilityRole="button"
-                accessibilityLabel={notesOpen ? "Close study notes" : "Open study notes"}
-                accessibilityState={{ expanded: notesOpen }}
-              >
-                <MaterialCommunityIcons
-                  name="book-open-page-variant"
-                  size={22}
-                  color={notesOpen ? colors.accent : colors.text}
-                />
-              </TouchableOpacity>
-            ) : null}
           </>
         )}
 

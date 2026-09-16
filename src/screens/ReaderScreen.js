@@ -21,9 +21,8 @@ import { incrementReadCount } from "../data/progressStore";
 import { addToHistory } from "../data/historyStore";
 import { useTheme } from "../theme/ThemeContext";
 import { getActiveReadingVersion } from "../data/bibleVersionStore";
-import { getStudyNotes, getStudyNotesByVerse, getHeadingNote } from "../data/studyNotesData";
+import { getStudyNotesByVerse, getHeadingNote } from "../data/studyNotesData";
 import { getReaderPrefs, setReaderPref } from "../data/readerPrefsStore";
-import StudyNotesModal from "../components/StudyNotesModal";
 import VerseNotePopover from "../components/VerseNotePopover";
 // lastPositionStore is intentionally not imported here — the global
 // lastPosition record is only needed at cold-launch time (handled in App.js).
@@ -134,15 +133,6 @@ export default function ReaderScreen({
   // so audio survives navigation.
   const [sermonsOpen, setSermonsOpen] = useState(false);
 
-  // Study notes modal visibility + notes for the current chapter.
-  const [notesOpen, setNotesOpen] = useState(false);
-  const studyNotes = useMemo(
-    () => getStudyNotes(book.name, chapterNumber),
-    [book.name, chapterNumber]
-  );
-  const handleToggleNotes = useCallback(() => {
-    setNotesOpen((o) => !o);
-  }, []);
 
   // Heading note — shown as a ⓘ icon next to the chapter number in the heading.
   // Only present for Psalms and a handful of other books with title notes.
@@ -248,7 +238,6 @@ export default function ReaderScreen({
     lastOffset.current = 0;
     setChrome(true);
     setSermonsOpen(false);
-    setNotesOpen(false);
     setPopover({ visible: false, notes: [], anchorY: 0 });
   }, [book.id, chapterNumber, setChrome]);
 
@@ -560,8 +549,6 @@ export default function ReaderScreen({
         onVersionChange={() => setVersionKey((k) => k + 1)}
         onOpenSermons={() => setSermonsOpen(true)}
         onOpenHistory={onOpenHistory}
-        notesOpen={notesOpen}
-        onToggleNotes={isIntro ? undefined : handleToggleNotes}
         verseNotesActive={verseNotesActive}
         onToggleVerseNotes={isIntro ? undefined : handleToggleVerseNotes}
         tocOpen={tocOpen}
@@ -593,14 +580,6 @@ export default function ReaderScreen({
         />
       )}
 
-      {/* Study notes modal — full-screen sheet for viewing all chapter notes. */}
-      <StudyNotesModal
-        visible={notesOpen}
-        onClose={() => setNotesOpen(false)}
-        book={book}
-        chapterNumber={chapterNumber}
-        notes={studyNotes}
-      />
 
       {/* Verse note popover — contextual card anchored near a tapped ⓘ icon.
           Dismisses on tap-outside or when the user scrolls away. */}
