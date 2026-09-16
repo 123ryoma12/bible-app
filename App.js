@@ -13,6 +13,7 @@ import SermonPlayer from "./src/components/SermonPlayer";
 import PrayerMiniBar from "./src/components/PrayerMiniBar";
 import * as SplashScreen from "expo-splash-screen";
 import { useFonts } from "@expo-google-fonts/lora/useFonts";
+import MaterialCommunityIconsFont from "@expo/vector-icons/build/vendor/react-native-vector-icons/Fonts/MaterialCommunityIcons.ttf";
 import { Lora_400Regular } from "@expo-google-fonts/lora/400Regular";
 import { Lora_500Medium } from "@expo-google-fonts/lora/500Medium";
 import { Lora_600SemiBold } from "@expo-google-fonts/lora/600SemiBold";
@@ -76,6 +77,7 @@ preloadStatsSettings();
 
 export default function App() {
   const [fontsLoaded, fontError] = useFonts({
+    MaterialCommunityIcons: MaterialCommunityIconsFont,
     Lora_400Regular,
     Lora_500Medium,
     Lora_600SemiBold,

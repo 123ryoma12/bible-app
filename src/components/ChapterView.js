@@ -6,6 +6,8 @@ import { readingFont, uiFont } from "../theme/fonts";
 // MaterialCommunityIcons glyph rendered as inline <Text> — the only way to
 // place an icon inside a React Native <Text> tree (no View allowed).
 // "information-outline": circled i outline, clean and unobtrusive.
+// The MaterialCommunityIcons font is loaded explicitly in App.js via useFonts()
+// so that fontFamily: "MaterialCommunityIcons" resolves correctly on all platforms.
 const INFO_ICON_GLYPH = String.fromCodePoint(0xf02fd);
 
 const BODY_SIZE = 18;
