@@ -304,8 +304,8 @@ export async function fetchSermonsForChapter(
 
 export async function fetchAudioUrl(sermon, { signal } = {}) {
   if (sermon.source === "cornerstone") {
-    return csFetchAudioUrl(sermon.permalink, { signal });
+    return csFetchAudioUrl(sermon.link, { signal });
   }
-  return gilFetchAudioUrl(sermon.permalink, { signal });
+  return gilFetchAudioUrl(sermon.link, { signal });
 }
 
