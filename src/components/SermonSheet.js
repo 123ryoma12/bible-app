@@ -145,8 +145,9 @@ export default function SermonSheet({
         signal: controller.signal,
         enabledSources,
         cornerstoneCongregations,
-        onBookReady: ({ bookSermons: bs, bookTotal: bt }) => {
+        onBookReady: ({ bookSermons: bs, bookTotal: bt, chapterSermons: cs }) => {
           if (controller.signal.aborted) return;
+          if (cs) setChapterSermons(cs);
           setBookSermons(bs);
           setBookTotal(bt);
           setBookReady(true);

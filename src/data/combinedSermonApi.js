@@ -257,9 +257,10 @@ export async function fetchSermonsForChapter(
 
   if (signal?.aborted) throw abortError();
 
-  // The chapter section is ready. The book section gets Cornerstone's results
-  // for now (often a useful partial view) while GiL loads in the background.
-  const chapterSermons = gilChapterResult.sermons;
+  // The chapter section is ready. Cornerstone results are already in hand, so
+  // filter them into the chapter section immediately — don't wait for Phase 2.
+  const csChapterSermons = chapterSermonsFrom(csResult.sermons, bookName, chapterNumber);
+  const chapterSermons = dedupeById([...gilChapterResult.sermons, ...csChapterSermons]);
   const initialBookSermons = dedupeById([...csResult.sermons]);
 
   // ── Phase 2: GiL all-pages fetch in background ─────────────────────────────
@@ -279,7 +280,11 @@ export async function fetchSermonsForChapter(
       // Persist to AsyncStorage so the next open is instant.
       writeCache(key, merged, bookTotal);
 
-      onBookReady?.({ bookSermons: merged, bookTotal });
+      // Re-derive chapter sermons from the full merged list so any GiL sermons
+      // that Phase 1's chapter-term fetch missed (e.g. sermons tagged at the
+      // book level only) are surfaced in the chapter section.
+      const fullChapterSermons = chapterSermonsFrom(merged, bookName, chapterNumber);
+      onBookReady?.({ bookSermons: merged, bookTotal, chapterSermons: fullChapterSermons });
     }).catch((err) => {
       if (isAbortError(err) || signal?.aborted) return;
       // Phase 2 failure is non-fatal — the chapter section is already shown.
