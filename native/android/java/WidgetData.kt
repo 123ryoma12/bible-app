@@ -90,6 +90,27 @@ fun todayDateString(): String =
     SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())
 
 /**
+ * Whole days between [date] ("YYYY-MM-DD", as written by the JS bridge) and
+ * today, measured in the device's local time zone.
+ *
+ * Returns null when the date is missing or unparseable, which callers should
+ * read as "never happened" rather than "happened today". Rounding the
+ * millisecond difference keeps the answer correct across daylight-saving
+ * boundaries, where two local midnights are 23 or 25 hours apart.
+ */
+fun daysSinceDate(date: String): Int? {
+    if (date.isBlank()) return null
+    return try {
+        val format = SimpleDateFormat("yyyy-MM-dd", Locale.US)
+        val then = format.parse(date) ?: return null
+        val today = format.parse(todayDateString()) ?: return null
+        Math.round((today.time - then.time) / 86_400_000.0).toInt()
+    } catch (e: Exception) {
+        null
+    }
+}
+
+/**
  * True when the snapshot was written on an earlier day than today.
  *
  * The JS bridge only runs while the app is alive, so a widget sitting on the

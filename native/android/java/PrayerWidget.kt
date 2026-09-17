@@ -76,24 +76,40 @@ private fun PrayerWidgetContent(
         addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
     }
 
-    val isEmpty    = name.isBlank()
-    val progress   = if (goalSecs > 0) (doneSecs.toFloat() / goalSecs).coerceIn(0f, 1f) else 0f
-    val goalMet    = progress >= 1f
-    val remainMins = ((goalSecs - doneSecs).coerceAtLeast(0)) / 60
+    val isEmpty  = name.isBlank()
+    val showGoal = goalSecs > 0
+    val progress = if (showGoal) (doneSecs.toFloat() / goalSecs).coerceIn(0f, 1f) else 0f
+    val goalMet  = showGoal && progress >= 1f
 
-    // A resting point can't be prayed yet, so its availability takes priority
-    // over the daily-goal countdown in the status chip.
+    // Minutes are what the Prayer tab's goal is expressed in, so round to the
+    // nearest minute rather than truncating — 59s of a 1 min goal reading as
+    // "0 of 1" would look like no progress at all.
+    val doneMins = (doneSecs + 30) / 60
+    val goalMins = (goalSecs + 30) / 60
+
+    // The chip reports availability: a resting point can't be prayed yet, and
+    // that matters more at a glance than the daily total, which now has its own
+    // line along the bottom.
     val statusText = when {
-        isEmpty         -> ""
-        !isDue          -> waitLabel(waitMins)
-        goalMet         -> "Complete"
-        remainMins == 0 -> "<1 min left"
-        remainMins == 1 -> "1 min left"
-        else            -> "$remainMins min left"
+        isEmpty -> ""
+        !isDue  -> waitLabel(waitMins)
+        goalMet -> "Goal met"
+        else    -> "Ready"
     }
 
-    // Label + title, plus a thin progress bar.
-    val type  = rememberTypeScale(if (isEmpty) 1.5f else 1.9f)
+    // On a single-cell widget there's only room for the bar itself; the caption
+    // appears once the user gives the widget a second row of height.
+    val heightDp    = LocalSize.current.height.value
+    val showCaption = showGoal && !isEmpty && heightDp >= 78f
+
+    // Label + title, plus a progress bar and its caption when a goal is set.
+    val type  = rememberTypeScale(
+        when {
+            isEmpty     -> 1.5f
+            showCaption -> 2.7f
+            else        -> 1.9f
+        }
+    )
     val width = contentWidthDp()
 
     Box(
@@ -151,14 +167,30 @@ private fun PrayerWidgetContent(
                     }
                 }
 
-                // ── Progress bar ──────────────────────────────────────────────
-                if (!isEmpty) {
+                // ── Daily goal progress ───────────────────────────────────────
+                // Reads the same way as the Bible widget's chapter goal: a bar
+                // with "x of y ... today" underneath, so the two widgets state
+                // progress in one consistent form.
+                if (!isEmpty && showGoal) {
                     Spacer(modifier = GlanceModifier.height(8.dp))
                     ProgressTrack(
                         progress   = progress,
                         trackWidth = width,
                         barHeight  = (type.caption.value * 0.40f).coerceIn(4f, 7f),
                     )
+                    if (showCaption) {
+                        Spacer(modifier = GlanceModifier.height(5.dp))
+                        Text(
+                            text = if (goalMet) "Daily goal complete"
+                                   else "$doneMins of $goalMins minutes today",
+                            style = TextStyle(
+                                color = if (goalMet) WidgetTheme.Accent else WidgetTheme.Muted,
+                                fontSize = type.caption,
+                                fontWeight = if (goalMet) FontWeight.Bold else FontWeight.Normal,
+                            ),
+                            maxLines = 1,
+                        )
+                    }
                 }
             }
         }

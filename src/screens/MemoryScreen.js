@@ -44,7 +44,10 @@ import MemoryDrill from "./memory/MemoryDrill";
 // memoryStore.js). From here you can add a new set, start a drill on one, or
 // delete one. All persistence lives in memoryStore.js (localStorage now,
 // Firebase-ready later).
-export default function MemoryScreen() {
+// @param drillRequest - set by App when the Memory widget is tapped:
+//   { token, id }. `token` is unique per tap so repeated taps on the same verse
+//   still re-open the drill; `id` is the set the widget was advertising.
+export default function MemoryScreen({ drillRequest = null }) {
   const { colors } = useTheme();
   const [view, setView] = useState("list"); // "list" | "add" | "drill"
   const [entries, setEntries] = useState([]);
@@ -117,6 +120,38 @@ export default function MemoryScreen() {
   useEffect(() => {
     refresh();
   }, [refresh]);
+
+  // Widget tap: drop straight into the drill for the verse the widget showed.
+  // The list is re-read rather than reusing `entries`, because on a cold launch
+  // this screen may be mounting for the first time and have nothing loaded yet.
+  // If that verse has since been deleted we fall back to whatever now tops the
+  // review queue, and if nothing is memorised at all we simply stay on the list
+  // rather than drilling a set the user is still learning.
+  const drillToken = drillRequest?.token ?? null;
+  const drillId = drillRequest?.id ?? null;
+  useEffect(() => {
+    if (drillToken == null) return;
+    let cancelled = false;
+
+    (async () => {
+      const list = await getMemoryList();
+      if (cancelled) return;
+      setEntries(list);
+      setLoading(false);
+
+      const requested = drillId ? list.findIndex((e) => e.id === drillId) : -1;
+      const startIndex = requested >= 0
+        ? requested
+        : list.findIndex((e) => e.status === STATUS.MEMORISED);
+      if (startIndex < 0) return;
+
+      setDrillList(list);
+      setDrillStartIndex(startIndex);
+      setView("drill");
+    })();
+
+    return () => { cancelled = true; };
+  }, [drillToken, drillId]);
 
   // `entries` is already fully ordered by the store (not-memorised group first,
   // then memorised ranked weakest-first). Split that flat, ordered list into the

@@ -45,7 +45,7 @@ import { SourceSerif4_700Bold } from "@expo-google-fonts/source-serif-4/700Bold"
 import { getLastPosition, setLastPosition, setLastScroll } from "./src/data/lastPositionStore";
 import { getSermonPlayback } from "./src/data/sermonPlaybackStore";
 import { loadMemoryPrefs } from "./src/data/memoryPrefsStore";
-import { loadPrayerSettings } from "./src/data/prayerStore";
+import { loadPrayerSettings, getActivePrayers } from "./src/data/prayerStore";
 import { PrayerSessionProvider, usePrayerSession } from "./src/data/prayerSession";
 import { loadReadingVersion } from "./src/data/bibleVersionStore";
 import { loadReaderPrefs } from "./src/data/readerPrefsStore";
@@ -684,8 +684,12 @@ const AppContent = memo(function AppContent() {
   // moved past, so sync off the underlying data changes instead.
   useEffect(() => startWidgetAutoSync(), []);
 
+  // Set when the Memory widget asks for a drill: { token, id }. Passed down to
+  // MemoryScreen, which owns the drill view.
+  const [memoryDrillRequest, setMemoryDrillRequest] = useState(null);
+
   // Handle deep links from widget taps: bibleapp://prayer?id=X,
-  // bibleapp://reader, bibleapp://memory.
+  // bibleapp://reader, bibleapp://memory?drill=1&id=X.
   //
   // The navigation this performs is a batch of state updates on AppContent.
   // Deep links arrive from outside React — a native Linking event — with no
@@ -698,6 +702,21 @@ const AppContent = memo(function AppContent() {
       const host = parsed.hostname; // "prayer", "reader", "memory"
       if (host === "prayer") {
         setActiveTab("prayer");
+        // The widget names the point it's advertising, so open its timer
+        // directly instead of dropping the user on the list to find it again.
+        // A session already in flight is left alone — it holds unlogged time,
+        // and opening another would silently discard it.
+        const pointId = parsed.searchParams.get("id");
+        if (pointId && !prayerSession.isActive) {
+          getActivePrayers()
+            .then((points) => {
+              const point = points.find((p) => p.id === pointId);
+              // Gone (deleted, or archived on completing its final prayer):
+              // the Prayer tab is already open, which is the sane fallback.
+              if (point) prayerSession.openSession(point);
+            })
+            .catch(() => {});
+        }
       } else if (host === "reader") {
         setActiveTab("bible");
         // The Bible widget advertises a specific chapter to continue with, and
@@ -715,11 +734,20 @@ const AppContent = memo(function AppContent() {
         }
       } else if (host === "memory") {
         setActiveTab("memory");
+        // Same idea as the prayer widget: go straight into the drill for the
+        // verse on the widget. MemoryScreen owns the drill, so hand it the
+        // request and let it resolve the verse against the current queue.
+        if (parsed.searchParams.get("drill") === "1") {
+          setMemoryDrillRequest({
+            token: Date.now(),
+            id: parsed.searchParams.get("id") || null,
+          });
+        }
       }
     } catch {
       // Malformed URL — ignore.
     }
-  }, [readerTabs.length, openChapterDirect]);
+  }, [readerTabs.length, openChapterDirect, prayerSession]);
 
   const handleDeepLink = useCallback(({ url }) => {
     if (!url) return;
@@ -843,7 +871,7 @@ const AppContent = memo(function AppContent() {
             first visit, then kept alive with display:none. This avoids paying
             their mount cost on startup and keeps tab switching instant. */}
         <LazyScreen active={activeTab === "memory"}>
-          <MemoryScreen />
+          <MemoryScreen drillRequest={memoryDrillRequest} />
         </LazyScreen>
 
         <LazyScreen active={activeTab === "prayer"}>

@@ -15,7 +15,12 @@ import {
   msUntilDue,
 } from "./prayerStore";
 import { getLastPosition } from "./lastPositionStore";
-import { getMemoryList, referenceLabel } from "./memoryStore";
+import {
+  getMemoryList,
+  referenceLabel,
+  successCount,
+  STATUS,
+} from "./memoryStore";
 import { BOOKS, nextChapter } from "./books";
 import { getChapterVerses } from "./verses";
 import { getHistoryPage } from "./historyStore";
@@ -96,6 +101,25 @@ async function countChaptersReadToday(bookIds) {
     }
   }
   return count;
+}
+
+/**
+ * Format a stored timestamp as a local "YYYY-MM-DD" date.
+ *
+ * Deliberately local (not UTC) and in the same zero-padded shape as
+ * progressStore.todayDateString(), because the Kotlin side compares these as
+ * plain strings and subtracts them from *its* local today to say how long ago
+ * something happened.
+ *
+ * @returns {string} the date, or "" when there's no usable timestamp.
+ */
+function localDateString(value) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${date.getFullYear()}-${month}-${day}`;
 }
 
 /** Resolve a bookId to its display name. */
@@ -237,12 +261,29 @@ export async function syncWidgetData({ force = false } = {}) {
     });
 
     // ── Memory widget ──────────────────────────────────────────────────────
-    const topMemory = memoryList[0] ?? null;
+    // The widget surfaces the REVIEW queue, so only memorised sets qualify.
+    // `memoryList` is ordered "Not Memorised" first, then memorised ranked
+    // weakest-first, so skipping the not-memorised group and taking the first
+    // remaining entry gives the verse most in need of review. Sets still being
+    // learned are deliberately ignored — they belong in the Memory tab, not on
+    // a "review this next" widget — and when nothing is memorised yet the
+    // widget falls back to its empty state.
+    const topMemory =
+      memoryList.find((e) => e && e.status === STATUS.MEMORISED) ?? null;
     const memoryRef = topMemory ? referenceLabel(topMemory) : "";
     const memoryText =
       topMemory && topMemory.verses && topMemory.verses.length > 0
         ? topMemory.verses[0].text ?? ""
         : "";
+    // Mirrors the Memory tab's row meta: when it was last practised (falling
+    // back to the last success for entries saved before practice was tracked)
+    // and how many times it has been recalled. Sent as a plain local date
+    // rather than a pre-rendered "3d ago" string so the widget can keep the
+    // phrasing honest as days pass between syncs.
+    const memoryLastReviewed = topMemory
+      ? localDateString(topMemory.lastPractisedAt || topMemory.lastSuccessAt)
+      : "";
+    const memoryReviewCount = topMemory ? successCount(topMemory) : 0;
 
     // ── Write all data in one call ─────────────────────────────────────────
     await writeToSharedPrefs({
@@ -271,8 +312,11 @@ export async function syncWidgetData({ force = false } = {}) {
       widget_bible_verse_snippet: buildVerseSnippet(pos.bookId, pos.chapterNumber),
 
       // Memory
+      widget_memory_id: topMemory?.id ?? "",
       widget_memory_reference: memoryRef,
       widget_memory_text: memoryText,
+      widget_memory_last_reviewed: memoryLastReviewed,
+      widget_memory_review_count: memoryReviewCount,
     }, { force });
   } catch (e) {
     console.warn("[widgetBridge] sync error:", e?.message);
