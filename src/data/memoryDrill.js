@@ -192,27 +192,30 @@ export const MAX_DRILL_STAGE = 3;
 // auto-advance rules. Inputs describe the finished attempt; the returned action
 // tells the UI what to do next. Kept side-effect free so it's unit-testable.
 //
-//   { success, memorised, stage }  ->  { type, recordAttempt?, memorise?, nextStage? }
+//   { success, memorised, stage }  ->  { type, recordReview?, memorise?, nextStage? }
 //
 // Action types:
 //   "advanceStage" : not-memorised, passed a non-final stage. Stay on the SAME
 //                    set at `nextStage` (no interstitial).
 //   "next"         : finished this set (memorised win, or just cleared the final
 //                    learning stage). Auto-advance to the next set. `memorise`
-//                    is true when this pass promotes the set; `recordAttempt`
-//                    is true when a memorised attempt should be counted.
+//                    is true when this pass promotes the set; `recordReview`
+//                    is true when a memorised review should be reported.
 //   "stay"         : failed. Remain on the current set/stage; show retry UI.
-//                    `recordAttempt` is true for memorised sets (counts a loss).
+//                    `recordReview` is true for memorised sets — NOT to log a
+//                    loss (failures are never recorded) but so the review still
+//                    counts toward the daily goal.
 export function resolveOutcome({ success, memorised, stage }) {
   if (success) {
     if (memorised) {
-      return { type: "next", recordAttempt: true, memorise: false };
+      return { type: "next", recordReview: true, memorise: false };
     }
     if (stage < MAX_DRILL_STAGE) {
       return { type: "advanceStage", nextStage: stage + 1 };
     }
-    return { type: "next", recordAttempt: false, memorise: true };
+    return { type: "next", recordReview: false, memorise: true };
   }
-  // Failure: stay put. Memorised sets still record the failed attempt.
-  return { type: "stay", recordAttempt: !!memorised };
+  // Failure: stay put. Nothing is written to the entry; the call only gives the
+  // set its daily-goal credit for having been revised.
+  return { type: "stay", recordReview: !!memorised };
 }

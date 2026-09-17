@@ -673,10 +673,11 @@ function MemoryRow({ entry, colors, onPress, onLongPress, onDelete }) {
 }
 
 function formatLastDone(entry) {
-  // Older entries only have lastSuccessAt; use it as a graceful fallback.
-  const timestamp = entry.lastPractisedAt || entry.lastSuccessAt;
-  const date = timestamp ? new Date(timestamp) : null;
-  if (!date || Number.isNaN(date.getTime())) return "never practised";
+  // The last SUCCESS, not the last practice: that is the date the practice
+  // queue actually ranks on (failures are not recorded at all), so showing
+  // anything else would contradict the row's position in the list.
+  const date = entry.lastSuccessAt ? new Date(entry.lastSuccessAt) : null;
+  if (!date || Number.isNaN(date.getTime())) return "never recalled";
 
   return date.toLocaleDateString(undefined, {
     month: "short",

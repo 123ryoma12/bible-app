@@ -3,12 +3,13 @@
 // Persists a user's memory sets. A "memory set" is one or more CONSECUTIVE
 // verses from a SINGLE book (a range may cross chapters but never books). Each
 // set is either still being learned ("not_memorised") or "memorised"; once
-// memorised it accrues a success rate. See memory.txt for the spec.
+// memorised it accrues a count of successful recalls. See memory.txt for the
+// spec.
 //
 // NOTE: the learning STAGE (1/2/3) is intentionally NOT persisted. It lives
 // only in the drill component's in-session state, so quitting mid-way resets
 // the user back to stage 1. This module only persists whether a set has been
-// memorised yet (via markMemorised) and its memorised attempt stats.
+// memorised yet (via markMemorised) and its successful-recall stats.
 //
 // Storage shape (per-entry + an ordering index, cursor/Firebase friendly):
 //   memory:index         -> ["<id>", ...]   display order (see ordering rules)
@@ -17,14 +18,23 @@
 //     chapterStart, verseStart, chapterEnd, verseEnd,
 //     verses: [{ chapter, verse, text }, ...],  // snapshot at add time
 //     status: "not_memorised" | "memorised",
-//     attempts,                  // total memorised attempts (memorised only)
-//     successes, failures,       // per-set win/loss counts (attempts = sum)
+//     successes,                 // perfect recalls (memorised only)
 //     lastSuccessAt,             // ISO string | null (drives ordering)
-//     lastPractisedAt,           // ISO string | null (most recent completed drill)
 //     createdAt
 //   }
 //   memory:settings      -> { dailyGoalVerses }        daily revision goal
 //   memory:log:<date>    -> { date, sets: { <id>: verseCount } }  revised that day
+//
+// ONLY SUCCESSES ARE RECORDED ON THE ENTRY. There is deliberately no attempts
+// or failures counter and no last-practised timestamp: a failed drill writes
+// nothing to the entry. Getting a verse wrong is part of learning it, so it
+// must not change the verse's standing in any way. Entries saved before this
+// change may still carry legacy `attempts`/`failures`/`lastPractisedAt` fields;
+// nothing reads them and recordReview() strips them on the next success.
+//
+// (The daily revision LOG above is separate: it records that a set was revised
+// today for the daily-verse goal, pass or fail. It is a record of effort, not a
+// per-verse statistic, and never feeds the ordering.)
 //
 // This maps cleanly onto Firestore later:
 //   users/{uid}/memory/{id} = { ...entry }
@@ -71,29 +81,30 @@ async function getEntry(id) {
 // --- Memorised-section ranking ---------------------------------------------
 //
 // The memorised list is a PRACTICE QUEUE: the verse at the top is what you
-// should drill next. So we rank WEAKEST verses first. The strength of a verse
-// is a blend of two signals that pull in opposite directions:
+// should drill next. So we rank WEAKEST verses first.
 //
-//   * success RATE     - how reliably you get it perfect (successes/attempts).
+// FAILURES ARE DELIBERATELY IGNORED. Getting a verse wrong is part of learning
+// it, not evidence that it is weak, and penalising it made freshly-failed
+// verses leapfrog genuinely stale ones. Failed attempts are not even recorded
+// (see the storage shape above), so a failure cannot lower a score and cannot
+// refresh one either - only a success touches lastSuccessAt. Ordering is
+// driven purely by PROVEN RECALL and TIME:
+//
 //   * success COUNT    - how much proven, repeated recall you have. A verse you
 //                        have nailed 40 times is genuinely stronger than one you
-//                        nailed once, even at the same rate. We must NOT neglect
-//                        high-count verses (they've earned their place near the
-//                        bottom of the practice queue).
+//                        nailed once. We must NOT neglect high-count verses
+//                        (they've earned their place near the bottom).
+//   * TIME             - how long since you last got it right (see below).
 //
-// Using rate alone is misleading for small samples (1/1 = 100% looks "perfect"
-// but is barely tested). Using count alone ignores reliability. So we combine
-// them with a tunable weight:
-//
-//   score = rate * (1 - COUNT_WEIGHT) + normCount * COUNT_WEIGHT
+//   strength = (1 - COUNT_WEIGHT) + normCount * COUNT_WEIGHT
 //
 // where normCount squashes the raw success count into [0,1] with diminishing
 // returns, so early successes matter a lot and later ones add less. Higher
-// score = stronger = lower in the queue. Verses with NO attempts yet are the
-// most in need of practice, so they sort to the very TOP (score = -1 sentinel).
+// strength = stronger = lower in the queue.
 //
-// COUNT_WEIGHT is the single knob: 0 = pure rate, 1 = pure count. 0.35 keeps
-// rate dominant while still rewarding well-drilled verses.
+// COUNT_WEIGHT is the single knob: 0 = repetitions are ignored and the queue is
+// pure recency, 1 = repetitions matter as much as they possibly can. 0.35 keeps
+// recency dominant while still rewarding well-drilled verses.
 //
 // TIME DECAY (spaced repetition): a verse you nailed 50 times a year ago should
 // NOT stay buried forever - memory fades, so it deserves a refresher. We model
@@ -117,7 +128,7 @@ async function getEntry(id) {
 // compatible aliases for the tuned DEFAULTS so any importer/test still resolves.
 //
 //   countWeight       - how much the (normalised) success COUNT contributes vs
-//                       the success RATE.
+//                       plain recency.
 //   countScale        - successes needed to reach ~63% of the max count
 //                       contribution (diminishing returns).
 //   decayHalfLifeDays - days for a verse's freshness to HALVE (exponential
@@ -164,19 +175,24 @@ export function freshness(entry, now = Date.now()) {
 
 /**
  * Ranking score for a MEMORISED entry (higher = stronger + fresher = sinks
- * lower in the practice queue). It multiplies the raw strength (rate + count)
- * by a time-decay freshness factor so long-untouched verses resurface for
- * review. Entries with no attempts yet return -1 so they stay at the very top
- * (they need practice the most). `now` is injectable for deterministic tests.
- * Exported for testing and optional display in the UI.
+ * lower in the practice queue). It multiplies the raw strength (proven success
+ * count) by a time-decay freshness factor so long-untouched verses resurface
+ * for review.
+ *
+ * FAILURES ARE NOT CONSIDERED. Only successes and the time since the last one
+ * affect the result, so a verse cannot be pushed up the queue by getting it
+ * wrong. A verse that has never succeeded - whether it has never been attempted
+ * or has been attempted and failed - scores strength x freshnessFloor, which
+ * keeps it near the top where it belongs; those two cases are deliberately
+ * indistinguishable, because telling them apart would mean counting failures.
+ *
+ * `now` is injectable for deterministic tests. Exported for testing and
+ * optional display in the UI.
  */
 export function memorisedScore(entry, now = Date.now()) {
-  const attempts = entry && entry.attempts ? entry.attempts : 0;
-  if (!attempts) return -1; // never attempted -> top of the practice queue
   const { countWeight } = getActivePrefs();
-  const rate = successRate(entry);
   const normCount = normalisedSuccessCount(successCount(entry));
-  const strength = rate * (1 - countWeight) + normCount * countWeight;
+  const strength = (1 - countWeight) + normCount * countWeight;
   return strength * freshness(entry, now);
 }
 
@@ -194,13 +210,15 @@ function compareEntries(a, b, now = Date.now()) {
     return (b.createdAt || "").localeCompare(a.createdAt || "");
   }
 
-  // Memorised group: weakest (lowest decayed score) first.
+  // Memorised group: weakest (lowest decayed score) first. Neither the score
+  // nor any tie-breaker below looks at failures - only successes and times.
   const aScore = memorisedScore(a, now);
   const bScore = memorisedScore(b, now);
   if (aScore !== bScore) return aScore - bScore;
 
   // Tie-breakers: more proven recall sinks lower; then drill the one not
   // succeeded in longest; finally fall back to creation order for stability.
+  // This is what separates two never-succeeded verses (equal scores).
   const aWins = successCount(a);
   const bWins = successCount(b);
   if (aWins !== bWins) return aWins - bWins; // fewer successes -> higher up
@@ -241,21 +259,10 @@ export function successCount(entry) {
   return entry && typeof entry.successes === "number" ? entry.successes : 0;
 }
 
-/**
- * Number of failed memorised attempts. Prefers the stored `failures` count and
- * falls back to attempts-minus-successes for entries created before it existed.
- */
-export function failureCount(entry) {
-  if (!entry) return 0;
-  if (typeof entry.failures === "number") return entry.failures;
-  return Math.max(0, (entry.attempts || 0) - (entry.successes || 0));
-}
-
-/** Success rate in [0,1]; 0 when there are no attempts yet. */
-export function successRate(entry) {
-  if (!entry || !entry.attempts) return 0;
-  return entry.successes / entry.attempts;
-}
+// NOTE: there is intentionally no failureCount() or successRate() here. Both
+// were removed along with the attempts/failures counters they read: failures
+// are not recorded, so neither can be computed, and neither may be
+// reintroduced into the ordering.
 
 /** Convenience reference label, e.g. "John 3:16-18". */
 export function referenceLabel(entry) {
@@ -349,11 +356,8 @@ export async function addMemory({
     verses,
     status: STATUS.NOT_MEMORISED,
     stage: 1,      // learning stage reached (1..MAX_STAGE); resumed next session
-    attempts: 0,   // total memorised attempts (successes + failures)
-    successes: 0,  // perfect (100%) memorised attempts
-    failures: 0,   // memorised attempts with any mistake
+    successes: 0,  // perfect (100%) recalls; failures are not recorded
     lastSuccessAt: null,
-    lastPractisedAt: null,
     createdAt: new Date().toISOString(),
   };
 
@@ -402,10 +406,11 @@ export async function markMemorised(id) {
   const entry = await getEntry(id);
   if (!entry || entry.status !== STATUS.NOT_MEMORISED) return entry;
 
+  // Promotion is not a recorded success: the set enters the queue having never
+  // been recalled cold, so it sits at the top until it is actually reviewed.
   const updated = {
-    ...entry,
+    ...stripLegacyStats(entry),
     status: STATUS.MEMORISED,
-    lastPractisedAt: new Date().toISOString(),
   };
 
   const byId = await loadAllEntries();
@@ -415,31 +420,43 @@ export async function markMemorised(id) {
   return updated;
 }
 
+// Drops the pre-successes-only stat fields from an entry as it is rewritten, so
+// records converge on the current shape instead of carrying dead counters.
+function stripLegacyStats(entry) {
+  const { attempts, failures, lastPractisedAt, ...rest } = entry;
+  return rest;
+}
+
 /**
- * Record one memorised attempt. Per spec, an attempt over any number of verses
- * counts as a SINGLE result: success only if every verse was perfect.
- * Success updates lastSuccessAt (which moves the set to the bottom of the list).
- * No-op unless the set is memorised. Returns the updated entry.
+ * Record one completed review of a memorised set. Per spec, a run over any
+ * number of verses counts as a SINGLE result: success only if every verse was
+ * perfect.
+ *
+ * ONLY SUCCESSES TOUCH THE ENTRY. A success increments `successes` and stamps
+ * `lastSuccessAt` (which re-ranks the set down the practice queue). A FAILURE
+ * writes nothing at all — no counter, no timestamp, no re-ranking — so a verse
+ * can never be moved by getting it wrong.
+ *
+ * Either way the run counts toward today's revision goal: the daily log tracks
+ * effort, and a review you fumbled is still a review you did.
+ *
+ * No-op unless the set is memorised. Returns the entry (updated on success,
+ * unchanged on failure).
  */
-export async function recordAttempt(id, { success }) {
+export async function recordReview(id, { success }) {
   const entry = await getEntry(id);
   if (!entry || entry.status !== STATUS.MEMORISED) return entry;
 
-  // Back-fill `failures` for entries created before it was tracked, so counts
-  // stay consistent regardless of when the set was added.
-  const priorFailures =
-    typeof entry.failures === "number"
-      ? entry.failures
-      : Math.max(0, (entry.attempts || 0) - (entry.successes || 0));
+  if (!success) {
+    // Nothing to persist on the entry — just the daily-goal credit below.
+    await recordDailyReview(entry);
+    return entry;
+  }
 
-  const attemptedAt = new Date().toISOString();
   const updated = {
-    ...entry,
-    attempts: entry.attempts + 1,
-    successes: entry.successes + (success ? 1 : 0),
-    failures: priorFailures + (success ? 0 : 1),
-    lastSuccessAt: success ? attemptedAt : entry.lastSuccessAt,
-    lastPractisedAt: attemptedAt,
+    ...stripLegacyStats(entry),
+    successes: successCount(entry) + 1,
+    lastSuccessAt: new Date().toISOString(),
   };
 
   const byId = await loadAllEntries();

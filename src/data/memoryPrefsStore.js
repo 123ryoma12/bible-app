@@ -25,7 +25,7 @@ const PREFS_KEY = "memory:prefs";
 // Defaults MUST equal the original hard-coded constants so behaviour is
 // identical until the user changes something.
 export const DEFAULT_PREFS = Object.freeze({
-  countWeight: 0.35, // how much success COUNT matters vs success RATE (0..1)
+  countWeight: 0.35, // how much success COUNT matters vs plain recency (0..1)
   countScale: 30, // reps for diminishing returns on success count (>=1)
   decayHalfLifeDays: 60, // days for a verse's freshness to halve (>=1)
   freshnessFloor: 0.01, // staleness for a never-succeeded verse (0..1)
@@ -34,7 +34,7 @@ export const DEFAULT_PREFS = Object.freeze({
 // Named presets. `balanced` is the tuned default. The others shift emphasis in
 // plain terms:
 //   reviewWeak      - shorter memory (verses resurface for review sooner) and
-//                     accuracy weighted more than raw repetitions.
+//                     recency weighted more than raw repetitions.
 //   reinforceRecent - longer memory (recently-practised verses stay "known"
 //                     longer) and repetitions weighted more heavily.
 export const PRESETS = Object.freeze({
@@ -65,9 +65,9 @@ export const PRESET_LABELS = Object.freeze({
 // One-line explanations shown under each preset so the choice is self-evident.
 export const PRESET_DESCRIPTIONS = Object.freeze({
   balanced:
-    "Even mix of accuracy, practice count, and time since last review. Recommended.",
+    "Even mix of successful reviews and time since you last got it right. Recommended.",
   reviewWeak:
-    "Brings struggling and long-untouched verses to the top sooner. Weights accuracy over repetition.",
+    "Brings long-untouched verses to the top sooner. Weights recency over repetition.",
   reinforceRecent:
     "Keeps recently-practised verses lower for longer and rewards repetition.",
   custom: "Your own hand-tuned settings (adjusted in Advanced below).",
@@ -90,7 +90,7 @@ export const PREF_FIELDS = [
   {
     key: "countWeight",
     label: "Weight on repetitions",
-    help: "How much the NUMBER of successful reviews matters versus your accuracy. Higher = repetition counts more; lower = accuracy counts more.",
+    help: "How much the NUMBER of successful reviews matters versus how recently you last got it right. Higher = repetition counts more; lower = the queue follows recency alone.",
     min: 0,
     max: 100,
     step: 5,
@@ -111,7 +111,7 @@ export const PREF_FIELDS = [
   {
     key: "freshnessFloor",
     label: "Never-reviewed staleness",
-    help: "How stale a memorised verse you\u2019ve never reviewed is treated as. Higher keeps such verses pinned nearer the top.",
+    help: "How stale a memorised verse you\u2019ve never got right is treated as (never attempted, or attempted without success). Higher keeps such verses pinned nearer the top.",
     min: 1,
     max: 50,
     step: 1,

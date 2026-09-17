@@ -28,7 +28,7 @@ import {
   MAX_STAGE,
   referenceLabel,
   markMemorised,
-  recordAttempt,
+  recordReview,
   saveStage,
 } from "../../data/memoryStore";
 
@@ -325,11 +325,13 @@ export default function MemoryDrill({ list, startIndex = 0, onExit }) {
 
     const action = resolveOutcome({ success, memorised, stage: stageAtRun });
 
-    // Persist any stat/status changes the action calls for.
+    // Persist any stat/status changes the action calls for. On a failure this
+    // only claims the daily-goal credit — recordReview writes nothing to the
+    // entry and returns it unchanged.
     let updatedEntry = entry;
     if (action.memorise) await markMemorised(entry.id);
-    if (action.recordAttempt) {
-      updatedEntry = await recordAttempt(entry.id, { success });
+    if (action.recordReview) {
+      updatedEntry = await recordReview(entry.id, { success });
     }
 
     switch (action.type) {

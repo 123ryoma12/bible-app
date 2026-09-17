@@ -281,13 +281,13 @@ export async function syncWidgetData({ force = false } = {}) {
       topMemory && topMemory.verses && topMemory.verses.length > 0
         ? topMemory.verses[0].text ?? ""
         : "";
-    // Mirrors the Memory tab's row meta: when it was last practised (falling
-    // back to the last success for entries saved before practice was tracked)
-    // and how many times it has been recalled. Sent as a plain local date
-    // rather than a pre-rendered "3d ago" string so the widget can keep the
-    // phrasing honest as days pass between syncs.
+    // Mirrors the Memory tab's row meta: when it was last recalled SUCCESSFULLY
+    // (failed attempts are not recorded, and it is the last success the review
+    // queue ranks on) and how many times it has been recalled. Sent as a plain
+    // local date rather than a pre-rendered "3d ago" string so the widget can
+    // keep the phrasing honest as days pass between syncs.
     const memoryLastReviewed = topMemory
-      ? localDateString(topMemory.lastPractisedAt || topMemory.lastSuccessAt)
+      ? localDateString(topMemory.lastSuccessAt)
       : "";
     const memoryReviewCount = topMemory ? successCount(topMemory) : 0;
 
