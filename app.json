@@ -16,13 +16,22 @@
       },
       "package": "pnunag.bibleapp",
       "edgeToEdgeEnabled": true,
-      "permissions": ["android.permission.POST_NOTIFICATIONS"],
+      "permissions": [
+        "android.permission.POST_NOTIFICATIONS"
+      ],
       "intentFilters": [
         {
           "action": "VIEW",
           "autoVerify": false,
-          "data": [{ "scheme": "bibleapp" }],
-          "category": ["BROWSABLE", "DEFAULT"]
+          "data": [
+            {
+              "scheme": "bibleapp"
+            }
+          ],
+          "category": [
+            "BROWSABLE",
+            "DEFAULT"
+          ]
         }
       ]
     },
@@ -41,7 +50,8 @@
           "enableBackgroundRecording": false,
           "recordAudioAndroid": false
         }
-      ]
+      ],
+      "./plugins/withBibleWidgets"
     ],
     "extra": {
       "eas": {
