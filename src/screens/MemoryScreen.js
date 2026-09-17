@@ -2,15 +2,16 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   View,
   Text,
-  SectionList,
+  FlatList,
   TouchableOpacity,
   StyleSheet,
   Alert,
   Modal,
   ScrollView,
+  TextInput,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { Ionicons } from "@expo/vector-icons";
+import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { AppSettingsButton } from "../components/AppSettingsModal";
 import { useTheme } from "../theme/ThemeContext";
 import { uiFont } from "../theme/fonts";
@@ -22,6 +23,10 @@ import {
   referenceLabel,
   successCount,
   resortMemory,
+  getMemorySettings,
+  setMemorySettings,
+  getDailyReviewCount,
+  getDailyReviewHistory,
 } from "../data/memoryStore";
 import {
   PREF_FIELDS,
@@ -37,11 +42,14 @@ import {
 import { versionAbbr } from "../data/bibleVersions";
 import MemoryAdd from "./memory/MemoryAdd";
 import MemoryDrill from "./memory/MemoryDrill";
+import MemoryChart from "./memory/MemoryChart";
 
-// Memory tab: verse-memorisation sets split into two sections - "Not Memorised"
-// (still learning) and "Memorised" (a practice queue ordered weakest-first, so
-// the verse most in need of review sits at the top - see memorisedScore in
-// memoryStore.js). From here you can add a new set, start a drill on one, or
+const HISTORY_DAYS = 14;
+
+// Memory tab: verse-memorisation sets split across two tabs - "Memorised" (a
+// practice queue ordered weakest-first, so the verse most in need of review
+// sits at the top - see memorisedScore in memoryStore.js) and "Not Memorised"
+// (still learning). From here you can add a new set, start a drill on one, or
 // delete one. All persistence lives in memoryStore.js (localStorage now,
 // Firebase-ready later).
 // @param drillRequest - set by App when the Memory widget is tapped:
@@ -53,10 +61,21 @@ export default function MemoryScreen({ drillRequest = null }) {
   const [entries, setEntries] = useState([]);
   const [loading, setLoading] = useState(true);
 
+  // Which list is showing. Defaults to Memorised: that's the revision queue you
+  // open day to day, and it's what the daily goal and the widget track.
+  const [tab, setTab] = useState("memorised");
+
   // Prioritisation modal
   const [showPriority, setShowPriority] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [prefs, setPrefs] = useState(null);
+
+  // Daily revision goal — mirrors the prayer tab, but counts verses not minutes.
+  const [goalVerses, setGoalVerses] = useState(0);
+  const [todayReviewed, setTodayReviewed] = useState(0);
+  const [history, setHistory] = useState([]);
+  const [showGoal, setShowGoal] = useState(false);
+  const [goalDraft, setGoalDraft] = useState("");
 
   useEffect(() => {
     let cancelled = false;
@@ -112,10 +131,29 @@ export default function MemoryScreen({ drillRequest = null }) {
 
   const refresh = useCallback(async () => {
     setLoading(true);
-    const list = await getMemoryList();
+    const [list, settings, reviewed, days] = await Promise.all([
+      getMemoryList(),
+      getMemorySettings(),
+      getDailyReviewCount(),
+      getDailyReviewHistory(HISTORY_DAYS),
+    ]);
     setEntries(list);
+    setGoalVerses(settings.dailyGoalVerses);
+    setTodayReviewed(reviewed);
+    setHistory(days);
     setLoading(false);
   }, []);
+
+  const goalPct = goalVerses > 0 ? Math.min(1, todayReviewed / goalVerses) : 0;
+
+  async function saveGoal() {
+    const parsed = Number.parseInt(goalDraft, 10);
+    if (Number.isFinite(parsed) && parsed > 0) {
+      await setMemorySettings({ dailyGoalVerses: parsed });
+    }
+    setShowGoal(false);
+    refresh();
+  }
 
   useEffect(() => {
     refresh();
@@ -155,30 +193,29 @@ export default function MemoryScreen({ drillRequest = null }) {
 
   // `entries` is already fully ordered by the store (not-memorised group first,
   // then memorised ranked weakest-first). Split that flat, ordered list into the
-  // two display sections without re-sorting, so the drill's flat index stays in
-  // lock-step with what's on screen. We also stash each row's index in the flat
-  // list (`flatIndex`) so tapping a row starts the drill at the right place.
-  const sections = useMemo(() => {
-    const notMemorised = [];
-    const memorised = [];
+  // two tabs without re-sorting, so the drill's flat index stays in lock-step
+  // with what's on screen. We also stash each row's index in the flat list
+  // (`flatIndex`) so tapping a row starts the drill at the right place.
+  const { memorised, notMemorised, memorisedVerseCount } = useMemo(() => {
+    const memorisedRows = [];
+    const notMemorisedRows = [];
     entries.forEach((entry, flatIndex) => {
       const row = { entry, flatIndex };
-      if (entry.status === STATUS.MEMORISED) memorised.push(row);
-      else notMemorised.push(row);
+      if (entry.status === STATUS.MEMORISED) memorisedRows.push(row);
+      else notMemorisedRows.push(row);
     });
 
-    const memorisedVerseCount = memorised.reduce(
-      (total, row) => total + (row.entry.verses?.length || 0),
-      0
-    );
-
-    const out = [];
-    if (notMemorised.length)
-      out.push({ key: "not_memorised", title: "Not Memorised", data: notMemorised });
-    if (memorised.length)
-      out.push({ key: "memorised", title: "Memorised", data: memorised, verseCount: memorisedVerseCount });
-    return out;
+    return {
+      memorised: memorisedRows,
+      notMemorised: notMemorisedRows,
+      memorisedVerseCount: memorisedRows.reduce(
+        (total, row) => total + (row.entry.verses?.length || 0),
+        0
+      ),
+    };
   }, [entries]);
+
+  const rows = tab === "memorised" ? memorised : notMemorised;
 
   // Android back inside the Memory tab: if we're in a sub-view (add / drill),
   // return to the list first instead of letting the app-level handler switch
@@ -251,6 +288,18 @@ export default function MemoryScreen({ drillRequest = null }) {
         <View style={styles.headerActions}>
           <AppSettingsButton />
           <TouchableOpacity
+            onPress={() => { setGoalDraft(String(goalVerses)); setShowGoal(true); }}
+            hitSlop={hit}
+            accessibilityLabel="Daily revision goal"
+          >
+            {/* Same flag affordance the Prayer and Bible tabs use for goals. */}
+            <MaterialCommunityIcons
+              name="flag-outline"
+              size={22}
+              color={goalVerses > 0 ? colors.accent : colors.mutedText}
+            />
+          </TouchableOpacity>
+          <TouchableOpacity
             onPress={() => setShowPriority(true)}
             hitSlop={hit}
             accessibilityLabel="Prioritisation settings"
@@ -262,6 +311,77 @@ export default function MemoryScreen({ drillRequest = null }) {
           </TouchableOpacity>
         </View>
       </View>
+
+      {/* Daily goal progress — counts distinct verses revised today. */}
+      <View style={styles.goalBlock}>
+        <View style={styles.goalRow}>
+          <Text style={[styles.goalValue, { color: colors.text }]}>
+            {todayReviewed}
+            <Text style={[styles.goalTarget, { color: colors.secondaryText }]}>
+              {` / ${goalVerses} verse${goalVerses === 1 ? "" : "s"} today`}
+            </Text>
+          </Text>
+          {goalVerses > 0 && todayReviewed >= goalVerses && (
+            <Ionicons name="checkmark-circle" size={18} color={colors.accent} />
+          )}
+        </View>
+        <View style={[styles.goalTrack, { backgroundColor: colors.border }]}>
+          <View
+            style={[
+              styles.goalFill,
+              { width: `${goalPct * 100}%`, backgroundColor: colors.accent },
+            ]}
+          />
+        </View>
+      </View>
+
+      <Modal
+        visible={showGoal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowGoal(false)}
+      >
+        <TouchableOpacity
+          style={styles.modalBackdrop}
+          activeOpacity={1}
+          onPress={() => setShowGoal(false)}
+        >
+          <TouchableOpacity
+            style={[styles.modalCard, { backgroundColor: colors.surface }]}
+            activeOpacity={1}
+            onPress={() => {}}
+          >
+            <Text style={[styles.modalTitle, { color: colors.surfaceText }]}>
+              Daily revision goal
+            </Text>
+            <Text style={[styles.modalNote, { color: colors.secondaryText }]}>
+              How many verses you'd like to revise each day. Each verse counts
+              once per day, however many times you drill it.
+            </Text>
+            <View style={styles.modalInputRow}>
+              <TextInput
+                value={goalDraft}
+                onChangeText={(text) => setGoalDraft(text.replace(/[^0-9]/g, ""))}
+                keyboardType="number-pad"
+                style={[
+                  styles.modalInput,
+                  { color: colors.text, backgroundColor: colors.background },
+                ]}
+                accessibilityLabel="Daily goal in verses"
+              />
+              <Text style={[styles.modalSuffix, { color: colors.secondaryText }]}>
+                verses
+              </Text>
+            </View>
+            <TouchableOpacity
+              style={[styles.modalSave, { borderTopColor: colors.border }]}
+              onPress={saveGoal}
+            >
+              <Text style={[styles.modalSaveText, { color: colors.accent }]}>Save</Text>
+            </TouchableOpacity>
+          </TouchableOpacity>
+        </TouchableOpacity>
+      </Modal>
 
       <Modal
         visible={showPriority}
@@ -394,53 +514,124 @@ export default function MemoryScreen({ drillRequest = null }) {
           </Text>
         </View>
       ) : (
-        <SectionList
-          sections={sections}
-          keyExtractor={(row) => row.entry.id}
-          contentContainerStyle={{ paddingBottom: 24 }}
-          stickySectionHeadersEnabled={false}
-          renderSectionHeader={({ section }) => (
-            <SectionHeader
-              title={section.title}
-              count={section.verseCount != null ? section.verseCount : section.data.length}
-              label={section.verseCount != null ? "verse" : null}
-              colors={colors}
-            />
-          )}
-          renderItem={({ item }) => (
-            <MemoryRow
-              entry={item.entry}
-              colors={colors}
-              onPress={() => {
-                // Snapshot the current order and start where the user tapped
-                // (using the flat index so the drill can auto-advance through
-                // the rest of the list regardless of section boundaries).
-                setDrillList(entries);
-                setDrillStartIndex(item.flatIndex);
-                setView("drill");
-              }}
-              onLongPress={() => confirmDelete(item.entry)}
-              onDelete={() => confirmDelete(item.entry)}
-            />
-          )}
+        <MemoryList
+          tab={tab}
+          setTab={setTab}
+          rows={rows}
+          memorised={memorised}
+          notMemorised={notMemorised}
+          memorisedVerseCount={memorisedVerseCount}
+          history={history}
+          goalVerses={goalVerses}
+          colors={colors}
+          onDrill={(flatIndex) => {
+            // Snapshot the current order and start where the user tapped. The
+            // index is into the full flat list, not the visible tab, so the
+            // drill still auto-advances through everything from that point.
+            setDrillList(entries);
+            setDrillStartIndex(flatIndex);
+            setView("drill");
+          }}
+          onDelete={confirmDelete}
         />
       )}
     </SafeAreaView>
   );
 }
 
-function SectionHeader({ title, count, label, colors }) {
-  const countLabel = count != null
-    ? label
-      ? ` (${count} ${label}${count === 1 ? "" : "s"} memorised)`
-      : ` (${count})`
-    : "";
+/**
+ * Tabbed verse list. "Memorised" is the revision queue; "Not Memorised" is
+ * what's still being learned. Both are slices of the same store-ordered list,
+ * so switching tabs never re-sorts anything.
+ */
+function MemoryList({
+  tab,
+  setTab,
+  rows,
+  memorised,
+  notMemorised,
+  memorisedVerseCount,
+  history,
+  goalVerses,
+  colors,
+  onDrill,
+  onDelete,
+}) {
   return (
-    <View style={[styles.sectionHeader, { backgroundColor: colors.background }]}>
-      <Text style={[styles.sectionHeaderText, { color: colors.secondaryText }]}>
-        {title}{countLabel}
-      </Text>
-    </View>
+    <>
+      <View style={[styles.tabs, { borderBottomColor: colors.border }]}>
+        {[
+          { key: "memorised", label: "Memorised", count: memorised.length },
+          { key: "not_memorised", label: "Not Memorised", count: notMemorised.length },
+        ].map((t) => {
+          const selected = tab === t.key;
+          return (
+            <TouchableOpacity
+              key={t.key}
+              style={[
+                styles.tab,
+                selected && { borderBottomColor: colors.accent, borderBottomWidth: 2 },
+              ]}
+              onPress={() => setTab(t.key)}
+              accessibilityRole="tab"
+              accessibilityState={{ selected }}
+            >
+              <Text
+                style={[
+                  styles.tabText,
+                  {
+                    color: selected ? colors.accent : colors.secondaryText,
+                    fontFamily: selected ? uiFont(700) : uiFont(500),
+                  },
+                ]}
+              >
+                {t.label} ({t.count})
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+
+      {/* Chart and verse total scroll away with the list, as the prayer tab's
+          chart does — the tabs above stay put so you can always switch. Using
+          ListEmptyComponent rather than branching keeps the chart on screen
+          when a tab has no rows. */}
+      <FlatList
+        data={rows}
+        keyExtractor={(row) => row.entry.id}
+        contentContainerStyle={{ paddingBottom: 24 }}
+        ListHeaderComponent={
+          <>
+            <MemoryChart history={history} goalVerses={goalVerses} />
+            {/* The tab count is sets; a set can span several consecutive
+                verses, so the verse total is worth showing separately. */}
+            {tab === "memorised" && memorised.length > 0 && (
+              <Text style={[styles.tabMeta, { color: colors.secondaryText }]}>
+                {memorisedVerseCount} verse{memorisedVerseCount === 1 ? "" : "s"} memorised
+              </Text>
+            )}
+          </>
+        }
+        ListEmptyComponent={
+          <View style={styles.listEmpty}>
+            <Text style={[styles.emptySub, { color: colors.secondaryText }]}>
+              {tab === "memorised"
+                ? "Nothing memorised yet. Work through the Not Memorised tab and verses will move here as you learn them."
+                : "Nothing outstanding — every verse you've added is memorised."}
+            </Text>
+          </View>
+        }
+        renderItem={({ item }) => (
+          <MemoryRow
+            entry={item.entry}
+            colors={colors}
+            onPress={() => onDrill(item.flatIndex)}
+            onLongPress={() => onDelete(item.entry)}
+            onDelete={() => onDelete(item.entry)}
+          />
+        )}
+      />
+    </>
   );
 }
 
@@ -518,6 +709,36 @@ const styles = StyleSheet.create({
   title: { fontSize: 28, fontFamily: uiFont(700) },
   addLink: { fontSize: 16, fontFamily: uiFont(600) },
   headerActions: { flexDirection: "row", alignItems: "center", gap: 22 },
+
+  goalBlock: { paddingHorizontal: 20, paddingBottom: 14 },
+  goalRow: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 8 },
+  goalValue: { fontSize: 20, fontFamily: uiFont(700) },
+  goalTarget: { fontSize: 14, fontFamily: uiFont(400) },
+  goalTrack: { height: 6, borderRadius: 3, overflow: "hidden" },
+  goalFill: { height: "100%", borderRadius: 3 },
+
+  modalInputRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 10,
+    paddingVertical: 18,
+  },
+  modalInput: {
+    width: 90,
+    borderRadius: 10,
+    paddingVertical: 10,
+    textAlign: "center",
+    fontSize: 18,
+    fontFamily: uiFont(600),
+  },
+  modalSuffix: { fontSize: 15, fontFamily: uiFont(400) },
+  modalSave: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    paddingVertical: 14,
+    alignItems: "center",
+  },
+  modalSaveText: { fontSize: 15, fontFamily: uiFont(700) },
   modalBackdrop: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.45)",
@@ -581,6 +802,7 @@ const styles = StyleSheet.create({
     minWidth: 74, textAlign: "center", fontSize: 14,
     fontFamily: uiFont(600), paddingHorizontal: 6,
   },
+  // Screen-level empty state: centred in the whole tab.
   empty: {
     flex: 1,
     alignItems: "center",
@@ -588,18 +810,29 @@ const styles = StyleSheet.create({
     paddingHorizontal: 32,
     marginTop: -40,
   },
+  // Empty state *inside* the list, sitting below the chart. Flows normally —
+  // `empty`'s flex and negative margin would pull it up under the header.
+  listEmpty: {
+    alignItems: "center",
+    paddingHorizontal: 32,
+    paddingTop: 32,
+  },
   emptyHeading: { fontSize: 20, fontFamily: uiFont(700), marginBottom: 6 },
   emptySub: { fontSize: 15, textAlign: "center", lineHeight: 22, fontFamily: uiFont() },
-  sectionHeader: {
-    paddingHorizontal: 20,
-    paddingTop: 18,
-    paddingBottom: 6,
+  tabs: { flexDirection: "row", borderBottomWidth: StyleSheet.hairlineWidth },
+  tab: {
+    flex: 1,
+    alignItems: "center",
+    paddingVertical: 12,
+    borderBottomWidth: 2,
+    borderBottomColor: "transparent",
   },
-  sectionHeaderText: {
-    fontSize: 13,
-    fontFamily: uiFont(700),
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
+  tabText: { fontSize: 14 },
+  tabMeta: {
+    fontSize: 12,
+    fontFamily: uiFont(),
+    paddingHorizontal: 20,
+    paddingTop: 10,
   },
   row: {
     flexDirection: "row",

@@ -20,10 +20,13 @@ import androidx.glance.layout.*
 import androidx.glance.text.*
 
 // Keys mirror the names written by src/data/widgetBridge.js.
+private val KEY_SYNC_DATE     = stringPreferencesKey("widget_sync_date")
 private val KEY_ID            = stringPreferencesKey("widget_memory_id")
 private val KEY_REFERENCE     = stringPreferencesKey("widget_memory_reference")
 private val KEY_LAST_REVIEWED = stringPreferencesKey("widget_memory_last_reviewed")
 private val KEY_REVIEW_COUNT  = intPreferencesKey("widget_memory_review_count")
+private val KEY_GOAL_VERSES   = intPreferencesKey("widget_memory_goal_verses")
+private val KEY_DONE_VERSES   = intPreferencesKey("widget_memory_done_verses")
 
 /**
  * How long ago the set was last drilled, phrased for a glance.
@@ -56,10 +59,15 @@ class MemoryWidget : GlanceAppWidget() {
             val state = currentState<Preferences>()
             val entryId = state[KEY_ID] ?: ""
 
+            // Verses revised is a daily figure — don't carry it into a new day.
+            val stale = isSnapshotStale(state[KEY_SYNC_DATE] ?: "")
+
             MemoryWidgetContent(
                 reference    = state[KEY_REFERENCE] ?: "",
                 lastReviewed = state[KEY_LAST_REVIEWED] ?: "",
                 reviewCount  = state[KEY_REVIEW_COUNT] ?: 0,
+                goalVerses   = state[KEY_GOAL_VERSES] ?: 0,
+                doneVerses   = if (stale) 0 else state[KEY_DONE_VERSES] ?: 0,
                 // Carry the set being advertised so the drill opens on exactly
                 // the verse shown, rather than whatever tops the queue by the
                 // time the app finishes launching.
@@ -78,6 +86,8 @@ private fun MemoryWidgetContent(
     reference: String,
     lastReviewed: String,
     reviewCount: Int,
+    goalVerses: Int,
+    doneVerses: Int,
     deepLink: String,
 ) {
     val launchIntent = Intent(Intent.ACTION_VIEW, Uri.parse(deepLink)).apply {
@@ -85,6 +95,12 @@ private fun MemoryWidgetContent(
     }
 
     val hasVerse = reference.isNotBlank()
+
+    // Daily revision goal, presented exactly as the Prayer and Bible widgets
+    // present theirs: a bar with "x of y ... today" underneath.
+    val showGoal = goalVerses > 0
+    val progress = if (showGoal) doneVerses.toFloat() / goalVerses else 0f
+    val goalMet  = showGoal && doneVerses >= goalVerses
 
     // "Reviewed 3d ago · 12 recalls" — the same two facts the Memory tab shows
     // under each memorised row, so the widget and the list agree.
@@ -99,14 +115,24 @@ private fun MemoryWidgetContent(
         ""
     }
 
-    // The meta line is the first thing to go when the widget is squeezed down
-    // to a single cell — the reference is what has to stay legible, and three
-    // stacked lines in ~50dp would clip all of them.
-    val heightDp = LocalSize.current.height.value
-    val showMeta = hasVerse && heightDp >= 66f
+    // Vertical budget, in priority order: the reference must always be legible,
+    // then the goal bar, then the meta line, then the bar's caption. Three or
+    // four stacked elements in ~50dp would clip all of them.
+    val heightDp    = LocalSize.current.height.value
+    val showBar     = showGoal && hasVerse
+    val showMeta    = hasVerse && heightDp >= (if (showBar) 92f else 66f)
+    val showCaption = showBar && heightDp >= 78f
 
-    // Label, reference, and (when it fits) a meta line beneath.
-    val type = rememberTypeScale(if (showMeta) 2.6f else 1.7f)
+    val type = rememberTypeScale(
+        when {
+            !hasVerse              -> 1.7f
+            showMeta && showCaption -> 3.4f
+            showMeta || showCaption -> 2.7f
+            showBar                -> 2.2f
+            else                   -> 1.7f
+        }
+    )
+    val width = contentWidthDp()
 
     Box(
         modifier = GlanceModifier
@@ -118,47 +144,83 @@ private fun MemoryWidgetContent(
 
             AccentStripe()
 
-            Row(
+            Column(
                 modifier = GlanceModifier
                     .fillMaxSize()
                     .padding(
-                        start = WidgetTheme.H_PADDING_DP.dp,
-                        end   = WidgetTheme.H_PADDING_DP.dp,
+                        start  = WidgetTheme.H_PADDING_DP.dp,
+                        end    = WidgetTheme.H_PADDING_DP.dp,
+                        top    = WidgetTheme.V_PADDING_DP.dp,
+                        bottom = WidgetTheme.V_PADDING_DP.dp,
                     ),
                 verticalAlignment = Alignment.Vertical.CenterVertically,
             ) {
-                Column(modifier = GlanceModifier.defaultWeight()) {
-                    SectionLabel("REVIEW NEXT", fontSize = type.label)
-                    Spacer(modifier = GlanceModifier.height(2.dp))
-                    Text(
-                        text = if (hasVerse) reference else "Nothing memorised yet",
-                        style = TextStyle(
-                            color = if (hasVerse) WidgetTheme.Heading else WidgetTheme.Muted,
-                            fontSize = if (hasVerse) type.title else type.body,
-                            fontWeight = FontWeight.Bold,
-                            fontStyle = if (hasVerse) FontStyle.Normal else FontStyle.Italic,
-                        ),
-                        maxLines = 1,
-                    )
-                    if (showMeta) {
-                        Spacer(modifier = GlanceModifier.height(3.dp))
+
+                // ── Label + reference + status chip ───────────────────────────
+                Row(
+                    modifier = GlanceModifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.Vertical.CenterVertically,
+                ) {
+                    Column(modifier = GlanceModifier.defaultWeight()) {
+                        SectionLabel("REVIEW NEXT", fontSize = type.label)
+                        Spacer(modifier = GlanceModifier.height(2.dp))
                         Text(
-                            text = meta,
+                            text = if (hasVerse) reference else "Nothing memorised yet",
                             style = TextStyle(
-                                color = WidgetTheme.Muted,
+                                color = if (hasVerse) WidgetTheme.Heading else WidgetTheme.Muted,
+                                fontSize = if (hasVerse) type.title else type.body,
+                                fontWeight = FontWeight.Bold,
+                                fontStyle = if (hasVerse) FontStyle.Normal else FontStyle.Italic,
+                            ),
+                            maxLines = 1,
+                        )
+                        if (showMeta) {
+                            Spacer(modifier = GlanceModifier.height(3.dp))
+                            Text(
+                                text = meta,
+                                style = TextStyle(
+                                    color = WidgetTheme.Muted,
+                                    fontSize = type.caption,
+                                ),
+                                maxLines = 1,
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = GlanceModifier.width(10.dp))
+
+                    StatusPill(
+                        text = when {
+                            !hasVerse -> "Open"
+                            goalMet   -> "Goal met"
+                            else      -> "Review"
+                        },
+                        fontSize = type.caption,
+                        highlight = goalMet,
+                    )
+                }
+
+                // ── Daily revision goal ───────────────────────────────────────
+                if (showBar) {
+                    Spacer(modifier = GlanceModifier.height(8.dp))
+                    ProgressTrack(
+                        progress   = progress,
+                        trackWidth = width,
+                        barHeight  = (type.caption.value * 0.40f).coerceIn(4f, 7f),
+                    )
+                    if (showCaption) {
+                        Spacer(modifier = GlanceModifier.height(5.dp))
+                        Text(
+                            text = if (goalMet) "Daily goal complete"
+                                   else "$doneVerses of $goalVerses verses today",
+                            style = TextStyle(
+                                color = if (goalMet) WidgetTheme.Accent else WidgetTheme.Muted,
                                 fontSize = type.caption,
                             ),
                             maxLines = 1,
                         )
                     }
                 }
-
-                Spacer(modifier = GlanceModifier.width(10.dp))
-
-                StatusPill(
-                    text = if (hasVerse) "Review" else "Open",
-                    fontSize = type.caption,
-                )
             }
         }
     }

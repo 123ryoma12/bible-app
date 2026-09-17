@@ -19,6 +19,8 @@ import {
   getMemoryList,
   referenceLabel,
   successCount,
+  getMemorySettings,
+  getDailyReviewCount,
   STATUS,
 } from "./memoryStore";
 import { BOOKS, nextChapter } from "./books";
@@ -206,6 +208,8 @@ export async function syncWidgetData({ force = false } = {}) {
       doneSecs,
       continueAt,
       memoryList,
+      memorySettings,
+      versesReviewedToday,
       rangeSetting,
       goalDate,
       chaptersToday,
@@ -215,6 +219,8 @@ export async function syncWidgetData({ force = false } = {}) {
       getDailySeconds(),
       resolveContinueReading(),
       getMemoryList(),
+      getMemorySettings(),
+      getDailyReviewCount(),
       getRangeSetting(),
       getGoalDate(),
       countChaptersReadToday(bookIds),
@@ -317,6 +323,8 @@ export async function syncWidgetData({ force = false } = {}) {
       widget_memory_text: memoryText,
       widget_memory_last_reviewed: memoryLastReviewed,
       widget_memory_review_count: memoryReviewCount,
+      widget_memory_goal_verses: memorySettings.dailyGoalVerses ?? 0,
+      widget_memory_done_verses: versesReviewedToday ?? 0,
     }, { force });
   } catch (e) {
     console.warn("[widgetBridge] sync error:", e?.message);

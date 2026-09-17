@@ -23,6 +23,8 @@
 //     lastPractisedAt,           // ISO string | null (most recent completed drill)
 //     createdAt
 //   }
+//   memory:settings      -> { dailyGoalVerses }        daily revision goal
+//   memory:log:<date>    -> { date, verseIds: [...] }  verses revised that day
 //
 // This maps cleanly onto Firestore later:
 //   users/{uid}/memory/{id} = { ...entry }
@@ -444,7 +446,106 @@ export async function recordAttempt(id, { success }) {
   byId[id] = updated;
   await backend.setItem(entryKey(id), updated);
   await reindex(byId);
+
+  // Count this verse toward today's revision goal. Recorded here rather than in
+  // the drill UI so every path that revises a verse is captured, and because
+  // the guard above means only genuine reviews of memorised verses reach it.
+  await recordDailyReview(id);
+
   return updated;
+}
+
+// ---------------------------------------------------------------------------
+// Daily revision goal
+//
+// Mirrors the prayer tab's daily goal, but counts verses rather than minutes:
+//   memory:settings        -> { dailyGoalVerses }
+//   memory:log:YYYY-MM-DD  -> { date, verseIds: [...] }
+//
+// The log stores verse IDs rather than a running total so the count is
+// DISTINCT verses revised. Drilling the same verse five times is five attempts
+// but one verse revised, which is what "verses per day" means — and it makes
+// the write naturally idempotent.
+// ---------------------------------------------------------------------------
+
+const SETTINGS_KEY = "memory:settings";
+
+export const DEFAULT_MEMORY_SETTINGS = Object.freeze({
+  dailyGoalVerses: 5,
+});
+
+/** Local calendar date as YYYY-MM-DD. */
+function dateKey(d = new Date()) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+function logKey(key) {
+  return `memory:log:${key}`;
+}
+
+/** The daily revision goal, repaired to a sane value if stored data is bad. */
+export async function getMemorySettings() {
+  const raw = await backend.getItem(SETTINGS_KEY);
+  const goal = Number(raw?.dailyGoalVerses);
+  return {
+    dailyGoalVerses:
+      Number.isFinite(goal) && goal > 0
+        ? Math.round(goal)
+        : DEFAULT_MEMORY_SETTINGS.dailyGoalVerses,
+  };
+}
+
+export async function setMemorySettings(partial) {
+  const current = await getMemorySettings();
+  const next = { ...current, ...partial };
+  await backend.setItem(SETTINGS_KEY, next);
+  return next;
+}
+
+/** Verse IDs revised on a given day. */
+export async function getDailyReviewLog(key = dateKey()) {
+  const log = await backend.getItem(logKey(key));
+  return {
+    date: key,
+    verseIds: Array.isArray(log?.verseIds) ? log.verseIds : [],
+  };
+}
+
+/** How many distinct verses were revised on a given day. */
+export async function getDailyReviewCount(key = dateKey()) {
+  const log = await getDailyReviewLog(key);
+  return log.verseIds.length;
+}
+
+/**
+ * Distinct verses revised per day, oldest first, for the last `days` days.
+ * Days with no activity are present with a count of 0 so the caller gets a
+ * continuous series it can chart without filling gaps itself.
+ */
+export async function getDailyReviewHistory(days = 14) {
+  const span = Math.max(1, Math.round(days));
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const keys = [];
+  for (let i = span - 1; i >= 0; i -= 1) {
+    keys.push(dateKey(new Date(today.getTime() - i * MS_PER_DAY)));
+  }
+
+  const logs = await Promise.all(keys.map((key) => getDailyReviewLog(key)));
+  return logs.map((log) => ({ date: log.date, verses: log.verseIds.length }));
+}
+
+/** Record that a verse was revised today. No-op if already counted. */
+async function recordDailyReview(id, key = dateKey()) {
+  const log = await getDailyReviewLog(key);
+  if (log.verseIds.includes(id)) return log;
+  const next = { date: key, verseIds: [...log.verseIds, id] };
+  await backend.setItem(logKey(key), next);
+  return next;
 }
 
 /**
