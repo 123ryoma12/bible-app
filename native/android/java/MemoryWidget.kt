@@ -99,8 +99,16 @@ private fun MemoryWidgetContent(
     // Daily revision goal, presented exactly as the Prayer and Bible widgets
     // present theirs: a bar with "x of y ... today" underneath.
     val showGoal = goalVerses > 0
-    val progress = if (showGoal) doneVerses.toFloat() / goalVerses else 0f
+    val progress = if (showGoal) (doneVerses.toFloat() / goalVerses).coerceIn(0f, 1f) else 0f
     val goalMet  = showGoal && doneVerses >= goalVerses
+
+    // "0 of 10 verses today" — the plain-language read of the bar it sits under.
+    val goalCaption = if (goalMet) {
+        "Daily goal complete"
+    } else {
+        val unit = if (goalVerses == 1) "verse" else "verses"
+        "$doneVerses of $goalVerses $unit today"
+    }
 
     // "Reviewed 3d ago · 12 recalls" — the same two facts the Memory tab shows
     // under each memorised row, so the widget and the list agree.
@@ -116,20 +124,25 @@ private fun MemoryWidgetContent(
     }
 
     // Vertical budget, in priority order: the reference must always be legible,
-    // then the goal bar, then the meta line, then the bar's caption. Three or
+    // then the goal bar WITH its caption, and only then the meta line. Three or
     // four stacked elements in ~50dp would clip all of them.
-    val heightDp    = LocalSize.current.height.value
-    val showBar     = showGoal && hasVerse
-    val showMeta    = hasVerse && heightDp >= (if (showBar) 92f else 66f)
-    val showCaption = showBar && heightDp >= 78f
+    //
+    // The caption is never traded away separately from the bar. A bare bar says
+    // "some of something" — it's the "3 of 10 verses today" underneath that
+    // makes it readable — so when there isn't room for both, the bar goes too
+    // and the space pays for the meta line instead. The meta line is the one
+    // that yields, since today's goal is the reason to glance at the widget.
+    val heightDp = LocalSize.current.height.value
+    val showBar  = showGoal && hasVerse && heightDp >= 72f
+    val showMeta = hasVerse && heightDp >= (if (showBar) 116f else 60f)
 
     val type = rememberTypeScale(
         when {
-            !hasVerse              -> 1.7f
-            showMeta && showCaption -> 3.4f
-            showMeta || showCaption -> 2.7f
-            showBar                -> 2.2f
-            else                   -> 1.7f
+            !hasVerse           -> 1.7f
+            showBar && showMeta -> 3.4f
+            showBar             -> 2.7f
+            showMeta            -> 2.2f
+            else                -> 1.7f
         }
     )
     val width = contentWidthDp()
@@ -208,18 +221,16 @@ private fun MemoryWidgetContent(
                         trackWidth = width,
                         barHeight  = (type.caption.value * 0.40f).coerceIn(4f, 7f),
                     )
-                    if (showCaption) {
-                        Spacer(modifier = GlanceModifier.height(5.dp))
-                        Text(
-                            text = if (goalMet) "Daily goal complete"
-                                   else "$doneVerses of $goalVerses verses today",
-                            style = TextStyle(
-                                color = if (goalMet) WidgetTheme.Accent else WidgetTheme.Muted,
-                                fontSize = type.caption,
-                            ),
-                            maxLines = 1,
-                        )
-                    }
+                    Spacer(modifier = GlanceModifier.height(5.dp))
+                    Text(
+                        text = goalCaption,
+                        style = TextStyle(
+                            color = if (goalMet) WidgetTheme.Accent else WidgetTheme.Muted,
+                            fontSize = type.caption,
+                            fontWeight = if (goalMet) FontWeight.Bold else FontWeight.Normal,
+                        ),
+                        maxLines = 1,
+                    )
                 }
             }
         }

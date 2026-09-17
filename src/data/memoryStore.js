@@ -24,7 +24,7 @@
 //     createdAt
 //   }
 //   memory:settings      -> { dailyGoalVerses }        daily revision goal
-//   memory:log:<date>    -> { date, verseIds: [...] }  verses revised that day
+//   memory:log:<date>    -> { date, sets: { <id>: verseCount } }  revised that day
 //
 // This maps cleanly onto Firestore later:
 //   users/{uid}/memory/{id} = { ...entry }
@@ -447,10 +447,11 @@ export async function recordAttempt(id, { success }) {
   await backend.setItem(entryKey(id), updated);
   await reindex(byId);
 
-  // Count this verse toward today's revision goal. Recorded here rather than in
-  // the drill UI so every path that revises a verse is captured, and because
-  // the guard above means only genuine reviews of memorised verses reach it.
-  await recordDailyReview(id);
+  // Count this set toward today's revision goal — worth every verse in its
+  // range, not one. Recorded here rather than in the drill UI so every path
+  // that revises a set is captured, and because the guard above means only
+  // genuine reviews of memorised sets reach it.
+  await recordDailyReview(updated);
 
   return updated;
 }
@@ -460,12 +461,17 @@ export async function recordAttempt(id, { success }) {
 //
 // Mirrors the prayer tab's daily goal, but counts verses rather than minutes:
 //   memory:settings        -> { dailyGoalVerses }
-//   memory:log:YYYY-MM-DD  -> { date, verseIds: [...] }
+//   memory:log:YYYY-MM-DD  -> { date, sets: { <setId>: verseCount } }
 //
-// The log stores verse IDs rather than a running total so the count is
-// DISTINCT verses revised. Drilling the same verse five times is five attempts
-// but one verse revised, which is what "verses per day" means — and it makes
-// the write naturally idempotent.
+// The log is keyed by SET ID rather than holding a running total so the count
+// is over DISTINCT sets revised. Drilling the same set five times is five
+// attempts but one revision, which is what "verses per day" means — and it
+// makes the write naturally idempotent.
+//
+// The stored VALUE is the number of verses in that set, because a set is a
+// consecutive RANGE and is very often more than one verse. Summing the values
+// (rather than counting the keys) is what makes "Romans 8:1-5 revised" count
+// as five verses towards the goal instead of one.
 // ---------------------------------------------------------------------------
 
 const SETTINGS_KEY = "memory:settings";
@@ -505,25 +511,61 @@ export async function setMemorySettings(partial) {
   return next;
 }
 
-/** Verse IDs revised on a given day. */
-export async function getDailyReviewLog(key = dateKey()) {
-  const log = await backend.getItem(logKey(key));
-  return {
-    date: key,
-    verseIds: Array.isArray(log?.verseIds) ? log.verseIds : [],
-  };
-}
-
-/** How many distinct verses were revised on a given day. */
-export async function getDailyReviewCount(key = dateKey()) {
-  const log = await getDailyReviewLog(key);
-  return log.verseIds.length;
+/**
+ * How many verses a set covers. A set always holds at least one verse, so a
+ * missing/empty snapshot (a set deleted since it was logged) falls back to 1
+ * rather than silently dropping the day's progress to zero.
+ */
+export function verseCount(entry) {
+  const n = entry?.verses?.length;
+  return Number.isFinite(n) && n > 0 ? n : 1;
 }
 
 /**
- * Distinct verses revised per day, oldest first, for the last `days` days.
- * Days with no activity are present with a count of 0 so the caller gets a
- * continuous series it can chart without filling gaps itself.
+ * The sets revised on a given day, as `{ date, sets: { id: verseCount },
+ * setIds, verses }` where `verses` is the total that counts towards the goal.
+ *
+ * Also reads the legacy `{ verseIds: [...] }` shape, which stored SET ids but
+ * was counted as one verse each. Those ids are re-costed against the set's
+ * real verse count so past days show the same figure the new code would have
+ * recorded; sets deleted since then fall back to 1. Pass `entriesById` to
+ * avoid re-loading every set when normalising several days at once.
+ */
+export async function getDailyReviewLog(key = dateKey(), entriesById = null) {
+  const raw = await backend.getItem(logKey(key));
+
+  const sets = {};
+  if (raw?.sets && typeof raw.sets === "object") {
+    for (const [id, value] of Object.entries(raw.sets)) {
+      const n = Number(value);
+      sets[id] = Number.isFinite(n) && n > 0 ? Math.round(n) : 1;
+    }
+  } else if (Array.isArray(raw?.verseIds)) {
+    const byId = entriesById ?? (await loadAllEntries());
+    for (const id of raw.verseIds) {
+      if (typeof id === "string" && id) sets[id] = verseCount(byId[id]);
+    }
+  }
+
+  const setIds = Object.keys(sets);
+  return {
+    date: key,
+    sets,
+    setIds,
+    verses: setIds.reduce((total, id) => total + sets[id], 0),
+  };
+}
+
+/** How many verses were revised on a given day, across all distinct sets. */
+export async function getDailyReviewCount(key = dateKey(), entriesById = null) {
+  const log = await getDailyReviewLog(key, entriesById);
+  return log.verses;
+}
+
+/**
+ * Verses revised per day, oldest first, for the last `days` days. Days with no
+ * activity are present with a count of 0 so the caller gets a continuous series
+ * it can chart without filling gaps itself.
  */
 export async function getDailyReviewHistory(days = 14) {
   const span = Math.max(1, Math.round(days));
@@ -535,15 +577,27 @@ export async function getDailyReviewHistory(days = 14) {
     keys.push(dateKey(new Date(today.getTime() - i * MS_PER_DAY)));
   }
 
-  const logs = await Promise.all(keys.map((key) => getDailyReviewLog(key)));
-  return logs.map((log) => ({ date: log.date, verses: log.verseIds.length }));
+  // Loaded once and shared, so re-costing legacy days doesn't re-read every
+  // set per day in the window.
+  const byId = await loadAllEntries();
+  const logs = await Promise.all(keys.map((key) => getDailyReviewLog(key, byId)));
+  return logs.map((log) => ({ date: log.date, verses: log.verses }));
 }
 
-/** Record that a verse was revised today. No-op if already counted. */
-async function recordDailyReview(id, key = dateKey()) {
+/**
+ * Record that a set was revised today, worth its full verse count.
+ *
+ * Idempotent per set: re-drilling the same set the same day rewrites the same
+ * value rather than adding to it. The write is skipped entirely when nothing
+ * would change, so repeat drills don't churn storage (and don't re-trigger the
+ * widget sync that listens for memory writes).
+ */
+async function recordDailyReview(entry, key = dateKey()) {
+  if (!entry?.id) return null;
   const log = await getDailyReviewLog(key);
-  if (log.verseIds.includes(id)) return log;
-  const next = { date: key, verseIds: [...log.verseIds, id] };
+  const verses = verseCount(entry);
+  if (log.sets[entry.id] === verses) return log;
+  const next = { date: key, sets: { ...log.sets, [entry.id]: verses } };
   await backend.setItem(logKey(key), next);
   return next;
 }
