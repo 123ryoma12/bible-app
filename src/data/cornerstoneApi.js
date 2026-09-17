@@ -349,13 +349,25 @@ export async function fetchSermonsForBookAllCongregations(
 export async function fetchAudioUrl(permalink, { signal } = {}) {
   if (!permalink) return null;
 
-  const html = await request(permalink, { signal });
+  console.log("[cornerstoneApi] fetchAudioUrl permalink:", permalink);
+
+  let html;
+  try {
+    html = await request(permalink, { signal });
+  } catch (err) {
+    console.log("[cornerstoneApi] fetchAudioUrl request error:", err?.kind, err?.message);
+    throw err;
+  }
+
+  console.log("[cornerstoneApi] fetchAudioUrl html length:", html?.length, "first 200:", html?.slice(0, 200));
 
   // Match <audio src="https://cpmfiles1.com/…">
   // The CDN hostname is used as an anchor to avoid picking up unrelated audio
   // elements (e.g. browser default controls on video elements).
   const match = html.match(/<audio[^>]+src="(https?:\/\/[^"]*cpmfiles1\.com[^"]+)"/) ||
     html.match(/<audio[^>]+src="(https?:\/\/[^"]+\.(?:mp3|m4a|aac|ogg|opus|wav))"[^>]*>/i);
+
+  console.log("[cornerstoneApi] fetchAudioUrl match:", match ? match[1] : "NO MATCH");
 
   if (!match) return null;
 

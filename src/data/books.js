@@ -398,3 +398,33 @@ export const BOOKS = [
     "chapterCount": 22
   }
 ];
+
+/**
+ * The chapter immediately after the given one in canonical order.
+ *
+ * Rolls over into chapter 1 of the following book when called on a book's last
+ * chapter. Returns null past the end of Revelation, and for a book id or
+ * chapter number that isn't valid — callers should treat null as "nothing
+ * further to read" rather than assuming a successor always exists.
+ *
+ * @param {string} bookId
+ * @param {number} chapterNumber
+ * @returns {{ bookId: string, chapterNumber: number } | null}
+ */
+export function nextChapter(bookId, chapterNumber) {
+  const index = BOOKS.findIndex((b) => b.id === bookId);
+  if (index === -1) return null;
+
+  const book = BOOKS[index];
+  const current = Number(chapterNumber);
+  if (!Number.isInteger(current) || current < 1 || current > book.chapterCount) {
+    return null;
+  }
+
+  if (current < book.chapterCount) {
+    return { bookId: book.id, chapterNumber: current + 1 };
+  }
+
+  const following = BOOKS[index + 1];
+  return following ? { bookId: following.id, chapterNumber: 1 } : null;
+}

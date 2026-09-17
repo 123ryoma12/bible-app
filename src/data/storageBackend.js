@@ -23,6 +23,57 @@ export const localStorageBackend = {
   },
 };
 
+// ---------------------------------------------------------------------------
+// Change notification
+// ---------------------------------------------------------------------------
+// Every *Store.js module writes through this backend, which makes it the one
+// place that sees all persisted state changes. Subscribing here means a
+// consumer (e.g. the home screen widget bridge) stays current without each
+// individual store having to know about it, and without new stores needing to
+// be wired up as they're added.
+
+const _listeners = new Set();
+
+/**
+ * Observe writes to persisted data.
+ *
+ * @param {(key: string) => void} fn Called with the affected key after every
+ *   successful setItem/removeItem.
+ * @returns {() => void} Unsubscribe.
+ */
+export function subscribeStorage(fn) {
+  _listeners.add(fn);
+  return () => _listeners.delete(fn);
+}
+
+function notifyStorageChanged(key) {
+  _listeners.forEach((fn) => {
+    try {
+      fn(key);
+    } catch {
+      // A misbehaving listener must never break a write.
+    }
+  });
+}
+
+/**
+ * Wrap a backend so mutations notify subscribers. Applied to whichever engine
+ * is exported below, so swapping storage engines keeps this behaviour.
+ */
+function withChangeNotification(impl) {
+  return {
+    getItem: (key) => impl.getItem(key),
+    async setItem(key, value) {
+      await impl.setItem(key, value);
+      notifyStorageChanged(key);
+    },
+    async removeItem(key) {
+      await impl.removeItem(key);
+      notifyStorageChanged(key);
+    },
+  };
+}
+
 // --- Future migration sketch ---
 // export const firebaseBackend = {
 //   async getItem(key) {
@@ -38,5 +89,5 @@ export const localStorageBackend = {
 // };
 
 // Swap this single line to change storage engines app-wide, e.g.:
-//   export const backend = firebaseBackend;
-export const backend = localStorageBackend;
+//   export const backend = withChangeNotification(firebaseBackend);
+export const backend = withChangeNotification(localStorageBackend);

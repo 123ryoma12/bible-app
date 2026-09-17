@@ -54,7 +54,7 @@ import { preloadStatsSettings } from "./src/data/statsSettingsStore";
 import { preloadTheme } from "./src/theme/ThemeContext";
 
 import { Linking } from "react-native";
-import { syncWidgetData } from "./src/data/widgetBridge";
+import { syncWidgetData, startWidgetAutoSync } from "./src/data/widgetBridge";
 import {
   getReaderTabs,
   setReaderTabs,
@@ -656,9 +656,16 @@ const AppContent = memo(function AppContent() {
   // and sync widget data whenever the app becomes active.
   useEffect(() => {
     const sub = AppState.addEventListener("change", (nextState) => {
-      if ((nextState === "background" || nextState === "inactive") && activeTabId) {
-        const scrollY = tabScrollPositions.current[activeTabId] ?? 0;
-        setLastScroll(scrollY);
+      if (nextState === "background" || nextState === "inactive") {
+        if (activeTabId) {
+          const scrollY = tabScrollPositions.current[activeTabId] ?? 0;
+          setLastScroll(scrollY);
+        }
+        // Push the latest data out as we leave — this is the moment the home
+        // screen (and therefore the widgets) becomes visible, so force it
+        // rather than let the no-op guard skip a redraw the user is about to
+        // be looking at.
+        syncWidgetData({ force: true });
       }
       if (nextState === "active") {
         syncWidgetData();
@@ -672,10 +679,20 @@ const AppContent = memo(function AppContent() {
     syncWidgetData();
   }, []);
 
+  // Keep widgets current while the app is open. Waiting for a background /
+  // foreground transition would leave them showing data the user has already
+  // moved past, so sync off the underlying data changes instead.
+  useEffect(() => startWidgetAutoSync(), []);
+
   // Handle deep links from widget taps: bibleapp://prayer?id=X,
   // bibleapp://reader, bibleapp://memory.
-  const handleDeepLink = useCallback(({ url }) => {
-    if (!url) return;
+  //
+  // The navigation this performs is a batch of state updates on AppContent.
+  // Deep links arrive from outside React — a native Linking event — with no
+  // guarantee about where in the render cycle that lands, and updating state
+  // during another component's render is an error. Scheduling the work breaks
+  // it out of the caller's tick so it always runs as a normal update.
+  const applyDeepLink = useCallback((url) => {
     try {
       const parsed = new URL(url);
       const host = parsed.hostname; // "prayer", "reader", "memory"
@@ -683,14 +700,34 @@ const AppContent = memo(function AppContent() {
         setActiveTab("prayer");
       } else if (host === "reader") {
         setActiveTab("bible");
-        setScreen("reader");
+        // The Bible widget advertises a specific chapter to continue with, and
+        // passes it along so we open that rather than resuming wherever the
+        // reader happened to be left.
+        const targetBook = parsed.searchParams.get("book");
+        const targetChapter = Number(parsed.searchParams.get("chapter"));
+        if (targetBook && Number.isInteger(targetChapter) && targetChapter > 0) {
+          openChapterDirect(targetBook, targetChapter);
+        } else if (readerTabs.length > 0) {
+          // No explicit target: only switch to the reader if there's something
+          // to show. On a cold launch the restore effect sets screen="reader"
+          // itself once saved tabs have loaded.
+          setScreen("reader");
+        }
       } else if (host === "memory") {
         setActiveTab("memory");
       }
     } catch {
       // Malformed URL — ignore.
     }
-  }, []);
+  }, [readerTabs.length, openChapterDirect]);
+
+  const handleDeepLink = useCallback(({ url }) => {
+    if (!url) return;
+    setTimeout(() => applyDeepLink(url), 0);
+  }, [applyDeepLink]);
+
+  // Pending deep link URL from a cold launch — consumed once restore finishes.
+  const pendingDeepLinkUrl = useRef(null);
 
   // Handle deep links when app is already open.
   useEffect(() => {
@@ -699,12 +736,26 @@ const AppContent = memo(function AppContent() {
   }, [handleDeepLink]);
 
   // Handle deep link that launched the app cold (widget tap from killed state).
+  // Store it so we can apply it after restore completes and tabs are ready.
   useEffect(() => {
     Linking.getInitialURL().then((url) => {
-      if (url) handleDeepLink({ url });
+      if (!url) return;
+      if (isRestoring) {
+        pendingDeepLinkUrl.current = url;
+      } else {
+        handleDeepLink({ url });
+      }
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Once restore finishes, apply any pending cold-launch deep link.
+  useEffect(() => {
+    if (!isRestoring && pendingDeepLinkUrl.current) {
+      handleDeepLink({ url: pendingDeepLinkUrl.current });
+      pendingDeepLinkUrl.current = null;
+    }
+  }, [isRestoring, handleDeepLink]);
 
   if (isRestoring) {
     return (
