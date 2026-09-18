@@ -7,6 +7,7 @@ const KEY = "reader:prefs";
 
 const DEFAULTS = {
   verseNotesActive: false,
+  interlinearActive: false,
 };
 
 let cache = { ...DEFAULTS };

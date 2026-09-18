@@ -1,7 +1,8 @@
-import React, { useMemo, memo } from "react";
-import { StyleSheet, Text, View } from "react-native";
+import React, { useMemo, memo, useState, useCallback } from "react";
+import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { useTheme } from "../theme/ThemeContext";
 import { readingFont, uiFont } from "../theme/fonts";
+import InterlinearVerseRow from "./InterlinearVerseRow";
 
 // MaterialCommunityIcons glyph rendered as inline <Text> — the only way to
 // place an icon inside a React Native <Text> tree (no View allowed).
@@ -19,13 +20,23 @@ const VERSE_CONTINUATION_INDENT = 20;
  * A stable, reading-first chapter layout. Each source paragraph or poetry line
  * owns one native Text layout, preserving continuous Bible paragraph flow.
  */
-export default function ChapterView({ chapter, noteVerses, onNotePress }) {
+export default function ChapterView({ chapter, noteVerses, onNotePress, interlinearChapter, onWordPress }) {
   const { colors, fontScale, readingFontKey } = useTheme();
   const typography = useMemo(
     () => createTypography(fontScale, readingFontKey),
     [fontScale, readingFontKey]
   );
   const blocks = useMemo(() => prepareBlocks(chapter?.blocks), [chapter]);
+
+  // Track which verse rows are expanded for interlinear — keyed by verse number.
+  const [expandedVerses, setExpandedVerses] = useState({});
+  const handleToggleVerse = useCallback((verseNum) => {
+    setExpandedVerses((prev) => ({ ...prev, [verseNum]: !prev[verseNum] }));
+  }, []);
+
+  // Reset expanded state when chapter changes.
+  const chapterKey = chapter?.chapter;
+  useMemo(() => { setExpandedVerses({}); }, [chapterKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // For each block, pre-compute which verse numbers should show the ⓘ icon.
   // A verse spans multiple blocks (each poetry line is its own block), so we
@@ -35,7 +46,6 @@ export default function ChapterView({ chapter, noteVerses, onNotePress }) {
   // needed during render.
   const noteIconsPerBlock = useMemo(() => {
     if (!noteVerses || noteVerses.size === 0) return null;
-    // Find the last block index for each verse number that has a note.
     const lastBlockForVerse = new Map();
     blocks.forEach((entry, blockIndex) => {
       entry.verses.forEach((verse) => {
@@ -46,7 +56,6 @@ export default function ChapterView({ chapter, noteVerses, onNotePress }) {
         }
       });
     });
-    // Build a per-block Set of verse numbers whose icon belongs in that block.
     const perBlock = blocks.map((_, blockIndex) => {
       const verseSet = new Set();
       lastBlockForVerse.forEach((lastIdx, verseNum) => {
@@ -56,6 +65,7 @@ export default function ChapterView({ chapter, noteVerses, onNotePress }) {
     });
     return perBlock;
   }, [blocks, noteVerses]);
+
 
   if (!chapter) {
     return (
@@ -78,6 +88,10 @@ export default function ChapterView({ chapter, noteVerses, onNotePress }) {
           typography={typography}
           blockNoteVerses={noteIconsPerBlock ? noteIconsPerBlock[index] : null}
           onNotePress={onNotePress}
+          interlinearChapter={interlinearChapter}
+          expandedVerses={expandedVerses}
+          onToggleVerse={handleToggleVerse}
+          onWordPress={onWordPress}
         />
       ))}
     </View>
@@ -94,6 +108,10 @@ const ChapterBlock = memo(function ChapterBlock({
   typography,
   blockNoteVerses,
   onNotePress,
+  interlinearChapter,
+  expandedVerses,
+  onToggleVerse,
+  onWordPress,
 }) {
   const sourceStyle = block?.style || "p";
   const kind = getBlockKind(sourceStyle);
@@ -156,17 +174,35 @@ const ChapterBlock = memo(function ChapterBlock({
           fontScale={fontScale}
           blockNoteVerses={blockNoteVerses}
           onNotePress={onNotePress}
+          interlinearChapter={interlinearChapter}
+          expandedVerses={expandedVerses}
+          onToggleVerse={onToggleVerse}
+          onWordPress={onWordPress}
         />
       ) : null}
     </View>
   );
 });
 
-const FlowingVerses = memo(function FlowingVerses({ verses, beginsWithContinuation, appearance, colors, typography, fontScale, blockNoteVerses, onNotePress }) {
+const FlowingVerses = memo(function FlowingVerses({
+  verses,
+  beginsWithContinuation,
+  appearance,
+  colors,
+  typography,
+  fontScale,
+  blockNoteVerses,
+  onNotePress,
+  interlinearChapter,
+  expandedVerses,
+  onToggleVerse,
+  onWordPress,
+}) {
+  const interlinearActive = !!(interlinearChapter && interlinearChapter.size > 0);
+
   const segments = useMemo(() => verses.map((verse, index) => {
     const previousNumber = index > 0 ? verses[index - 1].number : null;
     const repeatedOpeningVerse = index === 0 && beginsWithContinuation;
-
     return {
       number: verse.number,
       text: verse.text,
@@ -179,17 +215,82 @@ const FlowingVerses = memo(function FlowingVerses({ verses, beginsWithContinuati
     };
   }), [verses, beginsWithContinuation]);
 
-  // Stable color style objects — new inline objects each render would bust memo
-  // on the inner Text nodes even though colors almost never change.
+  // Stable color style objects
   const textColorStyle = useMemo(() => ({ color: colors.text }), [colors.text]);
   const mutedColorStyle = useMemo(() => ({ color: colors.mutedText }), [colors.mutedText]);
   const accentColorStyle = useMemo(() => ({ color: colors.accent }), [colors.accent]);
   const noteIconSizeStyle = useMemo(() => ({ fontSize: 13 * fontScale }), [fontScale]);
-  const noteIconHitSlop = useMemo(
-    () => ({ top: 12, bottom: 12, left: 10, right: 10 }),
-    []
-  );
+  const noteIconHitSlop = useMemo(() => ({ top: 12, bottom: 12, left: 10, right: 10 }), []);
 
+  // ── Interlinear mode: each verse on its own line with chevron ──────────────
+  if (interlinearActive) {
+    return (
+      <View>
+        {segments.map((segment, index) => {
+          const verseNum = segment.number != null ? parseInt(segment.number, 10) : null;
+          const hasWords = verseNum != null && interlinearChapter.has(verseNum);
+          const expanded = hasWords && !!expandedVerses?.[verseNum];
+
+          return (
+            <View key={`${segment.number ?? "text"}-${index}`}>
+              {/* Verse row: text on left, chevron on right */}
+              <View style={styles.interlinearVerseRow}>
+                <Text
+                  style={[
+                    styles.flowingText,
+                    typography[appearance.textType],
+                    appearance.text,
+                    textColorStyle,
+                    styles.interlinearVerseText,
+                  ]}
+                >
+                  {segment.showNumber ? (
+                    <Text style={[styles.verseNumber, typography.verseNumber, mutedColorStyle]}>
+                      {segment.number}{"\u00A0\u00A0"}
+                    </Text>
+                  ) : null}
+                  {segment.editorialNote ? (
+                    <Text style={typography.editorialText}>{segment.text}</Text>
+                  ) : segment.text}
+                </Text>
+
+                {/* Chevron — only for verses that have Greek data */}
+                {hasWords ? (
+                  <TouchableOpacity
+                    onPress={() => onToggleVerse?.(verseNum)}
+                    style={styles.interlinearChevronBtn}
+                    hitSlop={{ top: 10, bottom: 10, left: 12, right: 4 }}
+                    accessibilityRole="button"
+                    accessibilityLabel={expanded ? "Collapse Greek" : "Expand Greek"}
+                  >
+                    <Text style={[
+                      styles.interlinearChevron,
+                      { color: expanded ? colors.accent : colors.mutedText },
+                      expanded && styles.interlinearChevronOpen,
+                    ]}>
+                      {"›"}
+                    </Text>
+                  </TouchableOpacity>
+                ) : null}
+              </View>
+
+              {/* Expanded interlinear word row */}
+              {expanded ? (
+                <InterlinearVerseRow
+                  words={interlinearChapter.get(verseNum)}
+                  onWordPress={onWordPress}
+                  colors={colors}
+                  fontScale={fontScale}
+                />
+              ) : null}
+            </View>
+          );
+        })}
+      </View>
+    );
+  }
+
+  // ── Normal mode: flowing paragraph text ───────────────────────────────────
   return (
     <Text
       style={[
@@ -201,10 +302,6 @@ const FlowingVerses = memo(function FlowingVerses({ verses, beginsWithContinuati
     >
       {segments.map((segment, index) => {
         const verseNum = segment.number != null ? parseInt(segment.number, 10) : null;
-        // blockNoteVerses is pre-computed per block at the ChapterView level:
-        // it contains only the verse numbers whose icon belongs in THIS block
-        // (the last block that contains that verse). So a simple .has() check
-        // is sufficient — no cross-block deduplication needed here.
         const showNoteIcon = blockNoteVerses && verseNum != null && blockNoteVerses.has(verseNum);
 
         return (
@@ -447,5 +544,32 @@ const styles = StyleSheet.create({
   descriptiveLabel: {
     textAlign: "center",
     marginBottom: 8,
+  },
+
+  // ── Interlinear mode styles ──────────────────────────────────────────────
+  // Each verse gets its own row: text fills remaining space, chevron sits fixed right.
+  interlinearVerseRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    marginBottom: 10,
+  },
+  interlinearVerseText: {
+    flex: 1,
+    marginRight: 8,
+  },
+  interlinearChevronBtn: {
+    paddingTop: 2,
+    paddingLeft: 4,
+    justifyContent: "flex-start",
+    alignItems: "center",
+    minWidth: 20,
+  },
+  interlinearChevron: {
+    fontSize: 20,
+    fontFamily: "Inter_400Regular",
+    lineHeight: 24,
+  },
+  interlinearChevronOpen: {
+    transform: [{ rotate: "90deg" }],
   },
 });

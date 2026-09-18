@@ -235,6 +235,9 @@ export default function ReaderTopBar({
   // Inline verse note icons toggle
   verseNotesActive,
   onToggleVerseNotes,
+  // Interlinear Greek toggle — mutually exclusive with verse notes
+  interlinearActive,
+  onToggleInterlinear,
   // Book intro tab: TOC button replaces the notes button
   tocOpen,
   onToggleToc,
@@ -285,6 +288,12 @@ export default function ReaderTopBar({
     onToggleVerseNotes?.();
   }, [onToggleVerseNotes]);
 
+  const handleToggleInterlinearCb = useCallback(() => {
+    setAppearanceOpen(false);
+    setVersionOpen(false);
+    onToggleInterlinear?.();
+  }, [onToggleInterlinear]);
+
   const handleCloseAppearance = useCallback(() => setAppearanceOpen(false), []);
   const handleCloseVersion = useCallback(() => setVersionOpen(false), []);
 
@@ -333,7 +342,7 @@ export default function ReaderTopBar({
           </TouchableOpacity>
         ) : (
           <>
-            {/* Inline verse note icons toggle */}
+            {/* Inline verse note icons toggle — always visible; activating it turns off interlinear */}
             {onToggleVerseNotes ? (
               <TouchableOpacity
                 style={styles.notesBtn}
@@ -351,6 +360,24 @@ export default function ReaderTopBar({
               </TouchableOpacity>
             ) : null}
 
+            {/* Interlinear Greek toggle — α button, mutually exclusive with verse notes */}
+            {onToggleInterlinear ? (
+              <TouchableOpacity
+                style={styles.notesBtn}
+                onPress={handleToggleInterlinearCb}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                accessibilityRole="button"
+                accessibilityLabel={interlinearActive ? "Hide Greek interlinear" : "Show Greek interlinear"}
+                accessibilityState={{ checked: interlinearActive }}
+              >
+                <Text style={[
+                  styles.greekToggleGlyph,
+                  { color: interlinearActive ? colors.accent : colors.text },
+                ]}>
+                  α
+                </Text>
+              </TouchableOpacity>
+            ) : null}
           </>
         )}
 
@@ -458,13 +485,20 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
 
-  // Study notes toggle button
+  // Study notes / interlinear toggle button
   notesBtn: {
     paddingVertical: 6,
     paddingHorizontal: 8,
     marginRight: 6,
     justifyContent: "center",
     alignItems: "center",
+  },
+
+  // α glyph for the interlinear toggle
+  greekToggleGlyph: {
+    fontSize: 22,
+    fontFamily: "Lora_400Regular",
+    lineHeight: 26,
   },
 
   // Listen (sermons) button

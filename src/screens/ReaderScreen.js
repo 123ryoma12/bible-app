@@ -22,8 +22,10 @@ import { addToHistory } from "../data/historyStore";
 import { useTheme } from "../theme/ThemeContext";
 import { getActiveReadingVersion } from "../data/bibleVersionStore";
 import { getStudyNotesByVerse, getHeadingNote } from "../data/studyNotesData";
+import { getInterlinearChapter, hasInterlinear } from "../data/interlinearData";
 import { getReaderPrefs, setReaderPref } from "../data/readerPrefsStore";
 import VerseNotePopover from "../components/VerseNotePopover";
+import InterlinearWordPopover from "../components/InterlinearWordPopover";
 // lastPositionStore is intentionally not imported here — the global
 // lastPosition record is only needed at cold-launch time (handled in App.js).
 // Per-tab scroll offsets are passed in via the initialScrollY prop so each
@@ -151,13 +153,45 @@ export default function ReaderScreen({
     () => verseNotesActive ? getStudyNotesByVerse(book.name, chapterNumber) : null,
     [verseNotesActive, book.name, chapterNumber]
   );
+  // Interlinear Greek toggle — mutually exclusive with verse notes.
+  // When interlinear is activated, verse notes are forced off (and vice versa).
+  const [interlinearActive, setInterlinearActive] = useState(
+    () => getReaderPrefs().interlinearActive
+  );
+  const interlinearChapter = useMemo(
+    () => interlinearActive && hasInterlinear(book.id)
+      ? getInterlinearChapter(book.id, chapterNumber)
+      : null,
+    [interlinearActive, book.id, chapterNumber]
+  );
+  const handleToggleInterlinear = useCallback(() => {
+    setInterlinearActive((o) => {
+      const next = !o;
+      setReaderPref("interlinearActive", next);
+      // Force verse notes off when interlinear turns on
+      if (next) {
+        setVerseNotesActive(false);
+        setReaderPref("verseNotesActive", false);
+      }
+      return next;
+    });
+  }, []);
+
+  // Also force interlinear off when verse notes turn on
   const handleToggleVerseNotes = useCallback(() => {
     setVerseNotesActive((o) => {
       const next = !o;
       setReaderPref("verseNotesActive", next);
+      if (next) {
+        setInterlinearActive(false);
+        setReaderPref("interlinearActive", false);
+      }
       return next;
     });
   }, []);
+
+  // Interlinear word popover state
+  const [interlinearPopover, setInterlinearPopover] = useState({ visible: false, word: null, anchorY: 0 });
 
   // Verse note popover state — handlers defined after setChrome below.
   const [popover, setPopover] = useState({ visible: false, notes: [], anchorY: 0 });
@@ -244,6 +278,18 @@ export default function ReaderScreen({
     setChrome(true);
   }, [setChrome]);
 
+  // Interlinear word popover handlers — depend on setChrome, same as note handlers.
+  const handleWordPress = useCallback((word, pageY) => {
+    scrollYAtOpen.current = lastOffset.current;
+    setInterlinearPopover({ visible: true, word, anchorY: pageY });
+    setChrome(false, { byTap: true });
+  }, [setChrome]);
+
+  const handleDismissInterlinearPopover = useCallback(() => {
+    setInterlinearPopover((p) => ({ ...p, visible: false }));
+    setChrome(true);
+  }, [setChrome]);
+
   // Reset transient UI state whenever the chapter changes. Previously these
   // were reset "for free" by the full ReaderScreen remount (key prop). Now that
   // the screen persists across chapter changes we reset them explicitly.
@@ -253,6 +299,7 @@ export default function ReaderScreen({
     setChrome(true);
     setSermonsOpen(false);
     setPopover({ visible: false, notes: [], anchorY: 0 });
+    setInterlinearPopover({ visible: false, word: null, anchorY: 0 });
   }, [book.id, chapterNumber, setChrome]);
 
   // Decide what scroll offset to restore whenever the chapter changes.
@@ -343,12 +390,15 @@ export default function ReaderScreen({
       const dy = y - prevY;
       lastOffset.current = y;
 
-      // Dismiss the verse note popover if the user scrolls away from where they tapped.
+      // Dismiss popovers if the user scrolls away from where they tapped.
       if (Math.abs(y - scrollYAtOpen.current) > POPOVER_SCROLL_DISMISS) {
         setPopover((p) => {
           if (!p.visible) return p;
-          // Don't restore chrome via scroll if it was hidden by a tap —
-          // the popover dismisses silently and only a tap can show chrome again.
+          if (!hiddenByTap.current) setChrome(true);
+          return { ...p, visible: false };
+        });
+        setInterlinearPopover((p) => {
+          if (!p.visible) return p;
           if (!hiddenByTap.current) setChrome(true);
           return { ...p, visible: false };
         });
@@ -401,18 +451,20 @@ export default function ReaderScreen({
   );
 
   const toggleChrome = useCallback(() => {
-    // If the verse note popover is open, tap dismisses it but leaves chrome
-    // hidden — the user must tap again to reveal the chrome.
+    // If either popover is open, tap only dismisses the popover — chrome stays
+    // as-is. The user must tap again (with no popover open) to toggle chrome.
+    let didDismiss = false;
+    setInterlinearPopover((ip) => {
+      if (ip.visible) { didDismiss = true; return { ...ip, visible: false }; }
+      return ip;
+    });
     setPopover((p) => {
-      if (p.visible) {
-        return { ...p, visible: false };
-      }
-      // When hiding via tap, set byTap:true so scroll-based reveals are suppressed.
-      // When showing via tap, byTap is irrelevant (setChrome clears hiddenByTap on show).
-      const next = !chromeVisible;
-      setChrome(next, { byTap: !next }); // hiding (next=false) → byTap:true
+      if (p.visible) { didDismiss = true; return { ...p, visible: false }; }
       return p;
     });
+    if (didDismiss) return;
+    const next = !chromeVisible;
+    setChrome(next, { byTap: !next });
   }, [chromeVisible, setChrome]);
 
   const handleMarkRead = useCallback(async () => {
@@ -538,6 +590,8 @@ export default function ReaderScreen({
               chapter={chapter}
               noteVerses={verseNotesByVerse}
               onNotePress={handleNotePress}
+              interlinearChapter={interlinearChapter}
+              onWordPress={handleWordPress}
             />
           </TouchableOpacity>
         )}
@@ -572,6 +626,8 @@ export default function ReaderScreen({
         onOpenHistory={onOpenHistory}
         verseNotesActive={verseNotesActive}
         onToggleVerseNotes={isIntro ? undefined : handleToggleVerseNotes}
+        interlinearActive={interlinearActive}
+        onToggleInterlinear={isIntro ? undefined : handleToggleInterlinear}
         tocOpen={tocOpen}
         onToggleToc={isIntro ? () => setTocOpen((o) => !o) : undefined}
       />
@@ -609,6 +665,15 @@ export default function ReaderScreen({
         notes={popover.notes}
         anchorY={popover.anchorY}
         onDismiss={handleDismissPopover}
+      />
+
+      {/* Interlinear word popover — shows full Greek word detail on tap.
+          Same dismiss behaviour as VerseNotePopover. */}
+      <InterlinearWordPopover
+        visible={interlinearPopover.visible}
+        word={interlinearPopover.word}
+        anchorY={interlinearPopover.anchorY}
+        onDismiss={handleDismissInterlinearPopover}
       />
 
       {/* Persistent chapter navigator: ‹  [ Book Chapter ]  ›. The center pill
