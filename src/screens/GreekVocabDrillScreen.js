@@ -143,7 +143,7 @@ export default function GreekVocabDrillScreen({ words, onDone, onExit }) {
         {revealed ? (
           <Animated.View style={{ opacity: fadeAnim }}>
             <Text style={[styles.gloss, { color: colors.accent }]}>
-              {currentWord.gloss}
+              {currentWord.gloss ?? currentWord.english}
             </Text>
             {currentWord.lemmaGloss && currentWord.lemmaGloss !== currentWord.gloss ? (
               <Text style={[styles.lemmaGloss, { color: colors.mutedText }]}>

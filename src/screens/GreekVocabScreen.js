@@ -13,7 +13,7 @@ import {
 } from "react-native";
 import { useTheme } from "../theme/ThemeContext";
 import { uiFont } from "../theme/fonts";
-import VOCAB_DATA from "../data/vocabData.json";
+import { CHAPTERS } from "../data/duff_vocab.js";
 import {
   getAllScores,
   getVocabPrefs,
@@ -24,19 +24,15 @@ import {
 } from "../data/vocabStore";
 import GreekVocabDrillScreen from "./GreekVocabDrillScreen";
 
-const ALL_PACKS = VOCAB_DATA.packs;
+const ALL_PACKS = CHAPTERS.map((ch) => ({ pack: ch.chapter, words: ch.words }));
 const ALL_WORDS_BY_ID = Object.fromEntries(
   ALL_PACKS.flatMap((p) => p.words.map((w) => [w.id, { ...w, pack: p.pack }]))
 );
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-function packFreqRange(pack) {
-  const max = pack.words[0].count;
-  const min = pack.words[pack.words.length - 1].count;
-  return max === min
-    ? `Appears ${max.toLocaleString()}× in the NT`
-    : `Appears ${min.toLocaleString()}–${max.toLocaleString()}× in the NT`;
+function packSubtitle(pack) {
+  return `${pack.words.length} word${pack.words.length === 1 ? "" : "s"}`;
 }
 
 // ── Pack Row ──────────────────────────────────────────────────────────────────
@@ -87,10 +83,10 @@ function PackRow({ pack, selected, scores, colors, onToggle, onProgress }) {
       {/* Info */}
       <View style={styles.packInfo}>
         <Text style={[styles.packNum, { color: colors.text }]}>
-          Greek Pack {pack.pack}
+          Greek Duff Chapter {pack.pack}
         </Text>
         <Text style={[styles.packFreq, { color: colors.mutedText }]}>
-          {packFreqRange(pack)}
+          {packSubtitle(pack)}
         </Text>
         {hasAttempts ? (
           <Text style={[styles.packWinRate, { color: colors.mutedText }]}>
@@ -128,15 +124,15 @@ function PackStatsView({ pack, scores, colors, onBack }) {
         <TouchableOpacity onPress={onBack} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
           <Text style={[styles.navBack, { color: colors.accent }]}>‹ Back</Text>
         </TouchableOpacity>
-        <Text style={[styles.navTitle, { color: colors.text }]}>Greek Pack {pack.pack}</Text>
+        <Text style={[styles.navTitle, { color: colors.text }]}>Greek Duff Chapter {pack.pack}</Text>
         <View style={{ width: 48 }} />
       </View>
       <ScrollView contentContainerStyle={styles.statsContent}>
         {packScores.map(({ word, pct }) => (
           <View key={word.id} style={[styles.statsRow, { borderBottomColor: colors.border }]}>
             <View style={styles.statsWordCol}>
-              <Text style={[styles.statsGreek, { color: colors.text }]}>{word.lemma}</Text>
-              <Text style={[styles.statsGloss, { color: colors.mutedText }]}>{word.gloss}</Text>
+              <Text style={[styles.statsGreek, { color: colors.text }]}>{word.greek ?? word.lemma}</Text>
+              <Text style={[styles.statsGloss, { color: colors.mutedText }]}>{word.english ?? word.gloss}</Text>
             </View>
             <View style={styles.statsBarCol}>
               {pct !== null ? (
@@ -288,7 +284,7 @@ export default function GreekVocabScreen({ onDrillStart, onDrillEnd, onRefreshPr
         {/* Section header */}
         <View style={styles.sectionHeaderRow}>
           <Text style={[styles.sectionHeader, { color: colors.mutedText }]}>
-            GREEK WORD PACKS
+            GREEK DUFF CHAPTERS
           </Text>
           <View style={styles.selectBtns}>
             <TouchableOpacity
