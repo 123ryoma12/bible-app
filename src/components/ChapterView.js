@@ -20,7 +20,7 @@ const VERSE_CONTINUATION_INDENT = 20;
  * A stable, reading-first chapter layout. Each source paragraph or poetry line
  * owns one native Text layout, preserving continuous Bible paragraph flow.
  */
-export default function ChapterView({ chapter, noteVerses, onNotePress, interlinearChapter, onWordPress }) {
+export default function ChapterView({ chapter, noteVerses, onNotePress, interlinearChapter, onWordPress, onToggleVerseInterlinear }) {
   const { colors, fontScale, readingFontKey } = useTheme();
   const typography = useMemo(
     () => createTypography(fontScale, readingFontKey),
@@ -31,8 +31,12 @@ export default function ChapterView({ chapter, noteVerses, onNotePress, interlin
   // Track which verse rows are expanded for interlinear — keyed by verse number.
   const [expandedVerses, setExpandedVerses] = useState({});
   const handleToggleVerse = useCallback((verseNum) => {
-    setExpandedVerses((prev) => ({ ...prev, [verseNum]: !prev[verseNum] }));
-  }, []);
+    setExpandedVerses((prev) => {
+      const next = !prev[verseNum];
+      onToggleVerseInterlinear?.(verseNum, next);
+      return { ...prev, [verseNum]: next };
+    });
+  }, [onToggleVerseInterlinear]);
 
   // Reset expanded state when chapter changes.
   const chapterKey = chapter?.chapter;

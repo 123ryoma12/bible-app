@@ -278,6 +278,14 @@ export default function ReaderScreen({
     setChrome(true);
   }, [setChrome]);
 
+  // Hide chrome when a Greek verse row is expanded.
+  // Collapsing does NOT restore chrome — only a tap on the reader does.
+  const handleToggleVerseInterlinear = useCallback((verseNum, expanded) => {
+    if (expanded) {
+      setChrome(false, { byTap: true });
+    }
+  }, [setChrome]);
+
   // Interlinear word popover handlers — depend on setChrome, same as note handlers.
   const handleWordPress = useCallback((word, pageY) => {
     scrollYAtOpen.current = lastOffset.current;
@@ -592,6 +600,7 @@ export default function ReaderScreen({
               onNotePress={handleNotePress}
               interlinearChapter={interlinearChapter}
               onWordPress={handleWordPress}
+              onToggleVerseInterlinear={handleToggleVerseInterlinear}
             />
           </TouchableOpacity>
         )}
