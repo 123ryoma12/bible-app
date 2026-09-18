@@ -14,6 +14,7 @@ import {
   isDue,
   msUntilDue,
 } from "./prayerStore";
+import { getVocabSettings, getTodayCardCount } from "./vocabStore";
 import { getLastPosition } from "./lastPositionStore";
 import {
   getMemoryList,
@@ -213,6 +214,8 @@ export async function syncWidgetData({ force = false } = {}) {
       rangeSetting,
       goalDate,
       chaptersToday,
+      vocabSettings,
+      vocabCardsToday,
     ] = await Promise.all([
       getActivePrayers(),
       getPrayerSettings(),
@@ -224,6 +227,8 @@ export async function syncWidgetData({ force = false } = {}) {
       getRangeSetting(),
       getGoalDate(),
       countChaptersReadToday(bookIds),
+      getVocabSettings(),
+      getTodayCardCount(),
     ]);
 
     // ── Prayer widget ──────────────────────────────────────────────────────
@@ -325,6 +330,10 @@ export async function syncWidgetData({ force = false } = {}) {
       widget_memory_review_count: memoryReviewCount,
       widget_memory_goal_verses: memorySettings.dailyGoalVerses ?? 0,
       widget_memory_done_verses: versesReviewedToday ?? 0,
+
+      // Vocabulary
+      widget_vocab_goal_cards: vocabSettings.dailyGoalCards ?? 0,
+      widget_vocab_done_cards: vocabCardsToday ?? 0,
     }, { force });
   } catch (e) {
     console.warn("[widgetBridge] sync error:", e?.message);
@@ -346,6 +355,7 @@ const WIDGET_RELEVANT_KEY_PREFIXES = Object.freeze([
   "memory:",      // memory verses  → Memory widget
   "stats:",       // date range + goal date → Bible widget goal pace
   "lastPosition", // fallback reading position → Bible widget
+  "vocab:",       // vocab scores, goal, today count → Vocab widget
 ]);
 
 function affectsWidgets(key) {

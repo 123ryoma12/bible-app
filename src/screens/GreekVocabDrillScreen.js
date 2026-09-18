@@ -65,7 +65,7 @@ export default function GreekVocabDrillScreen({ words, onDone, onExit }) {
     if (!currentId) return;
     await Promise.all([
       recordResult(currentId, gotIt),
-      incrementTodayCardCount(),
+      ...(gotIt ? [incrementTodayCardCount()] : []),
     ]);
 
     if (!gotIt) {

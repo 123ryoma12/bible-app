@@ -43,6 +43,7 @@ const RECEIVERS = [
   { name: "PrayerWidgetReceiver", label: "Prayer Widget", info: "prayer_widget_info" },
   { name: "BibleWidgetReceiver", label: "Bible Widget", info: "bible_widget_info" },
   { name: "MemoryWidgetReceiver", label: "Memory Verse Widget", info: "memory_widget_info" },
+  { name: "VocabWidgetReceiver", label: "Greek Vocabulary Widget", info: "vocab_widget_info" },
 ];
 
 /** Descriptions shown under each widget in the system picker. */
@@ -50,6 +51,7 @@ const WIDGET_STRINGS = {
   prayer_widget_description: "Prayer point and daily prayer goal progress",
   bible_widget_description: "Current Bible passage and chapters read today",
   memory_widget_description: "Top memory verse to review",
+  vocab_widget_description: "Greek vocabulary daily goal progress",
 };
 
 // ---------------------------------------------------------------------------
