@@ -288,23 +288,22 @@ export default function MemoryScreen({ drillRequest = null }) {
         <View style={styles.headerActions}>
           <AppSettingsButton />
           <TouchableOpacity
-            onPress={() => { setGoalDraft(String(goalVerses)); setShowGoal(true); }}
-            hitSlop={hit}
-            accessibilityLabel="Daily revision goal"
-          >
-            {/* Same flag affordance the Prayer and Bible tabs use for goals. */}
-            <MaterialCommunityIcons
-              name="flag-outline"
-              size={22}
-              color={goalVerses > 0 ? colors.accent : colors.mutedText}
-            />
-          </TouchableOpacity>
-          <TouchableOpacity
             onPress={() => setShowPriority(true)}
             hitSlop={hit}
             accessibilityLabel="Prioritisation settings"
           >
             <Ionicons name="options-outline" size={22} color={colors.mutedText} />
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => { setGoalDraft(String(goalVerses)); setShowGoal(true); }}
+            hitSlop={hit}
+            accessibilityLabel="Daily revision goal"
+          >
+            <MaterialCommunityIcons
+              name="flag-outline"
+              size={22}
+              color={goalVerses > 0 ? colors.accent : colors.mutedText}
+            />
           </TouchableOpacity>
           <TouchableOpacity onPress={() => setView("add")} hitSlop={hit} accessibilityLabel="Add verse">
             <Ionicons name="add-circle-outline" size={26} color={colors.accent} />
@@ -696,7 +695,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
     paddingHorizontal: 20,
-    paddingTop: 12,
+    paddingTop: 4,
     paddingBottom: 8,
   },
   headerSettingsLeft: {
@@ -711,12 +710,12 @@ const styles = StyleSheet.create({
   addLink: { fontSize: 16, fontFamily: uiFont(600) },
   headerActions: { flexDirection: "row", alignItems: "center", gap: 22 },
 
-  goalBlock: { paddingHorizontal: 20, paddingBottom: 14 },
-  goalRow: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 8 },
-  goalValue: { fontSize: 20, fontFamily: uiFont(700) },
+  goalBlock: { paddingHorizontal: 20, paddingBottom: 10 },
+  goalRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 6 },
+  goalValue: { fontSize: 15, fontFamily: uiFont(600) },
   goalTarget: { fontSize: 14, fontFamily: uiFont(400) },
-  goalTrack: { height: 6, borderRadius: 3, overflow: "hidden" },
-  goalFill: { height: "100%", borderRadius: 3 },
+  goalTrack: { height: 3, borderRadius: 2, overflow: "hidden" },
+  goalFill: { height: 3, borderRadius: 2 },
 
   modalInputRow: {
     flexDirection: "row",

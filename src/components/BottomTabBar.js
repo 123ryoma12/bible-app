@@ -12,6 +12,7 @@ const TABS = [
   { key: "bible", label: "Bible", icon: "stats-chart", iconOutline: "stats-chart-outline" },
   { key: "prayer", label: "Prayer", icon: "hands-pray", iconOutline: "hands-pray", library: "MaterialCommunityIcons" },
   { key: "memory", label: "Memory", icon: "bulb", iconOutline: "bulb-outline" },
+  { key: "languages", label: "Vocabulary", icon: "alpha", iconOutline: "alpha", library: "MaterialCommunityIcons" },
 ];
 
 export default function BottomTabBar({ active, onChange, visible = true }) {

@@ -8,6 +8,7 @@ import HistoryScreen from "./src/screens/HistoryScreen";
 import StatsScreen from "./src/screens/StatsScreen";
 import MemoryScreen from "./src/screens/MemoryScreen";
 import PrayerScreen from "./src/screens/PrayerScreen";
+import LanguagesScreen from "./src/screens/LanguagesScreen";
 import BottomTabBar from "./src/components/BottomTabBar";
 import SermonPlayer from "./src/components/SermonPlayer";
 import PrayerMiniBar from "./src/components/PrayerMiniBar";
@@ -162,7 +163,7 @@ const AppContent = memo(function AppContent() {
   // in the provider, so this only re-renders App when a session starts/stops.
   const prayerSession = usePrayerSession();
 
-  // activeTab: "bible" | "memory" | "prayer"
+  // activeTab: "bible" | "memory" | "prayer" | "languages"
   // "bible" is the heat-map / reading progress screen (formerly "stats").
   const [activeTab, setActiveTab] = useState("bible");
 
@@ -622,7 +623,7 @@ const AppContent = memo(function AppContent() {
         return true;
       }
 
-      // 3. On Memory, back returns to exactly the bible sub-screen
+      // 3. On Memory/Languages, back returns to exactly the bible sub-screen
       // that was active when the user left.
       setActiveTab("bible");
       if (lastBibleScreen.current === "reader") {
@@ -876,6 +877,10 @@ const AppContent = memo(function AppContent() {
 
         <LazyScreen active={activeTab === "prayer"}>
           <PrayerScreen />
+        </LazyScreen>
+
+        <LazyScreen active={activeTab === "languages"}>
+          <LanguagesScreen onChromeVisible={updateChromeVisible} />
         </LazyScreen>
 
         {/* History overlays everything — must come last so it renders on top. */}

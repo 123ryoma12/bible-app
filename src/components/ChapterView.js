@@ -70,6 +70,41 @@ export default function ChapterView({ chapter, noteVerses, onNotePress, interlin
     return perBlock;
   }, [blocks, noteVerses]);
 
+  // For interlinear:
+  // - chevronVersesPerBlock: chevron shown on FIRST block of each verse
+  // - expandedVersesPerBlock: expanded word row shown after LAST block of each verse
+  const { chevronVersesPerBlock, expandedVersesPerBlock } = useMemo(() => {
+    if (!interlinearChapter || interlinearChapter.size === 0)
+      return { chevronVersesPerBlock: null, expandedVersesPerBlock: null };
+
+    const firstBlockForVerse = new Map();
+    const lastBlockForVerse = new Map();
+
+    blocks.forEach((entry, blockIndex) => {
+      entry.verses.forEach((verse) => {
+        if (verse.number == null || verse.isEditorialNote) return;
+        const verseNum = parseInt(verse.number, 10);
+        if (!interlinearChapter.has(verseNum)) return;
+        if (!firstBlockForVerse.has(verseNum)) firstBlockForVerse.set(verseNum, blockIndex);
+        lastBlockForVerse.set(verseNum, blockIndex);
+      });
+    });
+
+    const chevronPerBlock = blocks.map((_, blockIndex) => {
+      const s = new Set();
+      firstBlockForVerse.forEach((idx, verseNum) => { if (idx === blockIndex) s.add(verseNum); });
+      return s;
+    });
+
+    const expandedPerBlock = blocks.map((_, blockIndex) => {
+      const s = new Set();
+      lastBlockForVerse.forEach((idx, verseNum) => { if (idx === blockIndex) s.add(verseNum); });
+      return s;
+    });
+
+    return { chevronVersesPerBlock: chevronPerBlock, expandedVersesPerBlock: expandedPerBlock };
+  }, [blocks, interlinearChapter]);
+
 
   if (!chapter) {
     return (
@@ -93,6 +128,8 @@ export default function ChapterView({ chapter, noteVerses, onNotePress, interlin
           blockNoteVerses={noteIconsPerBlock ? noteIconsPerBlock[index] : null}
           onNotePress={onNotePress}
           interlinearChapter={interlinearChapter}
+          blockChevronVerses={chevronVersesPerBlock ? chevronVersesPerBlock[index] : null}
+          blockExpandedVerses={expandedVersesPerBlock ? expandedVersesPerBlock[index] : null}
           expandedVerses={expandedVerses}
           onToggleVerse={handleToggleVerse}
           onWordPress={onWordPress}
@@ -113,6 +150,8 @@ const ChapterBlock = memo(function ChapterBlock({
   blockNoteVerses,
   onNotePress,
   interlinearChapter,
+  blockChevronVerses,
+  blockExpandedVerses,
   expandedVerses,
   onToggleVerse,
   onWordPress,
@@ -137,6 +176,16 @@ const ChapterBlock = memo(function ChapterBlock({
     () => (continuesPreviousVerse ? { paddingLeft: VERSE_CONTINUATION_INDENT * fontScale } : null),
     [continuesPreviousVerse, fontScale]
   );
+
+  // Compute total left padding so the interlinear row can negate it exactly.
+  const blockLeftPadding = useMemo(() => {
+    let left = 0;
+    const container = appearance.container;
+    const containerArr = Array.isArray(container) ? container : [container];
+    containerArr.forEach((s) => { if (s && typeof s.paddingLeft === "number") left += s.paddingLeft; });
+    if (continuesPreviousVerse) left += VERSE_CONTINUATION_INDENT * fontScale;
+    return left;
+  }, [appearance.container, continuesPreviousVerse, fontScale]);
 
   // Resolve label color once rather than creating a new inline object each render.
   const labelColor = useMemo(
@@ -179,6 +228,9 @@ const ChapterBlock = memo(function ChapterBlock({
           blockNoteVerses={blockNoteVerses}
           onNotePress={onNotePress}
           interlinearChapter={interlinearChapter}
+          blockChevronVerses={blockChevronVerses}
+          blockExpandedVerses={blockExpandedVerses}
+          blockLeftPadding={blockLeftPadding}
           expandedVerses={expandedVerses}
           onToggleVerse={onToggleVerse}
           onWordPress={onWordPress}
@@ -198,6 +250,9 @@ const FlowingVerses = memo(function FlowingVerses({
   blockNoteVerses,
   onNotePress,
   interlinearChapter,
+  blockChevronVerses,
+  blockExpandedVerses,
+  blockLeftPadding,
   expandedVerses,
   onToggleVerse,
   onWordPress,
@@ -232,8 +287,14 @@ const FlowingVerses = memo(function FlowingVerses({
       <View>
         {segments.map((segment, index) => {
           const verseNum = segment.number != null ? parseInt(segment.number, 10) : null;
-          const hasWords = verseNum != null && interlinearChapter.has(verseNum);
-          const expanded = hasWords && !!expandedVerses?.[verseNum];
+          // Chevron only on first block; expanded row only on last block
+          const showChevron = verseNum != null &&
+            interlinearChapter.has(verseNum) &&
+            (!blockChevronVerses || blockChevronVerses.has(verseNum));
+          const showExpanded = verseNum != null &&
+            interlinearChapter.has(verseNum) &&
+            (!blockExpandedVerses || blockExpandedVerses.has(verseNum));
+          const expanded = showExpanded && !!expandedVerses?.[verseNum];
 
           return (
             <View key={`${segment.number ?? "text"}-${index}`}>
@@ -258,19 +319,19 @@ const FlowingVerses = memo(function FlowingVerses({
                   ) : segment.text}
                 </Text>
 
-                {/* Chevron — only for verses that have Greek data */}
-                {hasWords ? (
+                {/* Chevron — only on first block of verse */}
+                {showChevron ? (
                   <TouchableOpacity
                     onPress={() => onToggleVerse?.(verseNum)}
                     style={styles.interlinearChevronBtn}
                     hitSlop={{ top: 10, bottom: 10, left: 12, right: 4 }}
                     accessibilityRole="button"
-                    accessibilityLabel={expanded ? "Collapse Greek" : "Expand Greek"}
+                    accessibilityLabel={expandedVerses?.[verseNum] ? "Collapse Greek" : "Expand Greek"}
                   >
                     <Text style={[
                       styles.interlinearChevron,
-                      { color: expanded ? colors.accent : colors.mutedText },
-                      expanded && styles.interlinearChevronOpen,
+                      { color: expandedVerses?.[verseNum] ? colors.accent : colors.mutedText },
+                      expandedVerses?.[verseNum] && styles.interlinearChevronOpen,
                     ]}>
                       {"›"}
                     </Text>
@@ -278,14 +339,16 @@ const FlowingVerses = memo(function FlowingVerses({
                 ) : null}
               </View>
 
-              {/* Expanded interlinear word row */}
+              {/* Expanded interlinear word row — breaks out of block padding */}
               {expanded ? (
-                <InterlinearVerseRow
-                  words={interlinearChapter.get(verseNum)}
-                  onWordPress={onWordPress}
-                  colors={colors}
-                  fontScale={fontScale}
-                />
+                <View style={[styles.interlinearRowBreakout, blockLeftPadding ? { marginLeft: -blockLeftPadding } : null]}>
+                  <InterlinearVerseRow
+                    words={interlinearChapter.get(verseNum)}
+                    onWordPress={onWordPress}
+                    colors={colors}
+                    fontScale={fontScale}
+                  />
+                </View>
               ) : null}
             </View>
           );
@@ -552,6 +615,10 @@ const styles = StyleSheet.create({
 
   // ── Interlinear mode styles ──────────────────────────────────────────────
   // Each verse gets its own row: text fills remaining space, chevron sits fixed right.
+  interlinearRowBreakout: {
+    // marginLeft is set inline to negate the exact block left padding
+    paddingLeft: 0,
+  },
   interlinearVerseRow: {
     flexDirection: "row",
     alignItems: "flex-start",
