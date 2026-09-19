@@ -11,6 +11,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useTheme } from "../theme/ThemeContext";
 import { uiFont, readingFont } from "../theme/fonts";
+import { BODY_SIZE, BODY_LINE_HEIGHT } from "./ChapterView";
 import bookInfoData from "../../data/book-info.json";
 
 // Map app book names to book-info.json keys where they differ
@@ -95,8 +96,8 @@ function Section({ section, colors, readingFontKey, fontScale, sectionRef }) {
                 {
                   color: colors.text,
                   fontFamily: readingFont(readingFontKey, "regular"),
-                  fontSize: 15 * fontScale,
-                  lineHeight: 25 * fontScale,
+                  fontSize: BODY_SIZE * fontScale,
+                  lineHeight: BODY_LINE_HEIGHT * fontScale,
                 },
               ]}
             >

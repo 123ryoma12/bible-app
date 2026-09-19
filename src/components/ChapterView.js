@@ -11,8 +11,8 @@ import InterlinearVerseRow from "./InterlinearVerseRow";
 // so that fontFamily: "MaterialCommunityIcons" resolves correctly on all platforms.
 const INFO_ICON_GLYPH = String.fromCodePoint(0xf02fd);
 
-const BODY_SIZE = 18;
-const BODY_LINE_HEIGHT = 30;
+export const BODY_SIZE = 18;
+export const BODY_LINE_HEIGHT = 30;
 const VERSE_NUMBER_SIZE = 10;
 const VERSE_CONTINUATION_INDENT = 20;
 
