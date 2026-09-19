@@ -94,7 +94,7 @@ private fun VocabWidgetContent(
                     verticalAlignment = Alignment.Vertical.CenterVertically,
                 ) {
                     Column(modifier = GlanceModifier.defaultWeight()) {
-                        SectionLabel("GREEK VOCABULARY", fontSize = type.label)
+                        SectionLabel("VOCABULARY", fontSize = type.label)
                     }
                     StatusPill(
                         text      = if (goalMet) "Goal met" else "Practice",

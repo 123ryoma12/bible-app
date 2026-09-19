@@ -9,6 +9,7 @@
 //   hideKnown: if true, words with score >= 90% are excluded from drills
 
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { backend } from "./storageBackend";
 
 const SCORES_KEY    = "vocab:scores";
 const PREFS_KEY     = "vocab:prefs";
@@ -31,7 +32,7 @@ export async function getVocabSettings() {
 export async function setVocabSettings(patch) {
   const current = await getVocabSettings();
   const next = { ...current, ...patch };
-  await AsyncStorage.setItem(SETTINGS_KEY, JSON.stringify(next));
+  await backend.setItem(SETTINGS_KEY, next);
   return next;
 }
 
@@ -53,13 +54,13 @@ export async function incrementTodayCardCount() {
     const raw = await AsyncStorage.getItem(TODAY_KEY);
     const parsed = raw ? JSON.parse(raw) : {};
     const count = parsed.date === today ? (parsed.count ?? 0) + 1 : 1;
-    await AsyncStorage.setItem(TODAY_KEY, JSON.stringify({ date: today, count }));
+    await backend.setItem(TODAY_KEY, { date: today, count });
 
     // Also persist into the history map so the chart can read it
     const histRaw = await AsyncStorage.getItem(HISTORY_KEY);
     const hist = histRaw ? JSON.parse(histRaw) : {};
     hist[today] = count;
-    await AsyncStorage.setItem(HISTORY_KEY, JSON.stringify(hist));
+    await backend.setItem(HISTORY_KEY, hist);
 
     return count;
   } catch {
@@ -109,7 +110,7 @@ async function loadScores() {
 async function saveScores(scores) {
   _scoresCache = scores;
   try {
-    await AsyncStorage.setItem(SCORES_KEY, JSON.stringify(scores));
+    await backend.setItem(SCORES_KEY, scores);
   } catch {}
 }
 
@@ -180,7 +181,7 @@ export async function setVocabPrefs(partial) {
   const prefs = await getVocabPrefs();
   _prefsCache = { ...prefs, ...partial };
   try {
-    await AsyncStorage.setItem(PREFS_KEY, JSON.stringify(_prefsCache));
+    await backend.setItem(PREFS_KEY, _prefsCache);
   } catch {}
   return _prefsCache;
 }
