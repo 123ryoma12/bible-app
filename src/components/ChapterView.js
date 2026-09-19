@@ -376,6 +376,7 @@ const FlowingVerses = memo(function FlowingVerses({
       {segments.map((segment, index) => {
         const verseNum = segment.number != null ? parseInt(segment.number, 10) : null;
         const showNoteIcon = blockNoteVerses && verseNum != null && blockNoteVerses.has(verseNum);
+        const isLast = index === segments.length - 1;
 
         return (
           <Text
@@ -389,6 +390,12 @@ const FlowingVerses = memo(function FlowingVerses({
               </Text>
             ) : null}
             {segment.text}
+            {/* On the last segment, append a zero-width space directly inside this
+                nested <Text> so RN measures the full span width correctly. The outer
+                \u200B only helps when the clipping is at the outer Text level; when
+                the last child is a raw string inside a nested span (e.g. ending in
+                fancy punctuation like '") the fix must live here instead. */}
+            {isLast && !showNoteIcon ? "\u200B" : null}
             {showNoteIcon ? (
               <Text
                 style={[styles.noteIcon, noteIconSizeStyle, accentColorStyle]}
@@ -401,7 +408,6 @@ const FlowingVerses = memo(function FlowingVerses({
           </Text>
         );
       })}
-      {"\u200B"}
     </Text>
   );
 });
