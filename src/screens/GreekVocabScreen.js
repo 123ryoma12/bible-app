@@ -14,8 +14,10 @@ import {
 import { useTheme } from "../theme/ThemeContext";
 import { uiFont } from "../theme/fonts";
 import { CHAPTERS } from "../data/duff_vocab.js";
+import ChoiceModal from "../components/ChoiceModal";
 import {
   getAllScores,
+  resetScores,
   getVocabPrefs,
   isKnownWell,
   setVocabPrefs,
@@ -88,30 +90,30 @@ function PackRow({ pack, selected, scores, colors, onToggle, onProgress }) {
         <Text style={[styles.packFreq, { color: colors.mutedText }]}>
           {packSubtitle(pack)}
         </Text>
-        {hasAttempts ? (
-          <Text style={[styles.packWinRate, { color: colors.mutedText }]}>
-            {pct}% correct rate · {totalAttempts.toLocaleString()} card{totalAttempts === 1 ? "" : "s"}
-          </Text>
-        ) : null}
       </View>
 
-      {/* Progress chevron — only shown if user has attempted this pack */}
+      {/* Correct rate + progress chevron */}
       {hasAttempts ? (
-        <TouchableOpacity
-          onPress={onProgress}
-          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-          style={styles.progressBtn}
-        >
-          <Text style={[styles.progressChevron, { color: colors.accent }]}>›</Text>
-        </TouchableOpacity>
+        <Text style={[styles.packWinRate, {
+          color: pct >= 80 ? colors.accent : pct >= 50 ? "#e6a817" : colors.danger,
+        }]}>{pct}%</Text>
       ) : null}
+      <TouchableOpacity
+        onPress={onProgress}
+        hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+        style={styles.progressBtn}
+      >
+        <Text style={[styles.progressChevron, { color: colors.accent }]}>›</Text>
+      </TouchableOpacity>
     </TouchableOpacity>
   );
 }
 
 // ── Per-Pack Stats Screen ─────────────────────────────────────────────────────
 
-function PackStatsView({ pack, scores, colors, onBack }) {
+function PackStatsView({ pack, scores, colors, onBack, onReset }) {
+  const [confirmReset, setConfirmReset] = React.useState(false);
+
   const packScores = pack.words.map((w) => ({
     word: w,
     pct: wordScorePct(scores[w.id]),
@@ -120,12 +122,24 @@ function PackStatsView({ pack, scores, colors, onBack }) {
 
   return (
     <View style={{ flex: 1 }}>
+      <ChoiceModal
+        visible={confirmReset}
+        title="Reset chapter stats?"
+        message={`This will clear all progress for Greek Duff Chapter ${pack.pack}. This cannot be undone.`}
+        actions={[
+          { label: "Cancel", style: "cancel", onPress: () => setConfirmReset(false) },
+          { label: "Reset", style: "destructive", onPress: () => { setConfirmReset(false); onReset(); } },
+        ]}
+        onDismiss={() => setConfirmReset(false)}
+      />
       <View style={[styles.navHeader, { borderBottomColor: colors.border }]}>
         <TouchableOpacity onPress={onBack} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
-          <Text style={[styles.navBack, { color: colors.accent }]}>‹ Back</Text>
+          <Text style={[styles.navBack, { color: colors.accent }]}>‹</Text>
         </TouchableOpacity>
         <Text style={[styles.navTitle, { color: colors.text }]}>Greek Duff Chapter {pack.pack}</Text>
-        <View style={{ width: 48 }} />
+        <TouchableOpacity onPress={() => setConfirmReset(true)} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
+          <Text style={[styles.navReset, { color: colors.mutedText }]}>Reset</Text>
+        </TouchableOpacity>
       </View>
       <ScrollView contentContainerStyle={styles.statsContent}>
         {packScores.map(({ word, pct }) => (
@@ -271,6 +285,11 @@ export default function GreekVocabScreen({ onDrillStart, onDrillEnd, onRefreshPr
           scores={scores}
           colors={colors}
           onBack={() => { setView("home"); setStatsPack(null); }}
+          onReset={async () => {
+            await resetScores(statsPack.words.map((w) => w.id));
+            const next = await getAllScores();
+            setScores(next);
+          }}
         />
       </View>
     );
@@ -364,6 +383,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
   navBack: { fontSize: 17, fontFamily: uiFont(400) },
+  navReset: { fontSize: 14, fontFamily: uiFont(400) },
   navTitle: { fontSize: 16, fontFamily: uiFont(600) },
 
   // Home
@@ -415,8 +435,8 @@ const styles = StyleSheet.create({
   packNum: { fontSize: 15, fontFamily: uiFont(600), marginBottom: 2 },
   progressBtn: { paddingLeft: 8 },
   progressChevron: { fontSize: 22, fontFamily: uiFont(400), lineHeight: 26 },
-  packFreq: { fontSize: 12, fontFamily: uiFont(400), marginBottom: 6 },
-  packWinRate: { fontSize: 12, fontFamily: uiFont(400), marginTop: 2 },
+  packFreq: { fontSize: 12, fontFamily: uiFont(400) },
+  packWinRate: { fontSize: 12, fontFamily: uiFont(500), marginRight: 8 },
 
   // Start button
   startBtnContainer: {
