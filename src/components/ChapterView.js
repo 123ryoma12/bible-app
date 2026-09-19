@@ -358,6 +358,10 @@ const FlowingVerses = memo(function FlowingVerses({
   }
 
   // ── Normal mode: flowing paragraph text ───────────────────────────────────
+  // The trailing {"\u200B"} (zero-width space) is a workaround for a React Native
+  // inline text layout bug where the last word of the last nested <Text> span is
+  // clipped at certain font sizes / screen densities (observed on Nothing Phone 2a).
+  // The zero-width space forces RN to measure the full text width correctly.
   return (
     <Text
       style={[
@@ -366,6 +370,8 @@ const FlowingVerses = memo(function FlowingVerses({
         appearance.text,
         textColorStyle,
       ]}
+      textBreakStrategy="highQuality"
+      selectable={false}
     >
       {segments.map((segment, index) => {
         const verseNum = segment.number != null ? parseInt(segment.number, 10) : null;
@@ -395,6 +401,7 @@ const FlowingVerses = memo(function FlowingVerses({
           </Text>
         );
       })}
+      {"\u200B"}
     </Text>
   );
 });
