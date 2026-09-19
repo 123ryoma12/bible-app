@@ -50,6 +50,7 @@ suspend fun pushPrefsToGlanceState(context: Context) {
         BibleWidget::class.java,
         PrayerWidget::class.java,
         MemoryWidget::class.java,
+        VocabWidget::class.java,
     )
 
     for (widgetClass in widgetClasses) {

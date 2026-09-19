@@ -64,6 +64,7 @@ class WidgetBridgeModule(private val reactContext: ReactApplicationContext) :
                     PrayerWidget().updateAll(reactContext)
                     BibleWidget().updateAll(reactContext)
                     MemoryWidget().updateAll(reactContext)
+                    VocabWidget().updateAll(reactContext)
                 } catch (e: Exception) {
                     // Widget update failure is non-fatal to the app, but it
                     // means the home screen is now showing stale data, so it

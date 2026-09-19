@@ -322,11 +322,11 @@ export default function GreekVocabScreen({ onDrillStart, onDrillEnd, onRefreshPr
           />
         ))}
 
-        <View style={{ height: 120 }} />
+        <View style={{ height: 80 }} />
       </ScrollView>
 
-      {/* Start button — floating at bottom */}
-      <View style={[styles.startBtnContainer, { backgroundColor: colors.background, borderTopColor: colors.border }]}>
+      {/* Start button — floating at bottom, no border to avoid gap */}
+      <View style={[styles.startBtnContainer, { backgroundColor: colors.background }]}>
         <TouchableOpacity
           style={[
             styles.startBtn,
@@ -424,17 +424,17 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     right: 0,
-    padding: 16,
-    paddingBottom: 28,
-    borderTopWidth: StyleSheet.hairlineWidth,
+    paddingHorizontal: 16,
+    paddingTop: 10,
+    paddingBottom: 12,
   },
   startBtn: {
-    borderRadius: 14,
-    paddingVertical: 16,
+    borderRadius: 12,
+    paddingVertical: 12,
     alignItems: "center",
   },
   startBtnText: {
-    fontSize: 16,
+    fontSize: 15,
     fontFamily: uiFont(600),
   },
 

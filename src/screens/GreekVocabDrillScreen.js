@@ -139,59 +139,59 @@ export default function GreekVocabDrillScreen({ words, onDone, onExit }) {
 
         <View style={[styles.divider, { borderColor: colors.border }]} />
 
-        {/* Answer area */}
-        {revealed ? (
-          <Animated.View style={{ opacity: fadeAnim }}>
-            <Text style={[styles.gloss, { color: colors.accent }]}>
-              {currentWord.gloss ?? currentWord.english}
-            </Text>
-            {currentWord.lemmaGloss && currentWord.lemmaGloss !== currentWord.gloss ? (
-              <Text style={[styles.lemmaGloss, { color: colors.mutedText }]}>
-                {currentWord.lemma}{"  ·  "}{currentWord.lemmaGloss}
+        {/* Answer area — fixed height so the Greek word never shifts position */}
+        <View style={styles.answerArea}>
+          {revealed ? (
+            <Animated.View style={[styles.answerContent, { opacity: fadeAnim }]}>
+              <Text style={[styles.gloss, { color: colors.accent }]}>
+                {currentWord.gloss ?? currentWord.english}
               </Text>
-            ) : null}
-            {currentWord.count ? (
-              <Text style={[styles.occurrences, { color: colors.mutedText }]}>
-                appears {currentWord.count.toLocaleString()}× in the NT
+              {currentWord.lemmaGloss && currentWord.lemmaGloss !== currentWord.gloss ? (
+                <Text style={[styles.lemmaGloss, { color: colors.mutedText }]}>
+                  {currentWord.lemma}{"  ·  "}{currentWord.lemmaGloss}
+                </Text>
+              ) : null}
+              {currentWord.count ? (
+                <Text style={[styles.occurrences, { color: colors.mutedText }]}>
+                  appears {currentWord.count.toLocaleString()}× in the NT
+                </Text>
+              ) : null}
+            </Animated.View>
+          ) : (
+            <TouchableOpacity
+              style={[styles.revealBtn, { borderColor: colors.border }]}
+              onPress={reveal}
+              activeOpacity={0.7}
+            >
+              <Text style={[styles.revealBtnText, { color: colors.mutedText }]}>
+                Tap to reveal
               </Text>
-            ) : null}
-          </Animated.View>
-        ) : (
-          <TouchableOpacity
-            style={[styles.revealBtn, { borderColor: colors.border }]}
-            onPress={reveal}
-            activeOpacity={0.7}
-          >
-            <Text style={[styles.revealBtnText, { color: colors.mutedText }]}>
-              Tap to reveal
-            </Text>
-          </TouchableOpacity>
-        )}
+            </TouchableOpacity>
+          )}
+        </View>
       </View>
 
-      {/* Action buttons — only shown after reveal */}
-      {revealed ? (
-        <View style={styles.actions}>
-          <TouchableOpacity
-            style={[styles.actionBtn, styles.actionBtnWrong, { borderColor: colors.border }]}
-            onPress={() => handleResult(false)}
-            activeOpacity={0.7}
-          >
-            <Text style={[styles.actionBtnLabel, { color: colors.text }]}>
-              ✗{"  "}Didn't know it
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.actionBtn, styles.actionBtnRight, { backgroundColor: colors.accent }]}
-            onPress={() => handleResult(true)}
-            activeOpacity={0.7}
-          >
-            <Text style={[styles.actionBtnLabel, { color: "#fff" }]}>
-              ✓{"  "}Got it
-            </Text>
-          </TouchableOpacity>
-        </View>
-      ) : null}
+      {/* Action buttons — always rendered to prevent layout shift, hidden until revealed */}
+      <View style={[styles.actions, { opacity: revealed ? 1 : 0 }]} pointerEvents={revealed ? "auto" : "none"}>
+        <TouchableOpacity
+          style={[styles.actionBtn, styles.actionBtnWrong, { borderColor: colors.border }]}
+          onPress={() => handleResult(false)}
+          activeOpacity={0.7}
+        >
+          <Text style={[styles.actionBtnLabel, { color: colors.text }]}>
+            ✗{"  "}Didn't know it
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.actionBtn, styles.actionBtnRight, { backgroundColor: colors.accent }]}
+          onPress={() => handleResult(true)}
+          activeOpacity={0.7}
+        >
+          <Text style={[styles.actionBtnLabel, { color: "#fff" }]}>
+            ✓{"  "}Got it
+          </Text>
+        </TouchableOpacity>
+      </View>
     </View>
   );
 }
@@ -266,6 +266,11 @@ const styles = StyleSheet.create({
     fontFamily: uiFont(400),
     textAlign: "center",
     marginTop: 4,
+  },
+  answerArea: {
+    minHeight: 120,
+    alignItems: "center",
+    justifyContent: "center",
   },
   revealBtn: {
     borderWidth: 1,
