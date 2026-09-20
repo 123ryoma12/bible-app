@@ -188,8 +188,11 @@ function convertChapter(chapterNumber, passageText, bookId) {
   //   - it opens with a quotation mark (embedded quote, e.g. Rom 3:4), or
   //   - it opens with a lowercase letter or a non-letter (a continuation such as
   //     "and prevail...", or a bracketed acrostic remnant "[...]"), or
-  //   - it ends with clause punctuation ("," ";" ":") - a poetic line-break that
-  //     no ESV heading ever uses (e.g. Dan 7:9 "thrones were placed,").
+  //   - it ends with any punctuation ("," ";" ":" "." "!" "?") - ESV headings
+  //     are always unpunctuated fragments (e.g. "Behold, Damascus will cease to
+  //     be a city" has no end punct; "Under the apple tree I awakened you." does),
+  //   - it contains "?" or "!" anywhere (headings are never questions/exclamations,
+  //     e.g. "What was your mother? A lioness!").
   // This preserves genuine headings, including ESV speaker labels ("He",
   // "Others") and Hebrew acrostic letters ("Aleph"), which are Title Case and
   // unpunctuated.
@@ -201,11 +204,13 @@ function convertChapter(chapterNumber, passageText, bookId) {
     if (!/[A-Za-z]/.test(first)) return true; // starts with [ , digit, etc.
     if (first === first.toLowerCase() && first !== first.toUpperCase()) return true; // lowercase
     const last = s[s.length - 1];
-    if (last === "," || last === ";" || last === ":") return true;
+    if (last === "," || last === ";" || last === ":" || last === "." || last === "!" || last === "?") return true;
+    if (s.includes("?") || s.includes("!")) return true; // questions/exclamations are never headings
     return false;
   };
 
-  for (const rawLine of lines) {
+  for (let lineIdx = 0; lineIdx < lines.length; lineIdx++) {
+    const rawLine = lines[lineIdx];
     const indent = (rawLine.match(/^(\s*)/)[1] || "").length;
     const line = rawLine.trim();
     if (!line) {
@@ -242,6 +247,25 @@ function convertChapter(chapterNumber, passageText, bookId) {
         flush();
         pushPoetry(lastVerse, line);
         openPoetryVerse = lastVerse;
+      } else if (indent === 0 && lastVerse != null) {
+        // Lookahead: if the immediately following non-blank line has no verse
+        // marker and looks like poetry (e.g. starts lowercase), this line is the
+        // first line of a stanza that the ESV API formatted without end-punct on
+        // the opening line (e.g. "Behold, Damascus will cease to be a city" /
+        // "and will become a heap of ruins."). Real section headings are always
+        // followed by a blank line or an indented prose verse, never by a bare
+        // lowercase continuation.
+        const nextNonBlank = lines.slice(lineIdx + 1).find((l) => l.trim());
+        const nextLine = nextNonBlank ? nextNonBlank.trim() : "";
+        if (nextLine && !(/\[\d+\]/.test(nextLine)) && looksLikePoetryLine(nextLine)) {
+          flush();
+          pushPoetry(lastVerse, line);
+          openPoetryVerse = lastVerse;
+        } else {
+          // Genuine section heading (nothing open, unindented, not a quotation).
+          flush();
+          blocks.push({ style: "s1", verses: [], text: cleanText(line) });
+        }
       } else {
         // Genuine section heading (nothing open, unindented, not a quotation).
         flush();
