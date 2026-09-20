@@ -45,8 +45,7 @@ const BIBLE_SECTIONS = [
   { label: "Minor Prophets",    bookIds: ["HOS","JOL","AMO","OBA","JON","MIC","NAM","HAB","ZEP","HAG","ZEC","MAL"] },
   { label: "Gospels & Acts",    bookIds: ["MAT","MRK","LUK","JHN","ACT"] },
   { label: "Pauline Epistles",  bookIds: ["ROM","1CO","2CO","GAL","EPH","PHP","COL","1TH","2TH","1TI","2TI","TIT","PHM"] },
-  { label: "General Epistles",  bookIds: ["HEB","JAS","1PE","2PE","1JN","2JN","3JN","JUD"] },
-  { label: "Revelation",        bookIds: ["REV"] },
+  { label: "General Epistles",  bookIds: ["HEB","JAS","1PE","2PE","1JN","2JN","3JN","JUD","REV"] },
 ];
 
 // Map every book ID → section label for O(1) lookup.
