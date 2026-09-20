@@ -35,6 +35,29 @@ const SCREEN_PADDING = 20;
 const TOTAL_CHAPTERS = ALL_CHAPTERS.filter((c) => !c.isIntroCell).length; // 1,189
 const BOX_GAP = 3; // gap between cells (applied as marginRight + marginBottom)
 
+// Canonical Bible sections in canonical order.
+// Each entry lists the book IDs that belong to it.
+const BIBLE_SECTIONS = [
+  { label: "Pentateuch",        bookIds: ["GEN","EXO","LEV","NUM","DEU"] },
+  { label: "Historical Books",  bookIds: ["JOS","JDG","RUT","1SA","2SA","1KI","2KI","1CH","2CH","EZR","NEH","EST"] },
+  { label: "Wisdom & Poetry",   bookIds: ["JOB","PSA","PRO","ECC","SNG"] },
+  { label: "Major Prophets",    bookIds: ["ISA","JER","LAM","EZK","DAN"] },
+  { label: "Minor Prophets",    bookIds: ["HOS","JOL","AMO","OBA","JON","MIC","NAM","HAB","ZEP","HAG","ZEC","MAL"] },
+  { label: "Gospels & Acts",    bookIds: ["MAT","MRK","LUK","JHN","ACT"] },
+  { label: "Pauline Epistles",  bookIds: ["ROM","1CO","2CO","GAL","EPH","PHP","COL","1TH","2TH","1TI","2TI","TIT","PHM"] },
+  { label: "General Epistles",  bookIds: ["HEB","JAS","1PE","2PE","1JN","2JN","3JN","JUD"] },
+  { label: "Revelation",        bookIds: ["REV"] },
+];
+
+// Map every book ID → section label for O(1) lookup.
+const BOOK_SECTION = {};
+for (const section of BIBLE_SECTIONS) {
+  for (const id of section.bookIds) BOOK_SECTION[id] = section.label;
+}
+
+// Fixed pixel height of a section header row in the FlatList.
+const SECTION_HEADER_HEIGHT = 34;
+
 function computeBoxMetrics(containerWidth) {
   // containerWidth is the actual measured ScrollView width.
   // The grid has paddingHorizontal: SCREEN_PADDING on each side.
@@ -60,6 +83,18 @@ function computeCellOffset(itemIndex, numCols, boxSize) {
   const rowIndex = Math.floor(itemIndex / numCols);
   return rowIndex * (boxSize + BOX_GAP) + BOX_GAP; // +BOX_GAP for paddingTop
 }
+
+// ---------------------------------------------------------------------------
+// SectionHeader — full-width label row between Bible sections.
+// ---------------------------------------------------------------------------
+const SectionHeader = memo(function SectionHeader({ label, colors }) {
+  return (
+    <View style={styles.sectionHeader}>
+      <Text style={[styles.sectionHeaderText, { color: colors.mutedText }]}>{label}</Text>
+      <View style={[styles.sectionHeaderRule, { backgroundColor: colors.border }]} />
+    </View>
+  );
+});
 
 // ---------------------------------------------------------------------------
 // HeatCell — one chapter square. Memoized so only cells whose props actually
@@ -276,40 +311,6 @@ export default function StatsScreen({ onOpenChapter, initialChapter, currentChap
     return unsub;
   }, []);
 
-  // When initialChapter changes, scroll to it and signal ready. Offsets are
-  // computed mathematically from boxSize + numCols — no onLayout cache needed.
-  // We wait until boxSize > 0 (gridWidth measured) before scrolling.
-  useLayoutEffect(() => {
-    if (!initialChapter) {
-      onReady?.();
-      return;
-    }
-    const key = `${initialChapter.bookId}:${initialChapter.chapterNumber}`;
-    if (scrolledToChapter.current === key) {
-      onReady?.();
-      return;
-    }
-    scrolledToChapter.current = key;
-
-    if (boxSize <= 0 || numCols <= 0) {
-      return;
-    }
-
-    const itemIndex = ALL_CHAPTERS.findIndex(
-      (c) => !c.isIntroCell && c.bookId === initialChapter.bookId && c.chapterNumber === initialChapter.chapterNumber
-    );
-    if (itemIndex === -1) { onReady?.(); return; }
-
-    // itemIndex is a chapter index; convert to row index for FlatList.
-    const rowIndex = Math.floor(itemIndex / numCols);
-    const rowHeight = boxSize + BOX_GAP;
-    const y = rowIndex * rowHeight + BOX_GAP;
-    requestAnimationFrame(() => {
-      flatListRef.current?.scrollToOffset({ offset: Math.max(0, y - 16), animated: false });
-      onReady?.();
-    });
-  }, [initialChapter, boxSize, numCols]);
-
   const applyGoalDate = useCallback((next) => {
     setGoalDateState(next);
     setGoalDate(next);
@@ -384,41 +385,130 @@ export default function StatsScreen({ onOpenChapter, initialChapter, currentChap
 
   const percent = Math.round((readChapterCount / TOTAL_CHAPTERS) * 100);
 
-  // Chunk ALL_CHAPTERS into rows of numCols for FlatList. Stable reference
-  // when numCols doesn't change so FlatList doesn't re-render every row.
-  const chapterRows = useMemo(() => {
-    if (numCols <= 0) return [];
+  // Chunk ALL_CHAPTERS into rows of numCols, injecting a section header item
+  // before the first row of each new Bible section (Pentateuch, Gospels, etc.).
+  // Each item is either:
+  //   { isHeader: true, label: string }  — a full-width section label
+  //   { isHeader: false, cells: [...] }  — a normal row of HeatCells
+  // We also precompute per-item layout offsets so getItemLayout stays O(1)
+  // even with the variable-height header rows mixed in.
+  const { chapterRows, itemOffsets } = useMemo(() => {
+    if (numCols <= 0) return { chapterRows: [], itemOffsets: [] };
+
     const rows = [];
-    for (let i = 0; i < ALL_CHAPTERS.length; i += numCols) {
-      rows.push(ALL_CHAPTERS.slice(i, i + numCols));
+    const offsets = [];
+    const rowHeight = boxSize + BOX_GAP;
+    let currentSection = null;
+    let pendingCells = []; // cells waiting to be flushed into a row
+    let y = BOX_GAP; // matches heatGrid paddingTop
+
+    const flushPending = () => {
+      // Flush any partially-filled pending cell buffer into rows.
+      // Called before emitting a header so the header sits at a clean row boundary.
+      while (pendingCells.length > 0) {
+        const rowCells = pendingCells.splice(0, numCols);
+        offsets.push(y);
+        rows.push({ isHeader: false, cells: rowCells });
+        y += rowHeight;
+      }
+    };
+
+    for (const chapter of ALL_CHAPTERS) {
+      const section = BOOK_SECTION[chapter.bookId] ?? null;
+
+      // Emit a section header whenever the section changes.
+      if (section !== currentSection) {
+        flushPending();
+        currentSection = section;
+        if (section) {
+          offsets.push(y);
+          rows.push({ isHeader: true, label: section });
+          y += SECTION_HEADER_HEIGHT;
+        }
+      }
+
+      pendingCells.push(chapter);
+
+      // Flush full rows immediately.
+      while (pendingCells.length >= numCols) {
+        const rowCells = pendingCells.splice(0, numCols);
+        offsets.push(y);
+        rows.push({ isHeader: false, cells: rowCells });
+        y += rowHeight;
+      }
     }
-    return rows;
-  }, [numCols]);
+
+    // Flush any remaining partial row.
+    flushPending();
+
+    return { chapterRows: rows, itemOffsets: offsets };
+  }, [numCols, boxSize]);
+
+  // When initialChapter changes, scroll to it and signal ready.
+  // Must come after the chapterRows/itemOffsets useMemo above since it uses both.
+  useLayoutEffect(() => {
+    if (!initialChapter) {
+      onReady?.();
+      return;
+    }
+    const key = `${initialChapter.bookId}:${initialChapter.chapterNumber}`;
+    if (scrolledToChapter.current === key) {
+      onReady?.();
+      return;
+    }
+    scrolledToChapter.current = key;
+
+    if (boxSize <= 0 || numCols <= 0 || chapterRows.length === 0) {
+      return;
+    }
+
+    // Find the FlatList row index that contains this chapter cell.
+    const rowIndex = chapterRows.findIndex(
+      (row) =>
+        !row.isHeader &&
+        row.cells.some(
+          (c) => !c.isIntroCell && c.bookId === initialChapter.bookId && c.chapterNumber === initialChapter.chapterNumber
+        )
+    );
+    if (rowIndex === -1) { onReady?.(); return; }
+
+    const y = itemOffsets[rowIndex] ?? 0;
+    requestAnimationFrame(() => {
+      flatListRef.current?.scrollToOffset({ offset: Math.max(0, y - 16), animated: false });
+      onReady?.();
+    });
+  }, [initialChapter, boxSize, numCols, chapterRows, itemOffsets]);
 
   const rowHeight = boxSize + BOX_GAP;
 
-  const getItemLayout = useCallback((_data, index) => ({
-    length: rowHeight,
-    offset: BOX_GAP + index * rowHeight,
-    index,
-  }), [rowHeight]);
+  const getItemLayout = useCallback((_data, index) => {
+    const offset = itemOffsets[index] ?? 0;
+    const isHeader = chapterRows[index]?.isHeader ?? false;
+    const length = isHeader ? SECTION_HEADER_HEIGHT : rowHeight;
+    return { length, offset, index };
+  }, [itemOffsets, chapterRows, rowHeight]);
 
-  const renderRow = useCallback(({ item: row }) => (
-    <HeatRow
-      row={row}
-      readSet={readSet}
-      isDark={isDark}
-      numCols={numCols}
-      boxSize={boxSize}
-      colorSurface={colors.surface}
-      colorAccent={colors.accent}
-      colorBorder={colors.border}
-      colorText={colors.text}
-      colorMutedText={colors.mutedText}
-      onPress={onOpenChapter}
-      currentChapter={currentChapter}
-    />
-  ), [readSet, isDark, numCols, boxSize, colors.surface, colors.accent, colors.border, colors.text, colors.mutedText, onOpenChapter, currentChapter]);
+  const renderRow = useCallback(({ item: row }) => {
+    if (row.isHeader) {
+      return <SectionHeader label={row.label} colors={colors} />;
+    }
+    return (
+      <HeatRow
+        row={row.cells}
+        readSet={readSet}
+        isDark={isDark}
+        numCols={numCols}
+        boxSize={boxSize}
+        colorSurface={colors.surface}
+        colorAccent={colors.accent}
+        colorBorder={colors.border}
+        colorText={colors.text}
+        colorMutedText={colors.mutedText}
+        onPress={onOpenChapter}
+        currentChapter={currentChapter}
+      />
+    );
+  }, [readSet, isDark, numCols, boxSize, colors, onOpenChapter, currentChapter]);
 
 
   // Only show the spinner on the very first cold launch before preloads have
@@ -925,6 +1015,24 @@ const styles = StyleSheet.create({
     paddingHorizontal: SCREEN_PADDING,
     paddingTop: BOX_GAP,
     paddingBottom: 24,
+  },
+  sectionHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: SCREEN_PADDING,
+    height: SECTION_HEADER_HEIGHT,
+    gap: 8,
+  },
+  sectionHeaderText: {
+    fontSize: 11,
+    fontFamily: uiFont(700),
+    textTransform: "uppercase",
+    letterSpacing: 0.8,
+    flexShrink: 0,
+  },
+  sectionHeaderRule: {
+    flex: 1,
+    height: StyleSheet.hairlineWidth,
   },
   heatRowFlex: { flexDirection: "row" },
   heatBox: {
