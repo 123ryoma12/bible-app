@@ -362,6 +362,20 @@ const FlowingVerses = memo(function FlowingVerses({
   // inline text layout bug where the last word of the last nested <Text> span is
   // clipped at certain font sizes / screen densities (observed on Nothing Phone 2a).
   // The zero-width space forces RN to measure the full text width correctly.
+  // We apply it at BOTH levels:
+  //   1. Inside the last nested <Text> span — fixes clipping when the last child
+  //      is a raw string ending in fancy punctuation (curly quotes, \u202F, etc.)
+  //   2. After the final nested <Text> in the outer <Text> — fixes clipping when
+  //      RN under-measures the outer container height (observed on multiple devices
+  //      including Nothing Phone 2a; confirmed with 2 Sam 15:8 and 2 Sam 24:23 NIV).
+  const lastSegmentHasNoteIcon = (() => {
+    if (!blockNoteVerses) return false;
+    const last = segments[segments.length - 1];
+    if (!last) return false;
+    const verseNum = last.number != null ? parseInt(last.number, 10) : null;
+    return verseNum != null && blockNoteVerses.has(verseNum);
+  })();
+
   return (
     <Text
       style={[
@@ -390,11 +404,9 @@ const FlowingVerses = memo(function FlowingVerses({
               </Text>
             ) : null}
             {segment.text}
-            {/* On the last segment, append a zero-width space directly inside this
-                nested <Text> so RN measures the full span width correctly. The outer
-                \u200B only helps when the clipping is at the outer Text level; when
-                the last child is a raw string inside a nested span (e.g. ending in
-                fancy punctuation like '") the fix must live here instead. */}
+            {/* Inside the last nested span: fixes clipping when the outer Text
+                measures correctly but the inner span's last line is cut — e.g.
+                when the verse ends in fancy punctuation like curly quotes or \u202F. */}
             {isLast && !showNoteIcon ? "\u200B" : null}
             {showNoteIcon ? (
               <Text
@@ -408,6 +420,11 @@ const FlowingVerses = memo(function FlowingVerses({
           </Text>
         );
       })}
+      {/* After the last nested span: fixes clipping when RN under-measures the
+          outer Text container height. Must be outside the map so it sits at the
+          outer Text level, not inside a nested span. Skip if the last segment
+          already ends with a note icon (which acts as a natural layout anchor). */}
+      {!lastSegmentHasNoteIcon ? "\u200B" : null}
     </Text>
   );
 });
@@ -569,6 +586,7 @@ const styles = StyleSheet.create({
     paddingTop: 14,
     paddingBottom: 32,
   },
+
   missing: { marginTop: 20 },
   block: {
     width: "100%",
