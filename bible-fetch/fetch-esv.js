@@ -28,7 +28,9 @@ const path = require("path");
 
 const BOOKS = (() => {
   const src = fs.readFileSync(path.join(__dirname, "../src/data/books.js"), "utf8");
-  return JSON.parse(src.slice(src.indexOf("["), src.lastIndexOf("]") + 1));
+  const start = src.indexOf("[");
+  const end = src.indexOf("];", start);
+  return JSON.parse(src.slice(start, end + 1));
 })();
 
 const BASE = "https://api.esv.org/v3/passage/text/";
@@ -258,19 +260,21 @@ function convertChapter(chapterNumber, passageText, bookId) {
       // Prose: accumulate the whole paragraph into one flowing "p" block.
       openPoetryVerse = null;
       if (!pending) pending = { style: "p", verses: [], text: "" };
-      if (leading && pending.verses.length) {
-        const last = pending.verses[pending.verses.length - 1];
-        last.text = cleanText(`${last.text} ${leading}`);
-      }
       for (let i = 1; i < parts.length; i += 2) {
         const verseNum = Number(parts[i]);
-        const text = cleanText(parts[i + 1] || "");
+        // Leading text before the first [n] marker on this line belongs to the
+        // first verse on the line (it is a mid-sentence continuation of that
+        // verse, e.g. "As in all the churches of the saints, [34] the women…").
+        // Prepend it only once, to the first verse we encounter.
+        const rawText = (i === 1 && leading)
+          ? cleanText(`${leading} ${parts[i + 1] || ""}`)
+          : cleanText(parts[i + 1] || "");
         lastVerse = verseNum;
         const existing = pending.verses.find((v) => v.verse === verseNum);
         if (existing) {
-          existing.text = cleanText(`${existing.text} ${text}`);
+          existing.text = cleanText(`${existing.text} ${rawText}`);
         } else {
-          pending.verses.push({ verse: verseNum, text });
+          pending.verses.push({ verse: verseNum, text: rawText });
         }
       }
       continue;
