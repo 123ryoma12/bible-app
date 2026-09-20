@@ -55,6 +55,14 @@ for (const section of BIBLE_SECTIONS) {
   for (const id of section.bookIds) BOOK_SECTION[id] = section.label;
 }
 
+// Precompute total chapter count per section label (excludes intro cells).
+const SECTION_TOTAL_CHAPTERS = {};
+for (const section of BIBLE_SECTIONS) {
+  SECTION_TOTAL_CHAPTERS[section.label] = ALL_CHAPTERS.filter(
+    (c) => !c.isIntroCell && section.bookIds.includes(c.bookId)
+  ).length;
+}
+
 // Fixed pixel height of a section header row in the FlatList.
 const SECTION_HEADER_HEIGHT = 34;
 
@@ -87,10 +95,13 @@ function computeCellOffset(itemIndex, numCols, boxSize) {
 // ---------------------------------------------------------------------------
 // SectionHeader — full-width label row between Bible sections.
 // ---------------------------------------------------------------------------
-const SectionHeader = memo(function SectionHeader({ label, colors }) {
+const SectionHeader = memo(function SectionHeader({ label, readCount, totalCount, colors }) {
   return (
     <View style={styles.sectionHeader}>
       <Text style={[styles.sectionHeaderText, { color: colors.mutedText }]}>{label}</Text>
+      <Text style={[styles.sectionHeaderCount, { color: colors.mutedText }]}>
+        {readCount}/{totalCount}
+      </Text>
       <View style={[styles.sectionHeaderRule, { backgroundColor: colors.border }]} />
     </View>
   );
@@ -421,8 +432,9 @@ export default function StatsScreen({ onOpenChapter, initialChapter, currentChap
         flushPending();
         currentSection = section;
         if (section) {
+          const sectionDef = BIBLE_SECTIONS.find((s) => s.label === section);
           offsets.push(y);
-          rows.push({ isHeader: true, label: section });
+          rows.push({ isHeader: true, label: section, bookIds: sectionDef?.bookIds ?? [] });
           y += SECTION_HEADER_HEIGHT;
         }
       }
@@ -490,7 +502,17 @@ export default function StatsScreen({ onOpenChapter, initialChapter, currentChap
 
   const renderRow = useCallback(({ item: row }) => {
     if (row.isHeader) {
-      return <SectionHeader label={row.label} colors={colors} />;
+      const totalCount = SECTION_TOTAL_CHAPTERS[row.label] ?? 0;
+      const readCount = row.bookIds.reduce((sum, bookId) => {
+        // Count all non-intro chapter keys in readSet for this book.
+        // readSet keys are "bookId:chapterNumber".
+        let n = 0;
+        for (const key of readSet) {
+          if (key.startsWith(`${bookId}:`)) n++;
+        }
+        return sum + n;
+      }, 0);
+      return <SectionHeader label={row.label} readCount={readCount} totalCount={totalCount} colors={colors} />;
     }
     return (
       <HeatRow
@@ -1033,6 +1055,13 @@ const styles = StyleSheet.create({
   sectionHeaderRule: {
     flex: 1,
     height: StyleSheet.hairlineWidth,
+  },
+  sectionHeaderCount: {
+    fontSize: 11,
+    fontFamily: uiFont(700),
+    textTransform: "uppercase",
+    letterSpacing: 0.8,
+    flexShrink: 0,
   },
   heatRowFlex: { flexDirection: "row" },
   heatBox: {
