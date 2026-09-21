@@ -744,6 +744,8 @@ const AppContent = memo(function AppContent() {
             id: parsed.searchParams.get("id") || null,
           });
         }
+      } else if (host === "vocabulary") {
+        setActiveTab("languages");
       }
     } catch {
       // Malformed URL — ignore.

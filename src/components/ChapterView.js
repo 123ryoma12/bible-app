@@ -1,4 +1,4 @@
-import React, { useMemo, memo, useState, useCallback } from "react";
+import React, { useMemo, memo, useState, useCallback, useRef } from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { useTheme } from "../theme/ThemeContext";
 import { readingFont, uiFont } from "../theme/fonts";
@@ -364,16 +364,28 @@ const FlowingVerses = memo(function FlowingVerses({
   }
 
   // ── Normal mode: flowing paragraph text ───────────────────────────────────
-  // The trailing {"\u200B"} (zero-width space) is a workaround for a React Native
-  // inline text layout bug where the last word of the last nested <Text> span is
-  // clipped at certain font sizes / screen densities (observed on Nothing Phone 2a).
-  // The zero-width space forces RN to measure the full text width correctly.
-  // We apply it at BOTH levels:
-  //   1. Inside the last nested <Text> span — fixes clipping when the last child
-  //      is a raw string ending in fancy punctuation (curly quotes, \u202F, etc.)
-  //   2. After the final nested <Text> in the outer <Text> — fixes clipping when
-  //      RN under-measures the outer container height (observed on multiple devices
-  //      including Nothing Phone 2a; confirmed with 2 Sam 15:8 and 2 Sam 24:23 NIV).
+  // onTextLayout correction: RN fires onTextLayout with the real line array after
+  // the first render. If the last line's bottom edge (y + height) exceeds the
+  // container's measured height, Android is clipping it. We correct by setting a
+  // minHeight that adds exactly one extra line height — enough to un-clip the last
+  // line. This is a second render pass but only triggers on affected blocks.
+  const [extraHeight, setExtraHeight] = useState(0);
+  const lh = BODY_LINE_HEIGHT * fontScale;
+
+  const handleTextLayout = useCallback((e) => {
+    const lines = e.nativeEvent.lines;
+    if (!lines || lines.length === 0) return;
+    const lastLine = lines[lines.length - 1];
+    const lastLineBottom = lastLine.y + lastLine.height;
+    // If the last line's bottom exceeds N full line-heights, it's being clipped.
+    const expectedBottom = Math.round(lines.length * lh);
+    if (lastLineBottom > expectedBottom + 1) {
+      setExtraHeight(lh);
+    } else {
+      setExtraHeight(0);
+    }
+  }, [lh]);
+
   const lastSegmentHasNoteIcon = (() => {
     if (!blockNoteVerses) return false;
     const last = segments[segments.length - 1];
@@ -389,12 +401,14 @@ const FlowingVerses = memo(function FlowingVerses({
         typography[appearance.textType],
         appearance.text,
         textColorStyle,
+        extraHeight > 0 ? { minHeight: Math.ceil(segments.length * lh) + extraHeight } : null,
       ]}
       textBreakStrategy="simple"
       android_hyphenationFrequency="none"
       allowFontScaling={false}
       lineBreakStrategyIOS="none"
       selectable={false}
+      onTextLayout={handleTextLayout}
     >
       {segments.map((segment, index) => {
         const verseNum = segment.number != null ? parseInt(segment.number, 10) : null;
@@ -413,9 +427,6 @@ const FlowingVerses = memo(function FlowingVerses({
               </Text>
             ) : null}
             {segment.text}
-            {/* Inside the last nested span: fixes clipping when the outer Text
-                measures correctly but the inner span's last line is cut — e.g.
-                when the verse ends in fancy punctuation like curly quotes or \u202F. */}
             {isLast && !showNoteIcon ? "\u200B" : null}
             {showNoteIcon ? (
               <Text
@@ -429,10 +440,6 @@ const FlowingVerses = memo(function FlowingVerses({
           </Text>
         );
       })}
-      {/* After the last nested span: fixes clipping when RN under-measures the
-          outer Text container height. Must be outside the map so it sits at the
-          outer Text level, not inside a nested span. Skip if the last segment
-          already ends with a note icon (which acts as a natural layout anchor). */}
       {!lastSegmentHasNoteIcon ? "\u200B" : null}
     </Text>
   );
