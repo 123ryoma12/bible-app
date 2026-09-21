@@ -390,7 +390,10 @@ const FlowingVerses = memo(function FlowingVerses({
         appearance.text,
         textColorStyle,
       ]}
-      textBreakStrategy="highQuality"
+      textBreakStrategy="simple"
+      android_hyphenationFrequency="none"
+      allowFontScaling={false}
+      lineBreakStrategyIOS="none"
       selectable={false}
     >
       {segments.map((segment, index) => {
