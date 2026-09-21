@@ -171,10 +171,16 @@ const ChapterBlock = memo(function ChapterBlock({
   const appearance = getAppearance(sourceStyle, kind);
   const showLabel = label && (kind === "heading" || verses.length === 0);
 
+  // Verse-continuation indent only applies to poetry blocks (q1, q2, etc.) where
+  // a verse spans multiple lines and indenting signals the continuation clearly.
+  // For prose (style=p and similar) a mid-verse paragraph break should render
+  // flush-left, not indented — the paragraph margin already provides separation.
+  const shouldIndentContinuation = continuesPreviousVerse && kind === "poetry";
+
   // Memoize the inset style object so React.memo's shallow compare stays stable.
   const insetStyle = useMemo(
-    () => (continuesPreviousVerse ? { paddingLeft: VERSE_CONTINUATION_INDENT * fontScale } : null),
-    [continuesPreviousVerse, fontScale]
+    () => (shouldIndentContinuation ? { paddingLeft: VERSE_CONTINUATION_INDENT * fontScale } : null),
+    [shouldIndentContinuation, fontScale]
   );
 
   // Compute total left padding so the interlinear row can negate it exactly.
@@ -183,9 +189,9 @@ const ChapterBlock = memo(function ChapterBlock({
     const container = appearance.container;
     const containerArr = Array.isArray(container) ? container : [container];
     containerArr.forEach((s) => { if (s && typeof s.paddingLeft === "number") left += s.paddingLeft; });
-    if (continuesPreviousVerse) left += VERSE_CONTINUATION_INDENT * fontScale;
+    if (shouldIndentContinuation) left += VERSE_CONTINUATION_INDENT * fontScale;
     return left;
-  }, [appearance.container, continuesPreviousVerse, fontScale]);
+  }, [appearance.container, shouldIndentContinuation, fontScale]);
 
   // Resolve label color once rather than creating a new inline object each render.
   const labelColor = useMemo(
