@@ -726,7 +726,31 @@ const AppContent = memo(function AppContent() {
         const targetBook = parsed.searchParams.get("book");
         const targetChapter = Number(parsed.searchParams.get("chapter"));
         if (targetBook && Number.isInteger(targetChapter) && targetChapter > 0) {
-          openChapterDirect(targetBook, targetChapter);
+          // If a tab for this exact chapter is already open, switch to it.
+          // Otherwise open it in a new tab so existing work is preserved.
+          const existingTab = readerTabs.find(
+            (t) => t.bookId === targetBook && t.chapterNumber === targetChapter && t.type !== "intro"
+          );
+          if (existingTab) {
+            setActiveTabId(existingTab.id);
+            syncReaderFromTab(existingTab);
+            setScreen("reader");
+            const activeIdx = readerTabs.findIndex((t) => t.id === existingTab.id);
+            setReaderTabs(readerTabs, activeIdx);
+          } else {
+            const idx = BOOKS.findIndex((b) => b.id === targetBook);
+            if (idx !== -1) {
+              const tab = { id: newTabId(), bookId: targetBook, chapterNumber: targetChapter };
+              tabScrollPositions.current[tab.id] = 0;
+              const newTabs = [...readerTabs, tab];
+              applyTabs(newTabs, tab.id);
+              setBookIndex(idx);
+              setChapterNumber(targetChapter);
+              setInitialScrollY(0);
+              setScreen("reader");
+              setLastPosition(targetBook, targetChapter);
+            }
+          }
         } else if (readerTabs.length > 0) {
           // No explicit target: only switch to the reader if there's something
           // to show. On a cold launch the restore effect sets screen="reader"
@@ -750,7 +774,7 @@ const AppContent = memo(function AppContent() {
     } catch {
       // Malformed URL — ignore.
     }
-  }, [readerTabs.length, openChapterDirect, prayerSession]);
+  }, [readerTabs, prayerSession]);
 
   const handleDeepLink = useCallback(({ url }) => {
     if (!url) return;
