@@ -368,23 +368,30 @@ const FlowingVerses = memo(function FlowingVerses({
   // the first render. If the last line's bottom edge (y + height) exceeds the
   // container's measured height, Android is clipping it. We correct by setting a
   // minHeight that adds exactly one extra line height — enough to un-clip the last
-  // line. This is a second render pass but only triggers on affected blocks.
-  const [extraHeight, setExtraHeight] = useState(0);
+  // View wrapper + onLayout height correction:
+  // We wrap the outer <Text> in an unstyled <View>. When onTextLayout fires on
+  // the <Text>, we get the real last-line bottom position. If it exceeds the
+  // View's measured height (from onLayout on the View), Android is clipping the
+  // last line. We then set an explicit height on the View equal to lastLineBottom,
+  // forcing Android to re-layout the Text with enough room to show the last line.
+  // Setting height on a View (vs minHeight on Text) triggers a full layout pass.
   const lh = BODY_LINE_HEIGHT * fontScale;
+  const [viewHeight, setViewHeight] = useState(null);
+  const lastLineBottomRef = useRef(0);
+
+  const handleViewLayout = useCallback((e) => {
+    const { height } = e.nativeEvent.layout;
+    if (lastLineBottomRef.current > height + 1) {
+      setViewHeight(Math.ceil(lastLineBottomRef.current));
+    }
+  }, []);
 
   const handleTextLayout = useCallback((e) => {
     const lines = e.nativeEvent.lines;
     if (!lines || lines.length === 0) return;
     const lastLine = lines[lines.length - 1];
-    const lastLineBottom = lastLine.y + lastLine.height;
-    // If the last line's bottom exceeds N full line-heights, it's being clipped.
-    const expectedBottom = Math.round(lines.length * lh);
-    if (lastLineBottom > expectedBottom + 1) {
-      setExtraHeight(lh);
-    } else {
-      setExtraHeight(0);
-    }
-  }, [lh]);
+    lastLineBottomRef.current = lastLine.y + lastLine.height;
+  }, []);
 
   const lastSegmentHasNoteIcon = (() => {
     if (!blockNoteVerses) return false;
@@ -395,53 +402,57 @@ const FlowingVerses = memo(function FlowingVerses({
   })();
 
   return (
-    <Text
-      style={[
-        styles.flowingText,
-        typography[appearance.textType],
-        appearance.text,
-        textColorStyle,
-        extraHeight > 0 ? { minHeight: Math.ceil(segments.length * lh) + extraHeight } : null,
-      ]}
-      textBreakStrategy="simple"
-      android_hyphenationFrequency="none"
-      allowFontScaling={false}
-      lineBreakStrategyIOS="none"
-      selectable={false}
-      onTextLayout={handleTextLayout}
+    <View
+      onLayout={handleViewLayout}
+      style={viewHeight != null ? { height: viewHeight } : null}
     >
-      {segments.map((segment, index) => {
-        const verseNum = segment.number != null ? parseInt(segment.number, 10) : null;
-        const showNoteIcon = blockNoteVerses && verseNum != null && blockNoteVerses.has(verseNum);
-        const isLast = index === segments.length - 1;
+      <Text
+        style={[
+          styles.flowingText,
+          typography[appearance.textType],
+          appearance.text,
+          textColorStyle,
+        ]}
+        textBreakStrategy="simple"
+        android_hyphenationFrequency="none"
+        allowFontScaling={false}
+        lineBreakStrategyIOS="none"
+        selectable={false}
+        onTextLayout={handleTextLayout}
+      >
+        {segments.map((segment, index) => {
+          const verseNum = segment.number != null ? parseInt(segment.number, 10) : null;
+          const showNoteIcon = blockNoteVerses && verseNum != null && blockNoteVerses.has(verseNum);
+          const isLast = index === segments.length - 1;
 
-        return (
-          <Text
-            key={`${segment.number ?? "text"}-${index}`}
-            style={segment.editorialNote ? typography.editorialText : null}
-          >
-            {index > 0 ? " " : null}
-            {segment.showNumber ? (
-              <Text style={[styles.verseNumber, typography.verseNumber, mutedColorStyle]}>
-                {segment.number}{"\u00A0\u00A0"}
-              </Text>
-            ) : null}
-            {segment.text}
-            {isLast && !showNoteIcon ? "\u200B" : null}
-            {showNoteIcon ? (
-              <Text
-                style={[styles.noteIcon, noteIconSizeStyle, accentColorStyle]}
-                onPress={(e) => onNotePress?.(verseNum, e.nativeEvent.pageY)}
-                hitSlop={noteIconHitSlop}
-              >
-                {"\u00A0" + INFO_ICON_GLYPH + "\u00A0"}
-              </Text>
-            ) : null}
-          </Text>
-        );
-      })}
-      {!lastSegmentHasNoteIcon ? "\u200B" : null}
-    </Text>
+          return (
+            <Text
+              key={`${segment.number ?? "text"}-${index}`}
+              style={segment.editorialNote ? typography.editorialText : null}
+            >
+              {index > 0 ? " " : null}
+              {segment.showNumber ? (
+                <Text style={[styles.verseNumber, typography.verseNumber, mutedColorStyle]}>
+                  {segment.number}{"\u00A0\u00A0"}
+                </Text>
+              ) : null}
+              {segment.text}
+              {isLast && !showNoteIcon ? "\u200B" : null}
+              {showNoteIcon ? (
+                <Text
+                  style={[styles.noteIcon, noteIconSizeStyle, accentColorStyle]}
+                  onPress={(e) => onNotePress?.(verseNum, e.nativeEvent.pageY)}
+                  hitSlop={noteIconHitSlop}
+                >
+                  {"\u00A0" + INFO_ICON_GLYPH + "\u00A0"}
+                </Text>
+              ) : null}
+            </Text>
+          );
+        })}
+        {!lastSegmentHasNoteIcon ? "\u200B" : null}
+      </Text>
+    </View>
   );
 });
 
@@ -574,13 +585,13 @@ function createTypography(fontScale, fontKey) {
       fontFamily: readingFont(fontKey, "regular"),
       fontSize: BODY_SIZE * fontScale,
       lineHeight: BODY_LINE_HEIGHT * fontScale,
-      includeFontPadding: true,
+      includeFontPadding: false,
     },
     descriptive: {
       fontFamily: readingFont(fontKey, "italic"),
       fontSize: 15 * fontScale,
       lineHeight: 24 * fontScale,
-      includeFontPadding: true,
+      includeFontPadding: false,
     },
     heading: {
       fontFamily: uiFont(600),

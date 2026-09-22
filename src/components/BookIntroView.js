@@ -98,8 +98,13 @@ function Section({ section, colors, readingFontKey, fontScale, sectionRef }) {
                   fontFamily: readingFont(readingFontKey, "regular"),
                   fontSize: BODY_SIZE * fontScale,
                   lineHeight: BODY_LINE_HEIGHT * fontScale,
+                  includeFontPadding: false,
                 },
               ]}
+              textBreakStrategy="simple"
+              android_hyphenationFrequency="none"
+              allowFontScaling={false}
+              lineBreakStrategyIOS="none"
             >
               {para}
             </Text>
