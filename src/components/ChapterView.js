@@ -1,4 +1,4 @@
-import React, { useMemo, memo, useState, useCallback, useRef } from "react";
+import React, { useMemo, memo, useState, useCallback } from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { useTheme } from "../theme/ThemeContext";
 import { readingFont, uiFont } from "../theme/fonts";
@@ -364,95 +364,57 @@ const FlowingVerses = memo(function FlowingVerses({
   }
 
   // ── Normal mode: flowing paragraph text ───────────────────────────────────
-  // onTextLayout correction: RN fires onTextLayout with the real line array after
-  // the first render. If the last line's bottom edge (y + height) exceeds the
-  // container's measured height, Android is clipping it. We correct by setting a
-  // minHeight that adds exactly one extra line height — enough to un-clip the last
-  // View wrapper + onLayout height correction:
-  // We wrap the outer <Text> in an unstyled <View>. When onTextLayout fires on
-  // the <Text>, we get the real last-line bottom position. If it exceeds the
-  // View's measured height (from onLayout on the View), Android is clipping the
-  // last line. We then set an explicit height on the View equal to lastLineBottom,
-  // forcing Android to re-layout the Text with enough room to show the last line.
-  // Setting height on a View (vs minHeight on Text) triggers a full layout pass.
-  const lh = BODY_LINE_HEIGHT * fontScale;
-  const [viewHeight, setViewHeight] = useState(null);
-  const lastLineBottomRef = useRef(0);
-
-  const handleViewLayout = useCallback((e) => {
-    const { height } = e.nativeEvent.layout;
-    if (lastLineBottomRef.current > height + 1) {
-      setViewHeight(Math.ceil(lastLineBottomRef.current));
-    }
-  }, []);
-
-  const handleTextLayout = useCallback((e) => {
-    const lines = e.nativeEvent.lines;
-    if (!lines || lines.length === 0) return;
-    const lastLine = lines[lines.length - 1];
-    lastLineBottomRef.current = lastLine.y + lastLine.height;
-  }, []);
-
-  const lastSegmentHasNoteIcon = (() => {
-    if (!blockNoteVerses) return false;
-    const last = segments[segments.length - 1];
-    if (!last) return false;
-    const verseNum = last.number != null ? parseInt(last.number, 10) : null;
-    return verseNum != null && blockNoteVerses.has(verseNum);
-  })();
-
+  // The trailing {"\u200B"} (zero-width space) is a workaround for a React Native
+  // inline text layout bug where the last word of the last nested <Text> span is
+  // clipped at certain font sizes / screen densities (observed on Nothing Phone 2a).
+  // The zero-width space forces RN to measure the full text width correctly.
   return (
-    <View
-      onLayout={handleViewLayout}
-      style={viewHeight != null ? { height: viewHeight } : null}
+    <Text
+      style={[
+        styles.flowingText,
+        typography[appearance.textType],
+        appearance.text,
+        textColorStyle,
+      ]}
+      textBreakStrategy="highQuality"
+      selectable={false}
     >
-      <Text
-        style={[
-          styles.flowingText,
-          typography[appearance.textType],
-          appearance.text,
-          textColorStyle,
-        ]}
-        textBreakStrategy="simple"
-        android_hyphenationFrequency="none"
-        allowFontScaling={false}
-        lineBreakStrategyIOS="none"
-        selectable={false}
-        onTextLayout={handleTextLayout}
-      >
-        {segments.map((segment, index) => {
-          const verseNum = segment.number != null ? parseInt(segment.number, 10) : null;
-          const showNoteIcon = blockNoteVerses && verseNum != null && blockNoteVerses.has(verseNum);
-          const isLast = index === segments.length - 1;
+      {segments.map((segment, index) => {
+        const verseNum = segment.number != null ? parseInt(segment.number, 10) : null;
+        const showNoteIcon = blockNoteVerses && verseNum != null && blockNoteVerses.has(verseNum);
+        const isLast = index === segments.length - 1;
 
-          return (
-            <Text
-              key={`${segment.number ?? "text"}-${index}`}
-              style={segment.editorialNote ? typography.editorialText : null}
-            >
-              {index > 0 ? " " : null}
-              {segment.showNumber ? (
-                <Text style={[styles.verseNumber, typography.verseNumber, mutedColorStyle]}>
-                  {segment.number}{"\u00A0\u00A0"}
-                </Text>
-              ) : null}
-              {segment.text}
-              {isLast && !showNoteIcon ? "\u200B" : null}
-              {showNoteIcon ? (
-                <Text
-                  style={[styles.noteIcon, noteIconSizeStyle, accentColorStyle]}
-                  onPress={(e) => onNotePress?.(verseNum, e.nativeEvent.pageY)}
-                  hitSlop={noteIconHitSlop}
-                >
-                  {"\u00A0" + INFO_ICON_GLYPH + "\u00A0"}
-                </Text>
-              ) : null}
-            </Text>
-          );
-        })}
-        {!lastSegmentHasNoteIcon ? "\u200B" : null}
-      </Text>
-    </View>
+        return (
+          <Text
+            key={`${segment.number ?? "text"}-${index}`}
+            style={segment.editorialNote ? typography.editorialText : null}
+          >
+            {index > 0 ? " " : null}
+            {segment.showNumber ? (
+              <Text style={[styles.verseNumber, typography.verseNumber, mutedColorStyle]}>
+                {segment.number}{"\u00A0\u00A0"}
+              </Text>
+            ) : null}
+            {segment.text}
+            {/* On the last segment, append a zero-width space directly inside this
+                nested <Text> so RN measures the full span width correctly. The outer
+                \u200B only helps when the clipping is at the outer Text level; when
+                the last child is a raw string inside a nested span (e.g. ending in
+                fancy punctuation like '") the fix must live here instead. */}
+            {isLast && !showNoteIcon ? "\u200B" : null}
+            {showNoteIcon ? (
+              <Text
+                style={[styles.noteIcon, noteIconSizeStyle, accentColorStyle]}
+                onPress={(e) => onNotePress?.(verseNum, e.nativeEvent.pageY)}
+                hitSlop={noteIconHitSlop}
+              >
+                {"\u00A0" + INFO_ICON_GLYPH + "\u00A0"}
+              </Text>
+            ) : null}
+          </Text>
+        );
+      })}
+    </Text>
   );
 });
 
