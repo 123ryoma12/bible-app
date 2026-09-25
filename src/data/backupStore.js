@@ -28,6 +28,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { File, Paths } from "expo-file-system";
 import * as Sharing from "expo-sharing";
 import * as DocumentPicker from "expo-document-picker";
+import { Platform } from "react-native";
 
 import { version as APP_VERSION } from "../../package.json";
 
@@ -81,6 +82,19 @@ function fileTimestamp(now = new Date()) {
 export async function exportBackup(now = new Date()) {
   const payload = await buildBackupObject(now);
   const json = JSON.stringify(payload, null, 2);
+
+  if (Platform.OS === "web") {
+    const blob = new Blob([json], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `bible-backup_${fileTimestamp(now)}.json`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 60 * 1000);
+    return { uri: url, keyCount: payload.keyCount, createdAt: payload.createdAt };
+  }
 
   const file = new File(Paths.cache, `bible-backup_${fileTimestamp(now)}.json`);
   // Overwrite any stale file with the same name from an earlier export.
@@ -143,6 +157,43 @@ async function applyRestore(data) {
 //   { canceled: false, keyCount, createdAt } - restore applied
 // Throws on an invalid/corrupt file so the UI can show the message.
 export async function importBackup() {
+  if (Platform.OS === "web") {
+    const file = await new Promise((resolve) => {
+      const input = document.createElement("input");
+      input.type = "file";
+      input.accept = ".json,application/json";
+      input.style.display = "none";
+      document.body.appendChild(input);
+      let settled = false;
+      const finish = (selected) => {
+        if (settled) return;
+        settled = true;
+        window.removeEventListener("focus", onFocus);
+        input.remove();
+        resolve(selected);
+      };
+      const onFocus = () => {
+        // Some browsers do not fire `cancel` when the picker is dismissed.
+        setTimeout(() => finish(input.files?.[0] || null), 500);
+      };
+      input.onchange = () => finish(input.files?.[0] || null);
+      input.oncancel = () => finish(null);
+      window.addEventListener("focus", onFocus);
+      input.click();
+    });
+    if (!file) return { canceled: true };
+
+    let parsed;
+    try {
+      parsed = JSON.parse(await file.text());
+    } catch {
+      throw new Error("This file isn't valid JSON.");
+    }
+    const data = validateBackup(parsed);
+    const keyCount = await applyRestore(data);
+    return { canceled: false, keyCount, createdAt: parsed.createdAt || null };
+  }
+
   const result = await DocumentPicker.getDocumentAsync({
     type: "application/json",
     copyToCacheDirectory: true,

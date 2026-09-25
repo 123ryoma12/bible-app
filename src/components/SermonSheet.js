@@ -24,11 +24,11 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   StyleSheet,
-  Alert,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { uiFont } from "../theme/fonts";
+import { appAlert } from "../utils/appAlert";
 import { useTheme } from "../theme/ThemeContext";
 import {
   fetchSermonsForChapter,
@@ -193,7 +193,7 @@ export default function SermonSheet({
   const handleDownloadAction = useCallback(
     (sermon, state) => {
       if (state === "downloaded" || state === "remove") {
-        Alert.alert(
+        appAlert(
           "Remove download?",
           `"${sermon.title}" will need to be downloaded again to play offline.`,
           [

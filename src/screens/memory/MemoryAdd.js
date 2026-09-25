@@ -8,7 +8,6 @@ import {
   FlatList,
   ScrollView,
   Modal,
-  Alert,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
@@ -22,6 +21,7 @@ import {
 import { addMemory } from "../../data/memoryStore";
 import { useTheme } from "../../theme/ThemeContext";
 import { readingFont, uiFont } from "../../theme/fonts";
+import { appAlert } from "../../utils/appAlert";
 import { BIBLE_VERSIONS, versionAbbr } from "../../data/bibleVersions";
 import { getCachedBibleBook, loadBibleBook, pinBibleBook } from "../../data/bibleData";
 
@@ -164,7 +164,7 @@ export default function MemoryAdd({ onDone, onCancel }) {
       });
       onDone();
     } catch (e) {
-      Alert.alert("Couldn't add", e.message || "Invalid verse range.");
+      appAlert("Couldn't add", e.message || "Invalid verse range.");
       setSaving(false);
     }
   }

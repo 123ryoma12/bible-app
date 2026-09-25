@@ -13,6 +13,7 @@ import {
 } from "react-native";
 import { useTheme } from "../theme/ThemeContext";
 import { uiFont } from "../theme/fonts";
+import { appAlert } from "../utils/appAlert";
 import { CHAPTERS } from "../data/duff_vocab.js";
 import ChoiceModal from "../components/ChoiceModal";
 import {
@@ -235,7 +236,7 @@ export default function GreekVocabScreen({ onDrillStart, onDrillEnd, onRefreshPr
   const handleStartDrill = useCallback(() => {
     const words = buildDrillWords();
     if (words.length === 0) {
-      Alert.alert("No words to drill", "All selected words are known well, or no packs are selected.");
+      appAlert("No words to drill", "All selected words are known well, or no packs are selected.");
       return;
     }
     setDrillWords(words);

@@ -5,7 +5,6 @@ import {
   FlatList,
   TouchableOpacity,
   StyleSheet,
-  Alert,
   Modal,
   ScrollView,
   TextInput,
@@ -15,6 +14,7 @@ import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { AppSettingsButton } from "../components/AppSettingsModal";
 import { useTheme } from "../theme/ThemeContext";
 import { uiFont } from "../theme/fonts";
+import { appAlert } from "../utils/appAlert";
 import { useScreenBackHandler } from "../navigation/BackHandlerRegistry";
 import {
   STATUS,
@@ -107,7 +107,7 @@ export default function MemoryScreen({ drillRequest = null }) {
   }
 
   function handleResetPrefs() {
-    Alert.alert(
+    appAlert(
       "Reset prioritisation?",
       "Restore the default Memory prioritisation settings. Your verses and stats are not affected.",
       [
@@ -235,7 +235,7 @@ export default function MemoryScreen({ drillRequest = null }) {
   }, [view, refresh]);
 
   function confirmDelete(entry) {
-    Alert.alert(
+    appAlert(
       "Delete memory verse",
       `Remove "${referenceLabel(entry)}"? This also clears its stats.`,
       [

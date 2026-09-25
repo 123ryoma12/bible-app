@@ -33,6 +33,7 @@
     "android": "expo run:android",
     "ios": "expo run:ios",
     "web": "expo start --web",
+    "build:web": "expo export --platform web && node scripts/generate-pwa-sw.js",
     "stamp-build": "node scripts/stamp-build.js",
     "prebuild": "node scripts/stamp-build.js"
   },

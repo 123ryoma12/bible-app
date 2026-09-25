@@ -73,3 +73,25 @@ Replace these files in `assets/` with your own artwork, then rebuild:
 - `android-icon-foreground.png` / `android-icon-background.png` /
   `android-icon-monochrome.png` — Android adaptive icon layers
 - `splash-icon.png` — splash screen
+
+## Web PWA
+
+Build the installable web app with:
+
+```bash
+npm run build:web
+```
+
+The command exports the Expo web app to `dist/` and generates `dist/sw.js` from
+the exported asset names. For Cloudflare Pages, use `npm run build:web` as the
+build command and `dist` as the output directory. Host it over HTTPS (or use
+localhost while testing), then install it from the browser's app menu.
+
+The service worker caches the app shell for offline launch. Bible books,
+interlinear text, and introductions are cached as you open them; a book must be
+opened online once before it is available offline. Reading progress, stats,
+memory verses, prayers, and vocabulary data stay in that browser's local
+storage. Settings can download and restore a JSON backup on the web.
+
+The PWA does not sync data between devices. Clearing the browser's site data
+also removes the locally saved data, so keep a backup if you need to preserve it.

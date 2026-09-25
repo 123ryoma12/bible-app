@@ -6,13 +6,13 @@ import {
   StyleSheet,
   ScrollView,
   ActivityIndicator,
-  Alert,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useTheme } from "../theme/ThemeContext";
 import { uiFont } from "../theme/fonts";
 import { exportBackup, importBackup } from "../data/backupStore";
 import { BUILD_DATE, BUILD_COMMIT, APP_VERSION } from "../data/buildInfo";
+import { appAlert } from "../utils/appAlert";
 
 function SectionHeader({ title, colors, first = false }) {
   return (
@@ -39,14 +39,14 @@ export default function SettingsScreen() {
       const res = await exportBackup();
       // shareAsync resolves once the sheet is dismissed; a light confirmation
       // is enough since the user has already seen the system UI.
-      Alert.alert(
+      appAlert(
         "Backup ready",
         `Saved ${res.keyCount} item${res.keyCount === 1 ? "" : "s"} of data. ` +
           "Keep the file somewhere safe to restore it later.",
         [{ text: "OK" }]
       );
     } catch (e) {
-      Alert.alert("Backup failed", e.message || "Something went wrong.", [{ text: "OK" }]);
+      appAlert("Backup failed", e.message || "Something went wrong.", [{ text: "OK" }]);
     } finally {
       setBusy("idle");
     }
@@ -55,7 +55,7 @@ export default function SettingsScreen() {
   // Restore is destructive (replace all), so confirm first, then pick + apply.
   function handleRestore() {
     if (busy !== "idle") return;
-    Alert.alert(
+    appAlert(
       "Restore from backup?",
       "This replaces ALL current data on this device - reading progress, history, " +
         "memory verses and settings - with the contents of the backup file. This " +
@@ -72,14 +72,14 @@ export default function SettingsScreen() {
     try {
       const res = await importBackup();
       if (res.canceled) return; // user backed out of the picker
-      Alert.alert(
+      appAlert(
         "Restore complete",
         `Restored ${res.keyCount} item${res.keyCount === 1 ? "" : "s"}. ` +
           "Please close and reopen the app to see all restored data and settings.",
         [{ text: "OK" }]
       );
     } catch (e) {
-      Alert.alert("Restore failed", e.message || "Something went wrong.", [{ text: "OK" }]);
+      appAlert("Restore failed", e.message || "Something went wrong.", [{ text: "OK" }]);
     } finally {
       setBusy("idle");
     }
