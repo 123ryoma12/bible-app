@@ -6,6 +6,7 @@ import {
   StyleSheet,
   ScrollView,
   ActivityIndicator,
+  Platform,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useTheme } from "../theme/ThemeContext";
@@ -75,8 +76,10 @@ export default function SettingsScreen() {
       appAlert(
         "Restore complete",
         `Restored ${res.keyCount} item${res.keyCount === 1 ? "" : "s"}. ` +
-          "Please close and reopen the app to see all restored data and settings.",
-        [{ text: "OK" }]
+          (Platform.OS === "web"
+            ? "Tap OK to reload the app and show the restored data."
+            : "Please close and reopen the app to see all restored data and settings."),
+        [{ text: "OK", onPress: Platform.OS === "web" ? () => window.location.reload() : undefined }]
       );
     } catch (e) {
       appAlert("Restore failed", e.message || "Something went wrong.", [{ text: "OK" }]);

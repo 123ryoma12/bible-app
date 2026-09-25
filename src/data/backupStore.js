@@ -168,17 +168,13 @@ export async function importBackup() {
       const finish = (selected) => {
         if (settled) return;
         settled = true;
-        window.removeEventListener("focus", onFocus);
         input.remove();
         resolve(selected);
       };
-      const onFocus = () => {
-        // Some browsers do not fire `cancel` when the picker is dismissed.
-        setTimeout(() => finish(input.files?.[0] || null), 500);
-      };
+      // iOS can refocus the web app before Files/iCloud delivers its `change`
+      // event. Only the input's own events tell us whether a file was chosen.
       input.onchange = () => finish(input.files?.[0] || null);
       input.oncancel = () => finish(null);
-      window.addEventListener("focus", onFocus);
       input.click();
     });
     if (!file) return { canceled: true };

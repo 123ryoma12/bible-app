@@ -9,10 +9,10 @@ export function appAlert(title, message, buttons) {
 
   const prompt = [title, message].filter(Boolean).join("\n\n");
   const action = buttons?.find((button) => button.style !== "cancel" && button.onPress);
-  if (action) {
+  if (buttons?.some((button) => button.style === "cancel") && action) {
     if (window.confirm(prompt)) action.onPress();
   } else {
     window.alert(prompt);
-    buttons?.[0]?.onPress?.();
+    action?.onPress?.();
   }
 }

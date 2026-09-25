@@ -62,6 +62,49 @@
         });
       });
     </script>
+    <script>
+      // Nudge iOS Home Screen apps to repaint the blurred status bar edge.
+      // This follows the workaround in solution.txt and runs once per load.
+      window.addEventListener("load", function () {
+        const isStandalone =
+          matchMedia("(display-mode: standalone)").matches ||
+          navigator.standalone === true;
+        if (!isStandalone || !/iPhone|iPad|iPod/.test(navigator.userAgent)) return;
+
+        const style = document.createElement("style");
+        style.textContent = `
+          #ojapp-blur-cover {
+            display: none; position: fixed; inset: 0; z-index: 2147483646;
+            background: rgba(255,255,255,0.01); pointer-events: none;
+            animation: ojapp-cover-fade 0.3s;
+          }
+          #ojapp-blur-panel {
+            position: fixed; top: 0; right: 0; bottom: 0; width: 90%; height: 100%;
+            z-index: 2147483647; background: rgba(255,255,255,0.01);
+            pointer-events: none; transform: translateX(110%); transition: transform 0.3s;
+          }
+          @keyframes ojapp-cover-fade { from { opacity: 0; } to { opacity: 1; } }
+        `;
+        document.head.appendChild(style);
+
+        const cover = document.createElement("div");
+        cover.id = "ojapp-blur-cover";
+        cover.setAttribute("aria-hidden", "true");
+        const panel = document.createElement("div");
+        panel.id = "ojapp-blur-panel";
+        panel.setAttribute("aria-hidden", "true");
+        document.body.append(cover, panel);
+        void panel.offsetWidth;
+        requestAnimationFrame(function () {
+          cover.style.display = "block";
+          panel.style.transform = "translateX(0%)";
+          setTimeout(function () {
+            cover.style.display = "none";
+            panel.style.transform = "translateX(110%)";
+          }, 500);
+        });
+      });
+    </script>
   </head>
 
   <body>
