@@ -898,7 +898,7 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
   },
   headingNoteIcon: {
-    fontFamily: "MaterialCommunityIcons",
+    fontFamily: "material-community",
     fontSize: 15,
     lineHeight: 18,
   },

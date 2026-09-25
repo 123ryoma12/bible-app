@@ -8,7 +8,7 @@ import InterlinearVerseRow from "./InterlinearVerseRow";
 // place an icon inside a React Native <Text> tree (no View allowed).
 // "information-outline": circled i outline, clean and unobtrusive.
 // The MaterialCommunityIcons font is loaded explicitly in App.js via useFonts()
-// so that fontFamily: "MaterialCommunityIcons" resolves correctly on all platforms.
+// so that fontFamily: "material-community" resolves correctly on all platforms.
 const INFO_ICON_GLYPH = String.fromCodePoint(0xf02fd);
 
 export const BODY_SIZE = 18;
@@ -403,13 +403,17 @@ const FlowingVerses = memo(function FlowingVerses({
                 fancy punctuation like '") the fix must live here instead. */}
             {isLast && !showNoteIcon ? "\u200B" : null}
             {showNoteIcon ? (
-              <Text
-                style={[styles.noteIcon, noteIconSizeStyle, accentColorStyle]}
-                onPress={(e) => onNotePress?.(verseNum, e.nativeEvent.pageY)}
-                hitSlop={noteIconHitSlop}
-              >
-                {"\u00A0" + INFO_ICON_GLYPH + "\u00A0"}
-              </Text>
+              <>
+                {"\u00A0"}
+                <Text
+                  style={[styles.noteIcon, noteIconSizeStyle, accentColorStyle]}
+                  onPress={(e) => onNotePress?.(verseNum, e.nativeEvent.pageY)}
+                  hitSlop={noteIconHitSlop}
+                >
+                  {INFO_ICON_GLYPH}
+                </Text>
+                {"\u00A0"}
+              </>
             ) : null}
           </Text>
         );
@@ -617,7 +621,7 @@ const styles = StyleSheet.create({
     letterSpacing: 0.1,
   },
   noteIcon: {
-    fontFamily: "MaterialCommunityIcons",
+    fontFamily: "material-community",
   },
   centeredText: {
     textAlign: "center",

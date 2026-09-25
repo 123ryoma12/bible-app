@@ -17,7 +17,6 @@
         if (JSON.parse(localStorage.getItem("themeMode")) === "light") {
           document.querySelector('meta[name="theme-color"]').content = "#ffffff";
           document.documentElement.style.setProperty("--app-background", "#ffffff");
-          document.documentElement.style.setProperty("--status-tint-color", "#fdfdfd");
         }
       } catch (_) {
         // Storage can be unavailable; the app's default theme is dark.
@@ -49,11 +48,15 @@
           top: 0;
           left: 0;
           right: 0;
-          height: var(--status-tint-h, 2px);
-          background-color: var(--status-tint-color, #141414);
+          height: var(--status-tint-h, 16px);
+          background-color: var(--app-background, #121212);
           transition: background-color 200ms ease-in-out;
           pointer-events: none;
           z-index: 2000;
+        }
+        .is-ios #root {
+          height: calc(100% - var(--status-tint-h, 16px));
+          margin-top: var(--status-tint-h, 16px);
         }
       }
       /* These styles make the root element full-height */
