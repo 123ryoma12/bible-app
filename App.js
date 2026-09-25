@@ -179,7 +179,7 @@ const AppContent = memo(function AppContent() {
     document.querySelector('meta[name="theme-color"]')?.setAttribute("content", colors.background);
     document.querySelector('meta[name="apple-mobile-web-app-status-bar-style"]')?.setAttribute(
       "content",
-      mode === "dark" ? "black-translucent" : "default"
+      mode === "dark" ? "black" : "default"
     );
   }, [mode, colors.background]);
 
