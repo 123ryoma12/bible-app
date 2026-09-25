@@ -42,10 +42,8 @@ export const SOURCE_URL = SITE_ROOT;
 
 const REQUEST_TIMEOUT_MS = 15_000;
 
-// Whether audio page scraping is possible on this platform. Same restriction
-// as Gospel in Life — the CDN pages send no CORS headers so browsers block the
-// read. Native has no restriction.
-export const AUDIO_EXTRACTION_SUPPORTED = Platform.OS !== "web";
+// The web build reads listing and episode HTML through a Pages Function.
+export const AUDIO_EXTRACTION_SUPPORTED = true;
 
 // ── Congregations ─────────────────────────────────────────────────────────────
 
@@ -92,7 +90,10 @@ async function request(url, { signal } = {}) {
   }, REQUEST_TIMEOUT_MS);
 
   try {
-    const res = await fetch(url, {
+    const requestUrl = Platform.OS === "web"
+      ? `/api/sermon-page?url=${encodeURIComponent(url)}`
+      : url;
+    const res = await fetch(requestUrl, {
       signal: controller.signal,
       headers: { Accept: "text/html" },
     });

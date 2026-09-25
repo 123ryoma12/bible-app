@@ -89,6 +89,13 @@ The command exports the Expo web app to `dist/` and generates `dist/sw.js` from
 the exported asset names. For Cloudflare Pages, use `npm run build:web` as the
 build command and `dist` as the output directory. Host it over HTTPS (or use
 localhost while testing), then install it from the browser's app menu.
+Deploy from the Git repository so Cloudflare also deploys the `functions/`
+directory beside `dist/`. The sermon player needs its `/api/sermon-page`
+function to read sermon pages that browsers block with CORS. On the PWA, tap
+Play after selecting a sermon; browsers do not allow delayed autoplay. Sermon
+audio streams online; offline sermon downloads remain native-app-only. To test
+the Pages Function locally after building, run `npx wrangler pages dev dist`
+from the project root (Expo's web development server does not run the Function).
 
 The service worker caches the app shell for offline launch. Bible books,
 interlinear text, and introductions are cached as you open them; a book must be

@@ -135,9 +135,7 @@ export default function SermonPlayerScreen({
           <Text style={[styles.failureText, { color: colors.mutedText }]}>
             {failure === "offline"
               ? "Internet required to play"
-              : failure === "unsupported"
-                ? "Listen on the Gospel in Life site"
-                : "Audio unavailable"}
+              : "Audio unavailable"}
           </Text>
           <TouchableOpacity
             style={[styles.openBtn, { borderColor: colors.accent }]}

@@ -63,8 +63,8 @@ export const ErrorKind = {
   OFFLINE: "offline",
   TIMEOUT: "timeout",
   SERVER: "server",
-  // The request never left the browser. Only reachable on web, where the
-  // sermon pages send no CORS headers — see AUDIO_EXTRACTION_SUPPORTED.
+  // A browser request failed before receiving a response (for example, CORS
+  // on the public WordPress API or a blocked same-origin Pages Function).
   BLOCKED: "blocked",
   UNKNOWN: "unknown",
 };
@@ -72,13 +72,10 @@ export const ErrorKind = {
 /**
  * Whether the MP3 can be resolved on this platform.
  *
- * The audio URL only exists in the sermon page's HTML, and unlike `/wp-json`
- * (which returns `Access-Control-Allow-Origin`), those pages send no CORS
- * headers at all. Browsers therefore block the read, so on web the only honest
- * option is to hand the sermon over to a new tab. Native has no such
- * restriction and plays in-app.
+ * On web, a same-origin Cloudflare Pages Function reads the sermon HTML.
+ * Native can read the source directly.
  */
-export const AUDIO_EXTRACTION_SUPPORTED = Platform.OS !== "web";
+export const AUDIO_EXTRACTION_SUPPORTED = true;
 
 /**
  * Best-effort check for genuine loss of connectivity.
@@ -145,7 +142,11 @@ async function request(path, { signal, parseJson = true } = {}) {
   }, REQUEST_TIMEOUT_MS);
 
   try {
-    const res = await fetch(path.startsWith("http") ? path : API_ROOT + path, {
+    const target = path.startsWith("http") ? path : API_ROOT + path;
+    const requestUrl = Platform.OS === "web" && !parseJson
+      ? `/api/sermon-page?url=${encodeURIComponent(target)}`
+      : target;
+    const res = await fetch(requestUrl, {
       signal: controller.signal,
       headers: { Accept: parseJson ? "application/json" : "text/html" },
     });
@@ -180,10 +181,8 @@ async function request(path, { signal, parseJson = true } = {}) {
     // recognise it via isAbortError() and skip any state updates.
     if (signal?.aborted || isAbortError(err)) throw err;
 
-    // Both an unreachable network and a browser-blocked cross-origin read
-    // surface as a bare TypeError, so the error alone can't tell them apart.
-    // Only claim the user is offline when that's actually established;
-    // otherwise, on web, a block is by far the likelier explanation.
+    // Both an unreachable network and a browser-blocked request surface as a
+    // bare TypeError. Only claim the user is offline when that is established.
     if (err instanceof TypeError) {
       if (looksOffline()) {
         throw new SermonError(ErrorKind.OFFLINE, "No internet connection.", err);

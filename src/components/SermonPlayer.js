@@ -34,7 +34,6 @@ import { useTheme } from "../theme/ThemeContext";
 import {
   isAbortError,
   ErrorKind,
-  AUDIO_EXTRACTION_SUPPORTED,
 } from "../data/sermonApi";
 import { fetchAudioUrl } from "../data/combinedSermonApi";
 import { getDownloadedUri } from "../data/sermonDownloads";
@@ -111,7 +110,7 @@ export default function SermonPlayer({
 
   const [audioUrl, setAudioUrl] = useState(null);
   const [resolving, setResolving] = useState(false);
-  // null | 'offline' | 'unsupported' | 'unavailable'
+  // null | 'offline' | 'unavailable'
   const [failure, setFailure] = useState(null);
   const [speedIndex, setSpeedIndex] = useState(0);
   const [barWidth, setBarWidth] = useState(0);
@@ -165,15 +164,6 @@ export default function SermonPlayer({
 
     setAudioUrl(null);
     setFailure(null);
-
-    // On web the sermon page can't be read (no CORS headers), so the fetch
-    // would fail every time. Skip it and offer the browser straight away
-    // rather than spinning and then reporting a misleading error.
-    if (!AUDIO_EXTRACTION_SUPPORTED) {
-      setResolving(false);
-      setFailure("unsupported");
-      return undefined;
-    }
 
     setResolving(true);
 
@@ -261,10 +251,14 @@ export default function SermonPlayer({
         saveSermonPlayback(current, audioUrl, 0).catch(() => {});
       }
 
-      try {
-        player.play();
-      } catch {
-        setFailure("unavailable");
+      // iOS web apps need a fresh user gesture after the asynchronous page
+      // lookup. The Play button supplies that gesture once the URL is ready.
+      if (Platform.OS !== "web") {
+        try {
+          player.play();
+        } catch {
+          setFailure("unavailable");
+        }
       }
     })();
 
@@ -385,7 +379,8 @@ export default function SermonPlayer({
   const duration = status?.duration ?? 0;
   const currentTime = status?.currentTime ?? 0;
   const progress = duration > 0 ? Math.min(currentTime / duration, 1) : 0;
-  const busy = resolving || (!!audioUrl && !status?.isLoaded) || !!status?.isBuffering;
+  const busy = resolving || (Platform.OS !== "web" &&
+    ((!!audioUrl && !status?.isLoaded) || !!status?.isBuffering));
   const playbackError = !!status?.error;
   // Fall back to the bar's own height until the caller has measured the stack.
   const slideDistance = hideDistance > 0 ? hideDistance : playerHeight;
@@ -461,12 +456,12 @@ export default function SermonPlayer({
           <Text style={[styles.meta, { color: colors.mutedText }]} numberOfLines={1}>
             {failure === "offline"
               ? "Internet required to play"
-              : failure === "unsupported"
-                ? "Listen on the Gospel in Life site"
-                : failure === "unavailable"
+              : failure === "unavailable"
                   ? "Audio unavailable"
                   : playbackError
                     ? "Playback problem"
+                  : Platform.OS === "web" && audioUrl && !status?.playing && currentTime === 0
+                    ? "Tap Play to listen"
                     : [
                         sermon.passage,
                         sermon.speaker,

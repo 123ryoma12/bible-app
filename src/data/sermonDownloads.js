@@ -22,6 +22,7 @@
 // downloads whenever the reader moved on.
 
 import { useEffect, useSyncExternalStore } from "react";
+import { Platform } from "react-native";
 import { Directory, File, Paths } from "expo-file-system";
 import { backend } from "./storageBackend";
 import { isAbortError, AUDIO_EXTRACTION_SUPPORTED } from "./sermonApi";
@@ -31,10 +32,8 @@ const INDEX_KEY = "sermons:downloads:index";
 const ENTRY_PREFIX = "sermons:downloads:entry:";
 const DIR_NAME = "sermons";
 
-// Downloading needs the same page-scrape that playing does, so wherever audio
-// can't be resolved (the web build, which has no CORS access to the sermon
-// page) downloads are off too.
-export const DOWNLOADS_SUPPORTED = AUDIO_EXTRACTION_SUPPORTED;
+// Streaming works on web, but this download store uses native document files.
+export const DOWNLOADS_SUPPORTED = Platform.OS !== "web" && AUDIO_EXTRACTION_SUPPORTED;
 
 function entryKey(id) {
   return `${ENTRY_PREFIX}${id}`;
