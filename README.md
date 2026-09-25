@@ -1,4 +1,7 @@
-# Bible App (personal build)
+# Bible App (personal project)
+
+This is a purely personal Bible project for my own development in coding and
+in my spiritual life.
 
 A basic Bible reader for Android, built with Expo/React Native. Pick a book,
 pick a chapter, then swipe or tap Next/Previous to move through chapters —
