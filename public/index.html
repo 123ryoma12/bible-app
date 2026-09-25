@@ -8,11 +8,16 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <script>
+      if (/iPad|iPhone|iPod/.test(navigator.userAgent) ||
+          (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1)) {
+        document.documentElement.classList.add("is-ios");
+      }
       // Match the status area to the saved theme before the app starts painting.
       try {
         if (JSON.parse(localStorage.getItem("themeMode")) === "light") {
           document.querySelector('meta[name="theme-color"]').content = "#ffffff";
           document.documentElement.style.setProperty("--app-background", "#ffffff");
+          document.documentElement.style.setProperty("--status-tint-color", "#fdfdfd");
         }
       } catch (_) {
         // Storage can be unavailable; the app's default theme is dark.
@@ -33,16 +38,23 @@
       body {
         overflow: hidden;
       }
-      /* iOS samples a real fixed element for the Home Screen status area's tint. */
+      /* Keep a real, persistent tint at the top of every iOS PWA screen. */
       #status-bar-tint {
-        position: fixed;
-        top: 0;
-        left: 0;
-        right: 0;
-        height: 1px;
-        background-color: var(--app-background, #121212);
-        pointer-events: none;
-        z-index: 2147483647;
+        display: none;
+      }
+      @media (display-mode: standalone) and (orientation: portrait) {
+        .is-ios #status-bar-tint {
+          display: block;
+          position: fixed;
+          top: 0;
+          left: 0;
+          right: 0;
+          height: var(--status-tint-h, 2px);
+          background-color: var(--status-tint-color, #141414);
+          transition: background-color 200ms ease-in-out;
+          pointer-events: none;
+          z-index: 2000;
+        }
       }
       /* These styles make the root element full-height */
       #root {
@@ -59,49 +71,6 @@
             !document.querySelector('script[src*="/_expo/static/js/web/"]')) return;
         navigator.serviceWorker.register('/sw.js').catch(function (error) {
           console.warn('Offline support could not start:', error);
-        });
-      });
-    </script>
-    <script>
-      // Nudge iOS Home Screen apps to repaint the blurred status bar edge.
-      // This follows the workaround in solution.txt and runs once per load.
-      window.addEventListener("load", function () {
-        const isStandalone =
-          matchMedia("(display-mode: standalone)").matches ||
-          navigator.standalone === true;
-        if (!isStandalone || !/iPhone|iPad|iPod/.test(navigator.userAgent)) return;
-
-        const style = document.createElement("style");
-        style.textContent = `
-          #ojapp-blur-cover {
-            display: none; position: fixed; inset: 0; z-index: 2147483646;
-            background: rgba(255,255,255,0.01); pointer-events: none;
-            animation: ojapp-cover-fade 0.3s;
-          }
-          #ojapp-blur-panel {
-            position: fixed; top: 0; right: 0; bottom: 0; width: 90%; height: 100%;
-            z-index: 2147483647; background: rgba(255,255,255,0.01);
-            pointer-events: none; transform: translateX(110%); transition: transform 0.3s;
-          }
-          @keyframes ojapp-cover-fade { from { opacity: 0; } to { opacity: 1; } }
-        `;
-        document.head.appendChild(style);
-
-        const cover = document.createElement("div");
-        cover.id = "ojapp-blur-cover";
-        cover.setAttribute("aria-hidden", "true");
-        const panel = document.createElement("div");
-        panel.id = "ojapp-blur-panel";
-        panel.setAttribute("aria-hidden", "true");
-        document.body.append(cover, panel);
-        void panel.offsetWidth;
-        requestAnimationFrame(function () {
-          cover.style.display = "block";
-          panel.style.transform = "translateX(0%)";
-          setTimeout(function () {
-            cover.style.display = "none";
-            panel.style.transform = "translateX(110%)";
-          }, 500);
         });
       });
     </script>
