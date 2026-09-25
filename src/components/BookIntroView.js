@@ -12,18 +12,6 @@ import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useTheme } from "../theme/ThemeContext";
 import { uiFont, readingFont } from "../theme/fonts";
 import { BODY_SIZE, BODY_LINE_HEIGHT } from "./ChapterView";
-import bookInfoData from "../../data/book-info.json";
-
-// Map app book names to book-info.json keys where they differ
-const BOOK_NAME_MAP = {
-  "Psalm": "Psalms",
-  "Song of Songs": "Song of Solomon",
-};
-
-export function getBookInfo(bookName) {
-  const key = BOOK_NAME_MAP[bookName] ?? bookName;
-  return bookInfoData[key] ?? null;
-}
 
 // ---------------------------------------------------------------------------
 // Outline item — flat indented list
@@ -173,11 +161,11 @@ export function TocSheet({ sections, onSelect, onClose, colors }) {
 // ---------------------------------------------------------------------------
 export default function BookIntroView({
   book,
+  info,
   onOpenChapter,
   onSectionRefs,
 }) {
   const { colors, readingFontKey, fontScale } = useTheme();
-  const info = getBookInfo(book.name);
   const sectionRefs = useRef([]);
 
   const handleSectionRef = useCallback((ref, i) => {

@@ -1,7 +1,7 @@
 // One-off importer: fetches the KJV from API.Bible and converts each book into
-// the app's NIV-shaped JSON under assets/bible/kjv/<BOOKID>.json.
+// the app's NIV-shaped JSON under assets/bible/kjv/<BOOKID>.txt.
 //
-// Output shape (matches assets/bible/niv/*.json):
+// Output shape (matches assets/bible/niv/*.txt):
 //   { book, bookId, count, chapters: [ { chapter, blocks: [
 //       { style, verses: [ { verse, text } ], text } ] } ] }
 //
@@ -178,7 +178,7 @@ async function main() {
   for (const meta of targets) {
     process.stdout.write(`Fetching ${meta.id} (${meta.chapterCount} ch)... `);
     const book = await convertBook(meta);
-    const outFile = path.join(OUT_DIR, `${meta.id}.json`);
+    const outFile = path.join(OUT_DIR, `${meta.id}.txt`);
     fs.writeFileSync(outFile, JSON.stringify(book));
     done++;
     console.log(`done -> ${path.relative(process.cwd(), outFile)}`);

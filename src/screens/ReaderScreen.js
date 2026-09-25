@@ -16,13 +16,14 @@ import ReaderTabBar from "../components/ReaderTabBar";
 import ReaderTopBar from "../components/ReaderTopBar";
 import SermonSheet from "../components/SermonSheet";
 import BookIntroView, { TocSheet } from "../components/BookIntroView";
-import { getChapter } from "../data/bibleData";
+import { loadBookIntro, pinBookIntro } from "../data/bookIntroData";
+import { getCachedBibleBook, getChapter, loadBibleBook, pinBibleBook } from "../data/bibleData";
 import { incrementReadCount } from "../data/progressStore";
 import { addToHistory } from "../data/historyStore";
 import { useTheme } from "../theme/ThemeContext";
 import { getActiveReadingVersion } from "../data/bibleVersionStore";
 import { getStudyNotesByVerse, getHeadingNote } from "../data/studyNotesData";
-import { getInterlinearChapter, hasInterlinear } from "../data/interlinearData";
+import { getInterlinearChapter, hasInterlinear, loadInterlinearBook } from "../data/interlinearData";
 import { getReaderPrefs, setReaderPref } from "../data/readerPrefsStore";
 import VerseNotePopover from "../components/VerseNotePopover";
 import InterlinearWordPopover from "../components/InterlinearWordPopover";
@@ -106,15 +107,59 @@ export default function ReaderScreen({
   // shows the new translation. Unbundled versions fall back to NIV in getChapter.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const version = getActiveReadingVersion();
+  const bookLoadKey = `${version}:${book.id}`;
+  const [bookLoad, setBookLoad] = useState({ key: null, error: false });
+  const bookReady = bookLoad.key === bookLoadKey && !bookLoad.error
+    && !!getCachedBibleBook(book.id, version);
+
+  useEffect(() => {
+    if (isIntro) return undefined;
+    const release = pinBibleBook(book.id, version);
+    let cancelled = false;
+    loadBibleBook(book.id, version)
+      .then((loaded) => {
+        if (!cancelled) setBookLoad({ key: bookLoadKey, error: !loaded });
+      })
+      .catch(() => {
+        if (!cancelled) setBookLoad({ key: bookLoadKey, error: true });
+      });
+    return () => {
+      cancelled = true;
+      release();
+    };
+  }, [book.id, version, bookLoadKey, isIntro]);
+
+  const [introLoad, setIntroLoad] = useState({ bookId: null, info: null, error: false });
+  const introInfo = introLoad.bookId === book.id ? introLoad.info : null;
+  useEffect(() => {
+    if (!isIntro) {
+      setIntroLoad({ bookId: null, info: null, error: false });
+      return undefined;
+    }
+    const release = pinBookIntro(book.id);
+    let cancelled = false;
+    loadBookIntro(book.id)
+      .then((info) => {
+        if (!cancelled) setIntroLoad({ bookId: book.id, info, error: !info });
+      })
+      .catch(() => {
+        if (!cancelled) setIntroLoad({ bookId: book.id, info: null, error: true });
+      });
+    return () => {
+      cancelled = true;
+      release();
+    };
+  }, [isIntro, book.id]);
 
   // Re-derive chapter whenever book, chapter number, or version changes.
   // versionKey triggers re-evaluation after a top-bar version switch.
   // getChapter() is now O(1) via a cached chapter index map (see bibleData.js).
   // chapterNumber is 0 for intro tabs — skip the lookup in that case.
   const chapter = useMemo(
-    () => chapterNumber > 0 ? getChapter(book.id, chapterNumber, version) : null,
+    () => chapterNumber > 0 && bookReady
+      ? getChapter(book.id, chapterNumber, version) : null,
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [book.id, chapterNumber, version, versionKey]
+    [book.id, chapterNumber, version, versionKey, bookReady]
   );
   const scrollRef = useRef(null);
 
@@ -158,11 +203,28 @@ export default function ReaderScreen({
   const [interlinearActive, setInterlinearActive] = useState(
     () => getReaderPrefs().interlinearActive
   );
+  const [loadedInterlinearBook, setLoadedInterlinearBook] = useState(null);
+  useEffect(() => {
+    if (!interlinearActive || isIntro || !hasInterlinear(book.id)) {
+      setLoadedInterlinearBook(null);
+      return undefined;
+    }
+    let cancelled = false;
+    setLoadedInterlinearBook(null);
+    loadInterlinearBook(book.id)
+      .then((chapters) => {
+        if (!cancelled) setLoadedInterlinearBook(chapters ? book.id : null);
+      })
+      .catch(() => {
+        if (!cancelled) setLoadedInterlinearBook(null);
+      });
+    return () => { cancelled = true; };
+  }, [interlinearActive, isIntro, book.id]);
   const interlinearChapter = useMemo(
-    () => interlinearActive && hasInterlinear(book.id)
+    () => interlinearActive && loadedInterlinearBook === book.id
       ? getInterlinearChapter(book.id, chapterNumber)
       : null,
-    [interlinearActive, book.id, chapterNumber]
+    [interlinearActive, loadedInterlinearBook, book.id, chapterNumber]
   );
   const handleToggleInterlinear = useCallback(() => {
     setInterlinearActive((o) => {
@@ -540,12 +602,19 @@ export default function ReaderScreen({
       >
         {isIntro ? (
           <TouchableOpacity activeOpacity={1} onPress={toggleChrome}>
-            <BookIntroView
+            {introInfo ? <BookIntroView
               book={book}
+              info={introInfo}
               onOpenChapter={onOpenChapterOne}
               scrollRef={scrollRef}
               onSectionRefs={handleIntroSectionRefs}
-            />
+            /> : (
+              <Text style={{ color: colors.secondaryText, textAlign: "center", padding: 24 }}>
+                {introLoad.bookId === book.id && introLoad.error
+                  ? "Couldn't load this book introduction."
+                  : "Loading introduction…"}
+              </Text>
+            )}
           </TouchableOpacity>
         ) : (
           /* Tapping the reading area toggles the chrome (immersive reading). */
@@ -594,19 +663,27 @@ export default function ReaderScreen({
               <View style={[styles.chapterHeadingRule, { backgroundColor: colors.border }]} />
             </View>
 
-            <ChapterView
+            {!bookReady && !(bookLoad.key === bookLoadKey && bookLoad.error) ? (
+              <Text style={{ color: colors.secondaryText, textAlign: "center", padding: 24 }}>
+                Loading chapter…
+              </Text>
+            ) : bookLoad.error ? (
+              <Text style={{ color: colors.secondaryText, textAlign: "center", padding: 24 }}>
+                Couldn't load this chapter.
+              </Text>
+            ) : <ChapterView
               chapter={chapter}
               noteVerses={verseNotesByVerse}
               onNotePress={handleNotePress}
               interlinearChapter={interlinearChapter}
               onWordPress={handleWordPress}
               onToggleVerseInterlinear={handleToggleVerseInterlinear}
-            />
+            />}
           </TouchableOpacity>
         )}
 
         {/* End-of-chapter action — only for real chapters, not intro. */}
-        {!isIntro && (
+        {!isIntro && chapter && (
           <TouchableOpacity
             style={[
               styles.markReadBtn,
@@ -638,15 +715,13 @@ export default function ReaderScreen({
         interlinearActive={interlinearActive}
         onToggleInterlinear={isIntro ? undefined : handleToggleInterlinear}
         tocOpen={tocOpen}
-        onToggleToc={isIntro ? () => setTocOpen((o) => !o) : undefined}
+        onToggleToc={isIntro && introInfo ? () => setTocOpen((o) => !o) : undefined}
       />
 
       {/* TOC sheet for intro tabs — Modal manages its own overlay */}
-      {isIntro && tocOpen && (
+      {isIntro && tocOpen && introInfo && (
         <TocSheet
-          sections={require("../../data/book-info.json")[
-            { "Psalm": "Psalms", "Song of Songs": "Song of Solomon" }[book.name] ?? book.name
-          ]?.sections ?? []}
+          sections={introInfo.sections}
           onSelect={handleTocSelect}
           onClose={() => setTocOpen(false)}
           colors={colors}

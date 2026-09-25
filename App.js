@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback, useMemo, memo } from "react";
+import React, { useState, useEffect, useRef, useCallback, useMemo, useSyncExternalStore, memo } from "react";
 import { StatusBar } from "expo-status-bar";
 import { View, ActivityIndicator, StyleSheet, BackHandler, Platform, AppState, useWindowDimensions } from "react-native";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
@@ -48,8 +48,11 @@ import { getSermonPlayback } from "./src/data/sermonPlaybackStore";
 import { loadMemoryPrefs } from "./src/data/memoryPrefsStore";
 import { loadPrayerSettings, getActivePrayers } from "./src/data/prayerStore";
 import { PrayerSessionProvider, usePrayerSession } from "./src/data/prayerSession";
-import { loadReadingVersion } from "./src/data/bibleVersionStore";
+import { loadReadingVersion, getActiveReadingVersion, subscribeReadingVersion } from "./src/data/bibleVersionStore";
+import { retainBibleBooks } from "./src/data/bibleData";
 import { loadReaderPrefs } from "./src/data/readerPrefsStore";
+import { retainInterlinearBooks } from "./src/data/interlinearData";
+import { retainBookIntros } from "./src/data/bookIntroData";
 import { preloadAllProgress } from "./src/data/progressStore";
 import { preloadStatsSettings } from "./src/data/statsSettingsStore";
 import { preloadTheme } from "./src/theme/ThemeContext";
@@ -215,6 +218,17 @@ const AppContent = memo(function AppContent() {
   // chapter from the book/chapter lists always updates the active tab.
   const [readerTabs, setReaderTabsState] = useState([]);
   const [activeTabId, setActiveTabId] = useState(null);
+  const readingVersion = useSyncExternalStore(subscribeReadingVersion, getActiveReadingVersion);
+
+  // Release parsed interlinear books once no open reader tab uses them.
+  useEffect(() => {
+    const bookIds = readerTabs.map((tab) => tab.bookId);
+    // Navigation updates the active book just before it updates its tab record.
+    if (activeTabId) bookIds.push(BOOKS[bookIndex].id);
+    retainInterlinearBooks(bookIds);
+    retainBibleBooks(bookIds, readingVersion);
+    retainBookIntros(readerTabs.filter((tab) => tab.chapterNumber === 0).map((tab) => tab.bookId));
+  }, [readerTabs, activeTabId, bookIndex, readingVersion]);
 
   // Per-tab scroll offsets: { [tabId]: number }. Populated as the user scrolls
   // within each tab so switching back to a tab restores the exact position.

@@ -1,6 +1,7 @@
 // One-off importer: downloads the STEPBible TAGNT (Translators Amalgamated
-// Greek NT) and converts it into per-book JSON files under
-// assets/bible/interlinear/<BOOKID>.json.
+// Greek NT) and converts it into per-book JSON text assets under
+// assets/bible/interlinear/<BOOKID>.txt. Metro treats these as files rather
+// than JSON modules so parsed books can be released when their tabs close.
 //
 // Only NT books are produced (OT Hebrew interlinear is a separate dataset).
 //
@@ -269,7 +270,7 @@ async function main() {
       bookId: book.id,
       chapters,
     };
-    const outFile = path.join(OUT_DIR, `${book.id}.json`);
+    const outFile = path.join(OUT_DIR, `${book.id}.txt`);
     fs.writeFileSync(outFile, JSON.stringify(out));
     done++;
     console.log(`  ${book.id} → ${path.relative(process.cwd(), outFile)}`);

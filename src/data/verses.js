@@ -6,14 +6,14 @@
 // in-order list of { chapter, verse, text } for a book, so this module walks
 // the blocks once and flattens them.
 
-import { getBookMap } from "./bibleData";
+import { getCachedBibleBook } from "./bibleData";
 import { BOOKS } from "./books";
 
 // Flat, in-order [{ chapter (number), verse (number), text }] for one chapter.
 // `version` is optional and defaults to NIV; unbundled versions fall back to
-// NIV via getBookMap.
-export function getChapterVerses(bookId, chapterNumber, version = "niv") {
-  const book = getBookMap(version)[bookId];
+// NIV via bibleData. A caller may supply a temporary book that is not cached.
+export function getChapterVerses(bookId, chapterNumber, version = "niv", bookData = null) {
+  const book = bookData ?? getCachedBibleBook(bookId, version);
   if (!book) return [];
   const chapter = book.chapters.find(
     (c) => Number(c.chapter) === Number(chapterNumber)
@@ -57,8 +57,8 @@ export function getChapterCount(bookId) {
 
 // Highest verse number present in a given chapter (0 if unknown/empty). Derived
 // from the bundled text so pickers only ever offer verses that actually exist.
-export function getVerseCount(bookId, chapterNumber) {
-  const verses = getChapterVerses(bookId, chapterNumber);
+export function getVerseCount(bookId, chapterNumber, version = "niv") {
+  const verses = getChapterVerses(bookId, chapterNumber, version);
   let max = 0;
   for (const v of verses) {
     if (v.verse > max) max = v.verse;
@@ -81,7 +81,8 @@ export function getVersesInRange(
   verseStart,
   chapterEnd,
   verseEnd,
-  version = "niv"
+  version = "niv",
+  bookData = null
 ) {
   const cs = Number(chapterStart);
   const vs = Number(verseStart);
@@ -92,7 +93,7 @@ export function getVersesInRange(
 
   const out = [];
   for (let ch = cs; ch <= ce; ch++) {
-    const verses = getChapterVerses(bookId, ch, version);
+    const verses = getChapterVerses(bookId, ch, version, bookData);
     for (const v of verses) {
       if (ch === cs && v.verse < vs) continue;
       if (ch === ce && v.verse > ve) continue;

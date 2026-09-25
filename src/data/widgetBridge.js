@@ -26,6 +26,7 @@ import {
 } from "./memoryStore";
 import { BOOKS, nextChapter } from "./books";
 import { getChapterVerses } from "./verses";
+import { loadBibleBook } from "./bibleData";
 import { getHistoryPage } from "./historyStore";
 import {
   getRangeSetting,
@@ -168,10 +169,11 @@ async function resolveContinueReading() {
  * numbered inline (e.g. "¹In the beginning God created...  ²Now the earth...").
  * Stops adding verses once the total length exceeds maxChars.
  */
-function buildVerseSnippet(bookId, chapterNumber, maxChars = 400) {
+async function buildVerseSnippet(bookId, chapterNumber, maxChars = 400) {
   if (!bookId || !chapterNumber) return "";
   try {
-    const verses = getChapterVerses(bookId, chapterNumber);
+    const bookData = await loadBibleBook(bookId, "niv");
+    const verses = getChapterVerses(bookId, chapterNumber, "niv", bookData);
     if (!verses || verses.length === 0) return "";
     const SUPERSCRIPTS = "⁰¹²³⁴⁵⁶⁷⁸⁹";
     function toSuperscript(n) {
@@ -297,6 +299,7 @@ export async function syncWidgetData({ force = false } = {}) {
     const memoryReviewCount = topMemory ? successCount(topMemory) : 0;
 
     // ── Write all data in one call ─────────────────────────────────────────
+    const verseSnippet = await buildVerseSnippet(pos.bookId, pos.chapterNumber);
     await writeToSharedPrefs({
       // The local date this snapshot was taken. Daily counters below ("read
       // today", "prayed today") are only meaningful on this date — the widgets
@@ -320,7 +323,7 @@ export async function syncWidgetData({ force = false } = {}) {
       widget_bible_chapters_today: chaptersToday,
       widget_bible_chapters_per_day: pace.applicable ? (pace.perDay ?? 0) : 0,
       widget_bible_has_goal: pace.applicable && !!goalDate,
-      widget_bible_verse_snippet: buildVerseSnippet(pos.bookId, pos.chapterNumber),
+      widget_bible_verse_snippet: verseSnippet,
 
       // Memory
       widget_memory_id: topMemory?.id ?? "",
@@ -393,7 +396,7 @@ function affectsWidgets(key) {
  */
 export function startWidgetAutoSync({
   debounceMs = 800,
-  intervalMs = 60 * 1000,
+  intervalMs = 5 * 60 * 1000,
 } = {}) {
   if (Platform.OS !== "android" || !WidgetBridge) return () => {};
 
@@ -408,10 +411,8 @@ export function startWidgetAutoSync({
     }, debounceMs);
   });
 
-  // Catches purely time-driven reordering (see note above). A minute is fine
-  // resolution for cooldowns measured in hours and decay measured in days,
-  // and mirrors the 30s re-render the Prayer tab already does for the same
-  // reason.
+  // Catches purely time-driven reordering (see note above). Five minutes is fine
+  // resolution for cooldowns measured in hours and decay measured in days.
   //
   // Forced, so it doubles as a repair pass: a write-triggered sync that the
   // framework dropped leaves the widget stale with a payload we've already

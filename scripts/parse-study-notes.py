@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """
-Parse study notes from studybible.epub into study_notes_new.json.
+Parse study notes from studybible.epub into the canonical combined JSON and
+per-book assets used by the app.
 
 Format per entry:
   {
@@ -11,7 +12,7 @@ Format per entry:
   }
 """
 
-import zipfile, re, json, os
+import zipfile, re, json, os, subprocess, sys
 
 EPUB_PATH = os.path.join(os.path.dirname(__file__), '..', 'studybible.epub')
 OUT_PATH  = os.path.join(os.path.dirname(__file__), '..', 'data', 'study_notes.json')
@@ -474,6 +475,7 @@ def main():
 
     total = sum(len(v) for v in result.values())
     print(f'Done. {len(result)} books, {total} notes -> {OUT_PATH}')
+    subprocess.run([sys.executable, os.path.join(os.path.dirname(__file__), 'split-study-notes.py')], check=True)
 
     # Quick sanity check: show first 3 Genesis notes
     print('\nSample (Genesis[:3]):')

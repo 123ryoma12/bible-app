@@ -1,11 +1,11 @@
 // One-off importer: fetches the ESV from api.esv.org and converts each book
-// into the app's NIV-shaped JSON under assets/bible/esv/<BOOKID>.json.
+// into the app's NIV-shaped JSON under assets/bible/esv/<BOOKID>.txt.
 //
 // NOTE ON LICENSING: ESV text is copyrighted by Crossway. Use of this data is
 // subject to the api.esv.org license terms (attribution, usage limits). The
 // project owner has accepted responsibility for compliance.
 //
-// Output shape (matches assets/bible/niv/*.json):
+// Output shape (matches assets/bible/niv/*.txt):
 //   { book, bookId, count, chapters: [ { chapter, blocks: [
 //       { style, verses: [ { verse, text } ], text } ] } ] }
 //
@@ -60,7 +60,7 @@ function cleanText(s) {
 
 // When true, regenerate purely from the local cache (no network). Useful after
 // a parser change: `node bible-fetch/fetch-esv.js --from-cache` rebuilds every
-// assets/bible/esv/*.json from the already-fetched raw text, no token needed.
+// assets/bible/esv/*.txt from the already-fetched raw text, no token needed.
 const FROM_CACHE = process.argv.includes("--from-cache");
 
 // Fetch one chapter's plain text (cached). A number after a one-chapter book
@@ -374,7 +374,7 @@ async function main() {
   for (const meta of targets) {
     process.stdout.write(`Fetching ESV ${meta.id} (${meta.chapterCount} ch)... `);
     const book = await convertBook(meta);
-    const outFile = path.join(OUT_DIR, `${meta.id}.json`);
+    const outFile = path.join(OUT_DIR, `${meta.id}.txt`);
     fs.writeFileSync(outFile, JSON.stringify(book));
     done++;
     console.log(`done -> ${path.relative(process.cwd(), outFile)}`);

@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef } from "react";
+import React, { useState, useCallback, useEffect, useRef } from "react";
 import {
   View,
   Text,
@@ -11,18 +11,7 @@ import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context"
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useTheme } from "../theme/ThemeContext";
 import { uiFont, readingFont } from "../theme/fonts";
-import bookInfoData from "../../data/book-info.json";
-
-// Map app book names to book-info.json keys where they differ
-const BOOK_NAME_MAP = {
-  "Psalm": "Psalms",
-  "Song of Songs": "Song of Solomon",
-};
-
-function getBookInfo(bookName) {
-  const key = BOOK_NAME_MAP[bookName] ?? bookName;
-  return bookInfoData[key] ?? null;
-}
+import { loadBookIntro, pinBookIntro } from "../data/bookIntroData";
 
 // ---------------------------------------------------------------------------
 // Outline item — renders one entry with indentation by level
@@ -182,7 +171,24 @@ export default function BookIntroScreen({
   const sectionRefs = useRef([]);
   const [tocVisible, setTocVisible] = useState(false);
 
-  const info = getBookInfo(book.name);
+  const [loadedIntro, setLoadedIntro] = useState({ bookId: null, info: null });
+  const info = loadedIntro.bookId === book.id ? loadedIntro.info : null;
+  useEffect(() => {
+    setLoadedIntro({ bookId: null, info: null });
+    const release = pinBookIntro(book.id);
+    let cancelled = false;
+    loadBookIntro(book.id)
+      .then((next) => {
+        if (!cancelled) setLoadedIntro({ bookId: book.id, info: next });
+      })
+      .catch(() => {
+        if (!cancelled) setLoadedIntro({ bookId: book.id, info: null });
+      });
+    return () => {
+      cancelled = true;
+      release();
+    };
+  }, [book.id]);
 
   const handleTocSelect = useCallback((index) => {
     setTocVisible(false);
@@ -201,7 +207,7 @@ export default function BookIntroScreen({
     return null;
   }
 
-  const decorativeTitle = info.title
+  const decorativeTitle = (info.title || book.name)
     // Normalize small-caps artifacts like "J ESUS C HRIST" → "Jesus Christ"
     .replace(/([A-Z])\s([A-Z]{2,})/g, (_, a, b) => a + b.toLowerCase())
     .trim();

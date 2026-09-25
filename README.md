@@ -4,7 +4,7 @@ A basic Bible reader for Android, built with Expo/React Native. Pick a book,
 pick a chapter, then swipe or tap Next/Previous to move through chapters —
 similar to YouVersion's reading flow.
 
-The full NIV text is bundled locally as static JSON under `assets/bible/`,
+NIV, KJV, and ESV text is bundled locally as JSON text assets under `assets/bible/`,
 so the app works completely offline.
 
 > **Personal use only.** The bundled NIV text is copyright Biblica, Inc. and
@@ -16,10 +16,12 @@ so the app works completely offline.
 ```
 App.js                     screen state + prev/next-across-books logic
 src/data/books.js          canonical ordered list of the 66 books
-src/data/bibleData.js      static requires mapping bookId -> bundled JSON
+src/data/bibleData.js      on-demand Bible book asset loader
+src/data/bookIntroData.js  on-demand book introduction asset loader
 src/screens/               BookListScreen, ChapterListScreen, ReaderScreen
 src/components/ChapterView.js   renders paragraphs/poetry/headings/verses
-assets/bible/*.json        bundled NIV text per book
+assets/bible/{niv,kjv,esv}/*.txt        bundled text per translation and book
+data/book-intros/*.txt                 bundled introductions per book
 ```
 
 ## 1. Try it instantly during development (no build needed)

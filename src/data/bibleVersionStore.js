@@ -19,12 +19,24 @@ const KEY = "reading:version";
 
 let cache = DEFAULT_VERSION;
 let loaded = false;
+const listeners = new Set();
+
+export function subscribeReadingVersion(listener) {
+  listeners.add(listener);
+  return () => listeners.delete(listener);
+}
+
+function notifyIfChanged(previous) {
+  if (previous !== cache) listeners.forEach((listener) => listener());
+}
 
 /** Prime the cache from storage. Call once at app startup. */
 export async function loadReadingVersion() {
   const stored = await backend.getItem(KEY);
+  const previous = cache;
   cache = resolveVersion(stored);
   loaded = true;
+  notifyIfChanged(previous);
   return cache;
 }
 
@@ -45,8 +57,10 @@ export async function getReadingVersion() {
  */
 export async function setReadingVersion(id) {
   const next = resolveVersion(id);
+  const previous = cache;
   cache = next;
   loaded = true;
+  notifyIfChanged(previous);
   await backend.setItem(KEY, next);
   return next;
 }

@@ -48,6 +48,7 @@ import { backend } from "./storageBackend";
 import { getVersesInRange, formatReference } from "./verses";
 import { getActivePrefs } from "./memoryPrefsStore";
 import { resolveVersion, DEFAULT_VERSION } from "./bibleVersions";
+import { loadBibleBook } from "./bibleData";
 
 const INDEX_KEY = "memory:index";
 const ENTRY_PREFIX = "memory:entry:";
@@ -333,13 +334,15 @@ export async function addMemory({
   // time (independent of the reading version). Unbundled versions coerce to the
   // default so the snapshot always has text.
   const resolvedVersion = resolveVersion(version || DEFAULT_VERSION);
+  const bookData = await loadBibleBook(bookId, resolvedVersion);
   const verses = getVersesInRange(
     bookId,
     chapterStart,
     verseStart,
     chapterEnd,
     verseEnd,
-    resolvedVersion
+    resolvedVersion,
+    bookData
   );
   if (verses.length === 0) {
     throw new Error("No verses found for that range (must be within one book).");

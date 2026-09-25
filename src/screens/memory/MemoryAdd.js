@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   View,
   Text,
@@ -23,6 +23,7 @@ import { addMemory } from "../../data/memoryStore";
 import { useTheme } from "../../theme/ThemeContext";
 import { readingFont, uiFont } from "../../theme/fonts";
 import { BIBLE_VERSIONS, versionAbbr } from "../../data/bibleVersions";
+import { getCachedBibleBook, loadBibleBook, pinBibleBook } from "../../data/bibleData";
 
 const SECTIONS = [
   { title: "Old Testament", data: BOOKS.filter((b) => b.testament === "OT") },
@@ -49,6 +50,27 @@ export default function MemoryAdd({ onDone, onCancel }) {
   // user picks (no default) - the flow is: version -> book -> chapter -> verse.
   // The passage text is snapshotted from this version at save time.
   const [version, setVersion] = useState(null);
+  const [bookLoad, setBookLoad] = useState({ key: null, error: false });
+  const bookLoadKey = book && version ? `${version}:${book.id}` : null;
+  const bookReady = !!bookLoadKey && bookLoad.key === bookLoadKey && !bookLoad.error
+    && !!getCachedBibleBook(book.id, version);
+
+  useEffect(() => {
+    if (!bookLoadKey) return undefined;
+    const release = pinBibleBook(book.id, version);
+    let cancelled = false;
+    loadBibleBook(book.id, version)
+      .then((loaded) => {
+        if (!cancelled) setBookLoad({ key: bookLoadKey, error: !loaded });
+      })
+      .catch(() => {
+        if (!cancelled) setBookLoad({ key: bookLoadKey, error: true });
+      });
+    return () => {
+      cancelled = true;
+      release();
+    };
+  }, [bookLoadKey, book?.id, version]);
 
   // Which picker modal is open: null | "cs" | "vs" | "ce" | "ve".
   const [openPicker, setOpenPicker] = useState(null);
@@ -57,18 +79,18 @@ export default function MemoryAdd({ onDone, onCancel }) {
 
   // ---- Options for each field, derived so only valid numbers are ever shown.
   const fromChapterOptions = range(1, chapterCount);
-  const fromVerseOptions = cs ? range(1, getVerseCount(book.id, cs)) : [];
+  const fromVerseOptions = cs && bookReady ? range(1, getVerseCount(book.id, cs, version)) : [];
   // "To chapter" can only be >= the from chapter.
   const toChapterOptions = cs ? range(cs, chapterCount) : [];
   // "To verse": within the chosen end chapter, but if the end chapter equals the
   // start chapter it must not precede the start verse.
-  const toVerseMax = ce ? getVerseCount(book.id, ce) : 0;
+  const toVerseMax = ce && bookReady ? getVerseCount(book.id, ce, version) : 0;
   const toVerseMin = ce && cs && ce === cs && vs ? vs : 1;
   const toVerseOptions = ce ? range(toVerseMin, toVerseMax) : [];
 
   const rangeComplete = book && cs != null && vs != null && ce != null && ve != null;
   const rangeValid =
-    rangeComplete && getVersesInRange(book.id, cs, vs, ce, ve, version).length > 0;
+    bookReady && rangeComplete && getVersesInRange(book.id, cs, vs, ce, ve, version).length > 0;
 
   const previewLabel = rangeValid ? formatReference(book.id, cs, vs, ce, ve) : null;
   // The actual verse text for the chosen range (in the selected translation),
@@ -97,7 +119,7 @@ export default function MemoryAdd({ onDone, onCancel }) {
     setCe(n);
     // If the end chapter moved, re-clamp the end verse.
     const min = n === cs ? vs : 1;
-    const max = getVerseCount(book.id, n);
+    const max = getVerseCount(book.id, n, version);
     setVe((prev) => {
       if (prev == null) return max; // sensible default: end of chapter
       return Math.min(Math.max(prev, min), max);
@@ -291,13 +313,20 @@ export default function MemoryAdd({ onDone, onCancel }) {
           Choose where the passage starts, then where it ends. Only valid chapters
           and verses for {book.name} are offered.
         </Text>
+        {!bookReady && (
+          <Text style={[styles.help, { color: colors.secondaryText }]}>
+            {bookLoad.key === bookLoadKey && bookLoad.error
+              ? "Couldn't load this book. Go back and select it again."
+              : "Loading book…"}
+          </Text>
+        )}
 
         <Text style={[styles.fieldLabel, { color: colors.text }]}>From</Text>
         <View style={styles.rangeRow}>
           <SelectField
             label="Chapter"
             value={cs}
-            enabled
+            enabled={bookReady}
             onPress={() => setOpenPicker("cs")}
             colors={colors}
           />
