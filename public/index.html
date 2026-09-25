@@ -6,13 +6,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no, viewport-fit=cover" />
     <meta name="theme-color" content="#121212" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="black" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <script>
       // Match the status area to the saved theme before the app starts painting.
       try {
         if (JSON.parse(localStorage.getItem("themeMode")) === "light") {
           document.querySelector('meta[name="theme-color"]').content = "#ffffff";
-          document.querySelector('meta[name="apple-mobile-web-app-status-bar-style"]').content = "default";
           document.documentElement.style.setProperty("--app-background", "#ffffff");
         }
       } catch (_) {
@@ -33,6 +32,17 @@
       /* These styles disable body scrolling if you are using <ScrollView> */
       body {
         overflow: hidden;
+      }
+      /* iOS samples a real fixed element for the Home Screen status area's tint. */
+      #status-bar-tint {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 1px;
+        background-color: var(--app-background, #121212);
+        pointer-events: none;
+        z-index: 2147483647;
       }
       /* These styles make the root element full-height */
       #root {
@@ -55,6 +65,7 @@
   </head>
 
   <body>
+    <div id="status-bar-tint" aria-hidden="true"></div>
     <!-- Use static rendering with Expo Router to support running without JavaScript. -->
     <noscript>
       You need to enable JavaScript to run this app.

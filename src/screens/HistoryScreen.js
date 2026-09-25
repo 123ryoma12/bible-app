@@ -189,8 +189,13 @@ const styles = StyleSheet.create({
     paddingBottom: 8,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
-  backBtn: { width: 40 },
-  headerSpacer: { width: 40 },
+  backBtn: {
+    width: 48,
+    height: 44,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  headerSpacer: { width: 48 },
   title: { flex: 1, fontSize: 20, fontFamily: uiFont(700), textAlign: "center" },
   empty: {
     flex: 1,

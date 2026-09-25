@@ -177,11 +177,7 @@ const AppContent = memo(function AppContent() {
     if (Platform.OS !== "web") return;
     document.documentElement.style.setProperty("--app-background", colors.background);
     document.querySelector('meta[name="theme-color"]')?.setAttribute("content", colors.background);
-    document.querySelector('meta[name="apple-mobile-web-app-status-bar-style"]')?.setAttribute(
-      "content",
-      mode === "dark" ? "black" : "default"
-    );
-  }, [mode, colors.background]);
+  }, [colors.background]);
 
   // Drives the mini prayer bar in the bottom chrome. The countdown itself lives
   // in the provider, so this only re-renders App when a session starts/stops.
@@ -571,7 +567,9 @@ const AppContent = memo(function AppContent() {
   const onTabBarChange = useCallback((tab) => {
     if (tab === activeTab) {
       if (tab === "bible") {
-        if (screen === "bible" && readerTabs.length > 0) {
+        if (screen === "history") {
+          closeHistory();
+        } else if (screen === "bible" && readerTabs.length > 0) {
           // On StatsScreen → go back to the open chapter (like back button).
           setScreen("reader");
         } else if (screen === "reader") {
@@ -589,10 +587,12 @@ const AppContent = memo(function AppContent() {
         openBibleHeatmap();
       }
     } else {
-      lastBibleScreen.current = (screen === "history") ? "bible" : screen;
+      const bibleScreen = screen === "history" ? historyReturnScreen.current : screen;
+      lastBibleScreen.current = bibleScreen;
+      if (screen === "history") setScreen(bibleScreen);
     }
     setActiveTab(tab);
-  }, [activeTab, screen, readerTabs.length, openBibleHeatmap]);
+  }, [activeTab, screen, readerTabs.length, openBibleHeatmap, closeHistory]);
 
   const goPrev = useCallback(() => {
     setInitialScrollY(0);
@@ -944,7 +944,7 @@ const AppContent = memo(function AppContent() {
         )}
 
         {/* History overlays everything — must come last so it renders on top. */}
-        {screen === "history" && (
+        {activeTab === "bible" && screen === "history" && (
           <HistoryScreen onSelectEntry={openChapterDirect} onBack={closeHistory} />
         )}
 
