@@ -3,10 +3,22 @@
   <head>
     <meta charset="utf-8" />
     <meta httpEquiv="X-UA-Compatible" content="IE=edge" />
-    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no" />
-    <meta name="theme-color" content="#ffffff" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no, viewport-fit=cover" />
+    <meta name="theme-color" content="#121212" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <script>
+      // Match the status area to the saved theme before the app starts painting.
+      try {
+        if (JSON.parse(localStorage.getItem("themeMode")) === "light") {
+          document.querySelector('meta[name="theme-color"]').content = "#ffffff";
+          document.querySelector('meta[name="apple-mobile-web-app-status-bar-style"]').content = "default";
+          document.documentElement.style.setProperty("--app-background", "#ffffff");
+        }
+      } catch (_) {
+        // Storage can be unavailable; the app's default theme is dark.
+      }
+    </script>
     <title>%WEB_TITLE%</title>
     <link rel="manifest" href="/manifest.webmanifest" />
     <link rel="apple-touch-icon" href="/icon-192.png" />
@@ -16,6 +28,7 @@
       html,
       body {
         height: 100%;
+        background-color: var(--app-background, #121212);
       }
       /* These styles disable body scrolling if you are using <ScrollView> */
       body {

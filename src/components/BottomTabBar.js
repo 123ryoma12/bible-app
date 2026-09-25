@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { View, Text, TouchableOpacity, StyleSheet, Animated } from "react-native";
+import { View, Text, TouchableOpacity, StyleSheet, Animated, Platform } from "react-native";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTheme } from "../theme/ThemeContext";
@@ -18,6 +18,8 @@ const TABS = [
 export default function BottomTabBar({ active, onChange, visible = true }) {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
+  const standaloneWeb = Platform.OS === "web" && typeof window !== "undefined" &&
+    (window.navigator.standalone === true || window.matchMedia?.("(display-mode: standalone)").matches);
 
   // Measured full height of the bar so we can slide it exactly off-screen.
   const [barHeight, setBarHeight] = useState(0);
@@ -56,7 +58,7 @@ export default function BottomTabBar({ active, onChange, visible = true }) {
           // Clear the Android gesture pill / iOS home indicator so the tabs
           // stay fully tappable, while keeping a sensible minimum on devices
           // with no bottom inset.
-          paddingBottom: Math.max(insets.bottom, 8),
+          paddingBottom: standaloneWeb ? Math.max(insets.bottom + 6, 20) : Math.max(insets.bottom, 8),
           paddingLeft: insets.left,
           paddingRight: insets.right,
           transform: [{ translateY }],

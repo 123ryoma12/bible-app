@@ -172,6 +172,17 @@ const AppContent = memo(function AppContent() {
   const { mode, colors } = useTheme();
   const backRegistry = useBackHandlerRegistry();
   const { width: windowWidth } = useWindowDimensions();
+
+  useEffect(() => {
+    if (Platform.OS !== "web") return;
+    document.documentElement.style.setProperty("--app-background", colors.background);
+    document.querySelector('meta[name="theme-color"]')?.setAttribute("content", colors.background);
+    document.querySelector('meta[name="apple-mobile-web-app-status-bar-style"]')?.setAttribute(
+      "content",
+      mode === "dark" ? "black-translucent" : "default"
+    );
+  }, [mode, colors.background]);
+
   // Drives the mini prayer bar in the bottom chrome. The countdown itself lives
   // in the provider, so this only re-renders App when a session starts/stops.
   const prayerSession = usePrayerSession();
