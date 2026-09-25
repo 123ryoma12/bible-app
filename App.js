@@ -703,6 +703,12 @@ const AppContent = memo(function AppContent() {
   // MemoryScreen, which owns the drill view.
   const [memoryDrillRequest, setMemoryDrillRequest] = useState(null);
 
+  // Once the Memory tab is released, its widget request must be released too;
+  // otherwise remounting the tab would reopen an old drill.
+  useEffect(() => {
+    if (activeTab !== "memory") setMemoryDrillRequest(null);
+  }, [activeTab]);
+
   // Handle deep links from widget taps: bibleapp://prayer?id=X,
   // bibleapp://reader, bibleapp://memory?drill=1&id=X.
   //
@@ -908,20 +914,13 @@ const AppContent = memo(function AppContent() {
           />
         </View>
 
-        {/* Memory and Settings are lazy-mounted — only added to the tree on
-            first visit, then kept alive with display:none. This avoids paying
-            their mount cost on startup and keeps tab switching instant. */}
-        <LazyScreen active={activeTab === "memory"}>
-          <MemoryScreen drillRequest={memoryDrillRequest} />
-        </LazyScreen>
-
-        <LazyScreen active={activeTab === "prayer"}>
-          <PrayerScreen />
-        </LazyScreen>
-
-        <LazyScreen active={activeTab === "languages"}>
+        {/* Release these screens and their view state when their tab closes.
+            PrayerSessionProvider above AppContent keeps a running timer alive. */}
+        {activeTab === "memory" && <MemoryScreen drillRequest={memoryDrillRequest} />}
+        {activeTab === "prayer" && <PrayerScreen />}
+        {activeTab === "languages" && (
           <LanguagesScreen onChromeVisible={updateChromeVisible} />
-        </LazyScreen>
+        )}
 
         {/* History overlays everything — must come last so it renders on top. */}
         {screen === "history" && (
@@ -995,22 +994,6 @@ const AppContent = memo(function AppContent() {
 const ScreenContainer = memo(function ScreenContainer({ isReader, chromeHeight, children }) {
   return (
     <View style={[styles.screenContainer, { paddingBottom: isReader ? 0 : chromeHeight }]}>
-      {children}
-    </View>
-  );
-});
-
-// LazyScreen — mounts children only on the first visit, then keeps them alive
-// with display:none. Avoids paying mount cost for Memory/Settings on startup.
-const LazyScreen = memo(function LazyScreen({ active, children }) {
-  const hasBeenActive = useRef(false);
-  if (active) hasBeenActive.current = true;
-  if (!hasBeenActive.current) return null;
-  return (
-    <View
-      style={active ? styles.screenVisible : styles.screenHidden}
-      pointerEvents={active ? "auto" : "none"}
-    >
       {children}
     </View>
   );
