@@ -713,7 +713,7 @@ export default function ReaderScreen({
         verseNotesActive={verseNotesActive}
         onToggleVerseNotes={isIntro ? undefined : handleToggleVerseNotes}
         interlinearActive={interlinearActive}
-        onToggleInterlinear={isIntro ? undefined : handleToggleInterlinear}
+        onToggleInterlinear={isIntro || !hasInterlinear(book.id) ? undefined : handleToggleInterlinear}
         tocOpen={tocOpen}
         onToggleToc={isIntro && introInfo ? () => setTocOpen((o) => !o) : undefined}
       />
