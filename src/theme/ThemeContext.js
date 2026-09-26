@@ -44,7 +44,10 @@ export async function preloadTheme() {
   if (mode === "light" || mode === "dark") _cachedMode = mode;
   const parsed = parseFloat(scale);
   if (!Number.isNaN(parsed) && isValidScale(parsed)) _cachedFontScale = parsed;
-  if (isReadingFontKey(font)) _cachedReadingFontKey = font;
+  _cachedReadingFontKey = isReadingFontKey(font) ? font : DEFAULT_READING_FONT;
+  if (font != null && !isReadingFontKey(font)) {
+    await backend.setItem(READING_FONT_KEY, DEFAULT_READING_FONT);
+  }
 }
 
 export function ThemeProvider({ children }) {

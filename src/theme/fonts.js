@@ -19,9 +19,6 @@ export const FONT_FAMILIES = {
 export const READING_FONT_OPTIONS = [
   { key: "lora", label: "Lora", description: "Warm, literary serif" },
   { key: "crimson", label: "Crimson Text", description: "Classic book type" },
-  { key: "merriweather", label: "Merriweather", description: "Strong and highly legible" },
-  { key: "libre", label: "Libre Baskerville", description: "Traditional, refined serif" },
-  { key: "sourceSerif", label: "Source Serif 4", description: "Clean, contemporary serif" },
 ];
 
 const READING_FONTS = {
@@ -38,27 +35,6 @@ const READING_FONTS = {
     semiBold: "CrimsonText_600SemiBold",
     bold: "CrimsonText_700Bold",
     italic: "CrimsonText_400Regular_Italic",
-  },
-  merriweather: {
-    regular: "Merriweather_400Regular",
-    medium: "Merriweather_500Medium",
-    semiBold: "Merriweather_600SemiBold",
-    bold: "Merriweather_700Bold",
-    italic: "Merriweather_400Regular_Italic",
-  },
-  libre: {
-    regular: "LibreBaskerville_400Regular",
-    medium: "LibreBaskerville_500Medium",
-    semiBold: "LibreBaskerville_600SemiBold",
-    bold: "LibreBaskerville_700Bold",
-    italic: "LibreBaskerville_400Regular_Italic",
-  },
-  sourceSerif: {
-    regular: "SourceSerif4_400Regular",
-    medium: "SourceSerif4_500Medium",
-    semiBold: "SourceSerif4_600SemiBold",
-    bold: "SourceSerif4_700Bold",
-    italic: "SourceSerif4_400Regular_Italic",
   },
 };
 
