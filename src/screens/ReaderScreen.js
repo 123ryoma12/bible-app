@@ -8,6 +8,7 @@ import {
   PanResponder,
   Animated,
   StatusBar,
+  Platform,
 } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { uiFont, readingFont } from "../theme/fonts";
@@ -779,7 +780,9 @@ export default function ReaderScreen({
             // bottom chrome, which already clears the gesture pill / home
             // indicator. Padding for it again left a band of dead background
             // under the chapter pill.
-            bottom: bottomChromeHeight,
+            // Web rounds the separately measured chrome and footer to CSS
+            // pixels, which can leave a hairline between them on iPhone PWAs.
+            bottom: Math.max(0, bottomChromeHeight - (Platform.OS === "web" ? 1 : 0)),
             opacity: footerAnim.interpolate({ inputRange: [0, 1], outputRange: [1, 0] }),
             transform: [
               {

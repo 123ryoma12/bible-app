@@ -4,7 +4,7 @@
 // lives in SermonPlayer (the mini bar) — this screen just exposes the same
 // player + status objects via props so it never owns or duplicates audio state.
 
-import React, { useCallback, useState } from "react";
+import React from "react";
 import {
   View,
   Text,
@@ -16,6 +16,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { Ionicons } from "@expo/vector-icons";
+import Slider from "@react-native-community/slider";
 import { useTheme } from "../theme/ThemeContext";
 import { uiFont } from "../theme/fonts";
 
@@ -36,7 +37,7 @@ export default function SermonPlayerScreen({
   onCycleSpeed,
   onTogglePlay,
   onSkip,
-  onSeekRatio,     // (ratio: 0–1) => void
+  onSeek,          // (seconds) => void
   onClose,         // closes the player entirely (X)
   onBack,          // goes back to previous screen
   busy,
@@ -45,20 +46,8 @@ export default function SermonPlayerScreen({
 }) {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
-  const [progressBarWidth, setProgressBarWidth] = useState(0);
-
   const duration = status?.duration ?? 0;
   const currentTime = status?.currentTime ?? 0;
-  const progress = duration > 0 ? Math.min(currentTime / duration, 1) : 0;
-
-  const handleProgressPress = useCallback(
-    (e) => {
-      if (!duration || !progressBarWidth) return;
-      const ratio = Math.min(Math.max(e.nativeEvent.locationX / progressBarWidth, 0), 1);
-      onSeekRatio?.(ratio);
-    },
-    [duration, progressBarWidth, onSeekRatio]
-  );
 
   return (
     <View
@@ -106,28 +95,37 @@ export default function SermonPlayerScreen({
           {sermon?.speaker}
           {sermon?.passage ? ` · ${sermon.passage}` : ""}
         </Text>
+        <TouchableOpacity
+          onPress={() => Linking.openURL(sermon.link)}
+          disabled={!sermon?.link}
+          style={[styles.openBtn, { borderColor: colors.accent }]}
+          accessibilityRole="button"
+          accessibilityLabel="Open sermon source"
+        >
+          <MaterialCommunityIcons name="open-in-new" size={16} color={colors.accent} />
+          <Text style={[styles.openBtnText, { color: colors.accent }]}>Open source</Text>
+        </TouchableOpacity>
       </View>
 
       {/* Progress bar */}
-      <TouchableOpacity
-        activeOpacity={1}
-        onPress={handleProgressPress}
-        onLayout={(e) => setProgressBarWidth(e.nativeEvent.layout.width)}
-        style={styles.progressHit}
-        accessibilityRole="adjustable"
-        accessibilityLabel="Playback position"
-        accessibilityValue={{ text: `${formatTime(currentTime)} of ${formatTime(duration)}` }}
-      >
-        <View style={[styles.progressTrack, { backgroundColor: colors.border }]}>
-          <View
-            style={[styles.progressFill, { backgroundColor: colors.accent, width: `${progress * 100}%` }]}
-          />
-        </View>
+      <View style={styles.progressHit}>
+        <Slider
+          style={styles.progressSlider}
+          minimumValue={0}
+          maximumValue={duration > 0 ? duration : 1}
+          value={Math.min(Math.max(currentTime, 0), duration > 0 ? duration : 1)}
+          disabled={duration <= 0}
+          onSlidingComplete={onSeek}
+          minimumTrackTintColor={colors.accent}
+          maximumTrackTintColor={colors.border}
+          thumbTintColor={colors.accent}
+          accessibilityLabel="Playback position"
+        />
         <View style={styles.progressTimes}>
           <Text style={[styles.timeText, { color: colors.mutedText }]}>{formatTime(currentTime)}</Text>
           <Text style={[styles.timeText, { color: colors.mutedText }]}>{formatTime(duration)}</Text>
         </View>
-      </TouchableOpacity>
+      </View>
 
       {/* Controls */}
       {failure || playbackError ? (
@@ -137,14 +135,6 @@ export default function SermonPlayerScreen({
               ? "Internet required to play"
               : "Audio unavailable"}
           </Text>
-          <TouchableOpacity
-            style={[styles.openBtn, { borderColor: colors.accent }]}
-            onPress={() => Linking.openURL(sermon?.link)}
-            accessibilityRole="button"
-            accessibilityLabel="Open in browser"
-          >
-            <Text style={[styles.openBtnText, { color: colors.accent }]}>Open</Text>
-          </TouchableOpacity>
         </View>
       ) : (
         <View style={styles.controls}>
@@ -253,15 +243,9 @@ const styles = StyleSheet.create({
   progressHit: {
     marginBottom: 32,
   },
-  progressTrack: {
-    height: 4,
-    borderRadius: 2,
-    overflow: "hidden",
-    marginBottom: 8,
-  },
-  progressFill: {
-    height: 4,
-    borderRadius: 2,
+  progressSlider: {
+    height: 32,
+    marginHorizontal: -8,
   },
   progressTimes: {
     flexDirection: "row",
@@ -302,13 +286,18 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
   openBtn: {
+    alignSelf: "flex-start",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
     borderWidth: 1,
     borderRadius: 20,
-    paddingHorizontal: 24,
-    paddingVertical: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    marginTop: 12,
   },
   openBtnText: {
-    fontSize: 15,
+    fontSize: 13,
     fontFamily: uiFont(600),
   },
 });

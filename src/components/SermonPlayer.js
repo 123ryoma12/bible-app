@@ -28,6 +28,7 @@ import {
   Modal,
 } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
+import Slider from "@react-native-community/slider";
 import { useAudioPlayer, useAudioPlayerStatus, setAudioModeAsync } from "expo-audio";
 import { uiFont } from "../theme/fonts";
 import { useTheme } from "../theme/ThemeContext";
@@ -113,7 +114,6 @@ export default function SermonPlayer({
   // null | 'offline' | 'unavailable'
   const [failure, setFailure] = useState(null);
   const [speedIndex, setSpeedIndex] = useState(0);
-  const [barWidth, setBarWidth] = useState(0);
   const [expanded, setExpanded] = useState(false);
   // Measured full height of the bar so it can slide exactly off-screen when the
   // reader hides its chrome. Only the view is hidden — playback continues.
@@ -352,33 +352,10 @@ export default function SermonPlayer({
     }
   }, [player, speedIndex]);
 
-  // Called from SermonPlayerScreen with a 0–1 ratio.
-  const seekByRatio = useCallback(
-    (ratio) => {
-      const duration = status?.duration ?? 0;
-      if (!duration) return;
-      player.seekTo(Math.min(Math.max(ratio, 0), 1) * duration);
-    },
-    [player, status?.duration]
-  );
-
-  // Tap anywhere on the progress bar to seek there. Avoids pulling in a slider
-  // dependency for what is a single interaction.
-  const seekToPosition = useCallback(
-    (event) => {
-      const duration = status?.duration ?? 0;
-      if (!duration || !barWidth) return;
-      const ratio = Math.min(Math.max(event.nativeEvent.locationX / barWidth, 0), 1);
-      player.seekTo(ratio * duration);
-    },
-    [player, status?.duration, barWidth]
-  );
-
   if (!sermon) return null;
 
   const duration = status?.duration ?? 0;
   const currentTime = status?.currentTime ?? 0;
-  const progress = duration > 0 ? Math.min(currentTime / duration, 1) : 0;
   const busy = resolving || (Platform.OS !== "web" &&
     ((!!audioUrl && !status?.isLoaded) || !!status?.isBuffering));
   const playbackError = !!status?.error;
@@ -417,27 +394,18 @@ export default function SermonPlayer({
         },
       ]}
     >
-      {/* Progress bar doubles as the scrubber. */}
-      <TouchableOpacity
-        activeOpacity={1}
-        onPress={seekToPosition}
-        onLayout={(e) => setBarWidth(e.nativeEvent.layout.width)}
-        style={styles.progressHit}
-        accessibilityRole="adjustable"
+      <Slider
+        style={styles.progressSlider}
+        minimumValue={0}
+        maximumValue={duration > 0 ? duration : 1}
+        value={Math.min(Math.max(currentTime, 0), duration > 0 ? duration : 1)}
+        disabled={duration <= 0}
+        onSlidingComplete={(seconds) => player.seekTo(seconds)}
+        minimumTrackTintColor={colors.accent}
+        maximumTrackTintColor={colors.border}
+        thumbTintColor={colors.accent}
         accessibilityLabel="Playback position"
-        accessibilityValue={{
-          text: `${formatTime(currentTime)} of ${formatTime(duration)}`,
-        }}
-      >
-        <View style={[styles.progressTrack, { backgroundColor: colors.border }]}>
-          <View
-            style={[
-              styles.progressFill,
-              { backgroundColor: colors.accent, width: `${progress * 100}%` },
-            ]}
-          />
-        </View>
-      </TouchableOpacity>
+      />
 
       <View style={styles.row}>
         <TouchableOpacity
@@ -473,17 +441,18 @@ export default function SermonPlayer({
           </Text>
         </TouchableOpacity>
 
-        {failure || playbackError ? (
-          // Dead end avoided: hand the sermon over to the browser.
-          <TouchableOpacity
-            style={[styles.openBtn, { borderColor: colors.accent }]}
-            onPress={() => Linking.openURL(sermon.link)}
-            accessibilityRole="button"
-            accessibilityLabel="Open this sermon in your browser"
-          >
-            <Text style={[styles.openBtnText, { color: colors.accent }]}>Open</Text>
-          </TouchableOpacity>
-        ) : (
+        <TouchableOpacity
+          onPress={() => Linking.openURL(sermon.link)}
+          disabled={!sermon.link}
+          style={styles.control}
+          hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}
+          accessibilityRole="button"
+          accessibilityLabel="Open sermon source"
+        >
+          <MaterialCommunityIcons name="open-in-new" size={20} color={colors.accent} />
+        </TouchableOpacity>
+
+        {failure || playbackError ? null : (
           <>
             <TouchableOpacity
               onPress={cycleSpeed}
@@ -559,7 +528,7 @@ export default function SermonPlayer({
           onCycleSpeed={cycleSpeed}
           onTogglePlay={togglePlay}
           onSkip={skip}
-          onSeekRatio={seekByRatio}
+          onSeek={(seconds) => player.seekTo(seconds)}
           onBack={() => setExpanded(false)}
           onClose={() => { setExpanded(false); handleClose(); }}
           busy={busy}
@@ -578,16 +547,9 @@ const styles = StyleSheet.create({
     // already clears the gesture pill / home indicator.
     paddingBottom: 6,
   },
-  progressHit: {
-    paddingVertical: 6,
-  },
-  progressTrack: {
-    height: 3,
-    width: "100%",
-    overflow: "hidden",
-  },
-  progressFill: {
-    height: 3,
+  progressSlider: {
+    height: 22,
+    marginHorizontal: 10,
   },
   row: {
     flexDirection: "row",
@@ -615,16 +577,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   speedText: {
-    fontSize: 12,
-    fontFamily: uiFont(600),
-  },
-  openBtn: {
-    borderWidth: 1,
-    borderRadius: 14,
-    paddingHorizontal: 12,
-    paddingVertical: 5,
-  },
-  openBtnText: {
     fontSize: 12,
     fontFamily: uiFont(600),
   },
