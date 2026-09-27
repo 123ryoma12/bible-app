@@ -66,6 +66,10 @@ export async function loadStudyNotesChapter(bookId, chapter) {
   }
 }
 
+export function hasStudyNotesChapter(bookId, chapter) {
+  return cache.has(keyFor(bookId, chapter));
+}
+
 /**
  * Returns an array of study note objects for the given book + chapter.
  * Each object: { verse_ref: string, note: string }

@@ -23,8 +23,8 @@ import { incrementReadCount } from "../data/progressStore";
 import { addToHistory } from "../data/historyStore";
 import { useTheme } from "../theme/ThemeContext";
 import { getActiveReadingVersion } from "../data/bibleVersionStore";
-import { getStudyNotesByVerse, getHeadingNote, loadStudyNotesChapter, pinStudyNotesChapter } from "../data/studyNotesData";
-import { getInterlinearChapter, hasInterlinear, loadInterlinearChapter } from "../data/interlinearData";
+import { getStudyNotesByVerse, getHeadingNote, hasStudyNotesChapter, loadStudyNotesChapter, pinStudyNotesChapter } from "../data/studyNotesData";
+import { getInterlinearChapter, hasInterlinear, hasInterlinearChapter, loadInterlinearChapter } from "../data/interlinearData";
 import { getReaderPrefs, setReaderPref } from "../data/readerPrefsStore";
 import VerseNotePopover from "../components/VerseNotePopover";
 import InterlinearWordPopover from "../components/InterlinearWordPopover";
@@ -196,6 +196,7 @@ export default function ReaderScreen({
 
   // Heading note — shown as a ⓘ icon next to the chapter number in the heading.
   // Only present for Psalms and a handful of other books with title notes.
+  // Load notes alongside the chapter so their buttons are ready when enabled.
   // Inline verse notes are enabled from the persisted reader preference.
   const [verseNotesActive, setVerseNotesActive] = useState(
     () => getReaderPrefs().verseNotesActive
@@ -203,7 +204,7 @@ export default function ReaderScreen({
   const notesLoadKey = `${book.id}:${chapterNumber}`;
   const [loadedNotesKey, setLoadedNotesKey] = useState(null);
   useEffect(() => {
-    if (isIntro || !verseNotesActive) {
+    if (isIntro) {
       setLoadedNotesKey(null);
       return undefined;
     }
@@ -216,16 +217,17 @@ export default function ReaderScreen({
       cancelled = true;
       release();
     };
-  }, [book.id, chapterNumber, isIntro, notesLoadKey, verseNotesActive]);
+  }, [book.id, chapterNumber, isIntro, notesLoadKey]);
   useEffect(() => {
-    if (isIntro || !verseNotesActive) return;
+    if (isIntro) return;
     [chapterNumber - 1, chapterNumber + 1]
       .filter((number) => number >= 1 && number <= book.chapterCount)
       .forEach((number) => {
         loadStudyNotesChapter(book.id, number).catch(() => {});
       });
-  }, [book.id, book.chapterCount, chapterNumber, isIntro, verseNotesActive]);
-  const notesReady = loadedNotesKey === notesLoadKey;
+  }, [book.id, book.chapterCount, chapterNumber, isIntro]);
+  const notesReady = loadedNotesKey === notesLoadKey
+    || hasStudyNotesChapter(book.id, chapterNumber);
   const headingNote = useMemo(
     () => notesReady ? getHeadingNote(book.name, chapterNumber) : null,
     [book.name, chapterNumber, notesReady]
@@ -243,7 +245,7 @@ export default function ReaderScreen({
   );
   const [loadedInterlinearChapter, setLoadedInterlinearChapter] = useState(null);
   useEffect(() => {
-    if (!interlinearActive || isIntro || !hasInterlinear(book.id)) {
+    if (isIntro || !hasInterlinear(book.id)) {
       setLoadedInterlinearChapter(null);
       return undefined;
     }
@@ -257,17 +259,18 @@ export default function ReaderScreen({
         if (!cancelled) setLoadedInterlinearChapter(null);
       });
     return () => { cancelled = true; };
-  }, [interlinearActive, isIntro, book.id, chapterNumber]);
+  }, [isIntro, book.id, chapterNumber]);
   useEffect(() => {
-    if (isIntro || !interlinearActive || !hasInterlinear(book.id)) return;
+    if (isIntro || !hasInterlinear(book.id)) return;
     [chapterNumber - 1, chapterNumber + 1]
       .filter((number) => number >= 1 && number <= book.chapterCount)
       .forEach((number) => {
         loadInterlinearChapter(book.id, number).catch(() => {});
       });
-  }, [book.id, book.chapterCount, chapterNumber, isIntro, interlinearActive]);
+  }, [book.id, book.chapterCount, chapterNumber, isIntro]);
   const interlinearChapter = useMemo(
-    () => interlinearActive && loadedInterlinearChapter === `${book.id}:${chapterNumber}`
+    () => interlinearActive && (loadedInterlinearChapter === `${book.id}:${chapterNumber}`
+      || hasInterlinearChapter(book.id, chapterNumber))
       ? getInterlinearChapter(book.id, chapterNumber)
       : null,
     [interlinearActive, loadedInterlinearChapter, book.id, chapterNumber]

@@ -44,6 +44,10 @@ export async function loadInterlinearChapter(bookId, chapter) {
   }
 }
 
+export function hasInterlinearChapter(bookId, chapter) {
+  return cache.has(keyFor(bookId, chapter));
+}
+
 export function getInterlinearVerse(bookId, chapter, verse) {
   return cache.get(keyFor(bookId, chapter))?.[String(verse)] ?? null;
 }
