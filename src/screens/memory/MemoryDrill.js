@@ -145,7 +145,7 @@ export default function MemoryDrill({ list, startIndex = 0, onExit }) {
 
   // Keep the hidden input focused so key presses are captured.
   useEffect(() => {
-    const t = setTimeout(() => inputRef.current && inputRef.current.focus(), 50);
+    const t = setTimeout(focusInput, 50);
     return () => clearTimeout(t);
   }, [orderPos, phase]);
 
@@ -190,10 +190,16 @@ export default function MemoryDrill({ list, startIndex = 0, onExit }) {
     clearInputBuffer();
   }
 
-  // Re-focus the hidden input to bring the keyboard back (e.g. after the user
-  // taps the verse text, which would otherwise dismiss it).
+  // The web input is a real DOM node. Keep focus from scrolling the page to
+  // that invisible element when a phone opens its on-screen keyboard.
   function focusInput() {
-    inputRef.current && inputRef.current.focus();
+    const input = inputRef.current;
+    if (!input) return;
+    if (Platform.OS === "web") {
+      if (document.activeElement !== input) input.focus({ preventScroll: true });
+    } else {
+      input.focus();
+    }
   }
 
   // Handle typed input against the current verse, one word per character.
@@ -612,7 +618,10 @@ export default function MemoryDrill({ list, startIndex = 0, onExit }) {
             selectTextOnFocus={false}
             caretHidden
             blurOnSubmit={false}
-            style={styles.hiddenInput}
+            style={[
+              styles.hiddenInput,
+              Platform.OS === "web" ? styles.webHiddenInput : styles.nativeHiddenInput,
+            ]}
           />
         </>
       ) : null}
@@ -767,6 +776,15 @@ const styles = StyleSheet.create({
     height: 1,
     width: 1,
     opacity: 0,
+    left: 0,
+  },
+  // A bottom-anchored focused input makes mobile browsers pan the whole PWA
+  // upward to keep it above the keyboard. Keep the web capture input near the
+  // header; the verse ScrollView remains independently scrollable.
+  webHiddenInput: {
+    top: 64,
+  },
+  nativeHiddenInput: {
     bottom: 0,
   },
 });
