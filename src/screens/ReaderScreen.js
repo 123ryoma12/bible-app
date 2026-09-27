@@ -110,8 +110,7 @@ export default function ReaderScreen({
   const version = getActiveReadingVersion();
   const chapterLoadKey = `${version}:${book.id}:${chapterNumber}`;
   const [chapterLoad, setChapterLoad] = useState({ key: null, error: false });
-  const chapterReady = chapterLoad.key === chapterLoadKey && !chapterLoad.error
-    && !!getChapter(book.id, chapterNumber, version);
+  const chapterReady = !!getChapter(book.id, chapterNumber, version);
 
   useEffect(() => {
     if (isIntro) return undefined;
@@ -129,6 +128,18 @@ export default function ReaderScreen({
       release();
     };
   }, [book.id, version, chapterNumber, chapterLoadKey, isIntro]);
+
+  // Warm only the chapters reachable with the reader's previous/next buttons.
+  // The App cache retention effect keeps these parsed chapters available when
+  // navigation changes the active chapter. Each loader deduplicates requests.
+  useEffect(() => {
+    if (isIntro) return;
+    const neighbors = [chapterNumber - 1, chapterNumber + 1]
+      .filter((number) => number >= 1 && number <= book.chapterCount);
+    neighbors.forEach((number) => {
+      loadBibleChapter(book.id, number, version).catch(() => {});
+    });
+  }, [book.id, book.chapterCount, chapterNumber, version, isIntro]);
 
   const [introLoad, setIntroLoad] = useState({ bookId: null, info: null, error: false });
   const introInfo = introLoad.bookId === book.id ? introLoad.info : null;
@@ -206,6 +217,14 @@ export default function ReaderScreen({
       release();
     };
   }, [book.id, chapterNumber, isIntro, notesLoadKey, verseNotesActive]);
+  useEffect(() => {
+    if (isIntro || !verseNotesActive) return;
+    [chapterNumber - 1, chapterNumber + 1]
+      .filter((number) => number >= 1 && number <= book.chapterCount)
+      .forEach((number) => {
+        loadStudyNotesChapter(book.id, number).catch(() => {});
+      });
+  }, [book.id, book.chapterCount, chapterNumber, isIntro, verseNotesActive]);
   const notesReady = loadedNotesKey === notesLoadKey;
   const headingNote = useMemo(
     () => notesReady ? getHeadingNote(book.name, chapterNumber) : null,
@@ -239,6 +258,14 @@ export default function ReaderScreen({
       });
     return () => { cancelled = true; };
   }, [interlinearActive, isIntro, book.id, chapterNumber]);
+  useEffect(() => {
+    if (isIntro || !interlinearActive || !hasInterlinear(book.id)) return;
+    [chapterNumber - 1, chapterNumber + 1]
+      .filter((number) => number >= 1 && number <= book.chapterCount)
+      .forEach((number) => {
+        loadInterlinearChapter(book.id, number).catch(() => {});
+      });
+  }, [book.id, book.chapterCount, chapterNumber, isIntro, interlinearActive]);
   const interlinearChapter = useMemo(
     () => interlinearActive && loadedInterlinearChapter === `${book.id}:${chapterNumber}`
       ? getInterlinearChapter(book.id, chapterNumber)
@@ -722,13 +749,11 @@ export default function ReaderScreen({
               <View style={[styles.chapterHeadingRule, { backgroundColor: colors.border }]} />
             </View>
 
-            {!chapterReady && !(chapterLoad.key === chapterLoadKey && chapterLoad.error) ? (
+            {!chapterReady ? (
               <Text style={{ color: colors.secondaryText, textAlign: "center", padding: 24 }}>
-                Loading chapter…
-              </Text>
-            ) : chapterLoad.key === chapterLoadKey && chapterLoad.error ? (
-              <Text style={{ color: colors.secondaryText, textAlign: "center", padding: 24 }}>
-                Couldn't load this chapter.
+                {chapterLoad.key === chapterLoadKey && chapterLoad.error
+                  ? "Couldn't load this chapter."
+                  : "Loading chapter…"}
               </Text>
             ) : <ChapterView
               chapter={chapter}

@@ -208,11 +208,21 @@ const AppContent = memo(function AppContent() {
   const [activeTabId, setActiveTabId] = useState(null);
   const readingVersion = useSyncExternalStore(subscribeReadingVersion, getActiveReadingVersion);
 
-  // Release parsed chapters once no open reader tab uses them.
+  // Release parsed chapters once no open reader tab uses them. Keep the active
+  // chapter's immediate neighbours for instant chapter navigation.
   useEffect(() => {
     const tabs = [...readerTabs];
     // Navigation updates the active book just before it updates its tab record.
-    if (activeTabId) tabs.push({ bookId: BOOKS[bookIndex].id, chapterNumber });
+    if (activeTabId) {
+      const activeBook = BOOKS[bookIndex];
+      tabs.push({ bookId: activeBook.id, chapterNumber });
+      if (chapterNumber > 0) {
+        if (chapterNumber > 1) tabs.push({ bookId: activeBook.id, chapterNumber: chapterNumber - 1 });
+        if (chapterNumber < activeBook.chapterCount) {
+          tabs.push({ bookId: activeBook.id, chapterNumber: chapterNumber + 1 });
+        }
+      }
+    }
     retainInterlinearChapters(tabs);
     retainBibleChapters(tabs, readingVersion);
     retainStudyNotesChapters(tabs);
