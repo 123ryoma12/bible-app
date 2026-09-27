@@ -64,6 +64,11 @@ function sessionMessage(expires, nonce, hostname) {
   return encoder.encode(`v1:${expires}:${nonce}:${hostname}`);
 }
 
+function isPageRequest(request) {
+  return request.method === "GET" &&
+    (request.mode === "navigate" || request.headers.get("Accept")?.includes("text/html"));
+}
+
 async function readSession(request, password) {
   const cookie = request.headers.get("Cookie")?.split(";")
     .map((part) => part.trim())
@@ -139,16 +144,14 @@ export async function onRequest(context) {
 
   const expiresAt = await readSession(request, password);
   if (!expiresAt) {
-    const wantsHtml = request.method === "GET" &&
-      (request.headers.get("Accept")?.includes("text/html") || request.mode === "navigate");
-    return wantsHtml ? loginPage() : new Response("Unauthorized", {
+    return isPageRequest(request) ? loginPage() : new Response("Unauthorized", {
       status: 401,
       headers: noStoreHeaders("text/plain; charset=utf-8"),
     });
   }
 
   const response = await context.next();
-  if (request.mode !== "navigate" || expiresAt - Date.now() > RENEW_WITHIN_SECONDS * 1000) return response;
+  if (!isPageRequest(request) || expiresAt - Date.now() > RENEW_WITHIN_SECONDS * 1000) return response;
   const renewed = new Response(response.body, response);
   renewed.headers.set("Set-Cookie", await createSession(request, password));
   renewed.headers.set("Cache-Control", "private, no-store");
