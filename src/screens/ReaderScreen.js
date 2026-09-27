@@ -278,6 +278,7 @@ export default function ReaderScreen({
   const [popover, setPopover] = useState({ visible: false, notes: [], anchorY: 0 });
   const suppressReaderTap = useRef(false);
   const scrollYAtOpen = useRef(0);
+  const lastReaderTouch = useRef(null);
 
   // TOC for book intro tabs
   const [tocOpen, setTocOpen] = useState(false);
@@ -344,20 +345,39 @@ export default function ReaderScreen({
     [onChromeChange]
   );
 
-  // Text press coordinates are measured in the window; the popover is positioned
-  // inside the reader. Convert them using the reader's actual window position.
+  // Nested Text presses can report pageY=0 on Android. The ScrollView receives
+  // the original touch, so use its position to anchor native note popovers.
+  const captureReaderTouch = useCallback((event) => {
+    const touch = event.nativeEvent?.touches?.[0] ?? event.nativeEvent;
+    const pageY = touch?.pageY;
+    lastReaderTouch.current = Number.isFinite(pageY) && pageY > 0
+      ? { pageY, at: Date.now() }
+      : null;
+  }, []);
+
   const openNotePopover = useCallback((notes, anchor) => {
     // Android can forward a nested Text press to the surrounding reader tap.
     suppressReaderTap.current = true;
     setTimeout(() => { suppressReaderTap.current = false; }, 0);
     scrollYAtOpen.current = lastOffset.current;
+    const recentTouch = lastReaderTouch.current;
+    const touchY = Platform.OS === "android" && recentTouch && Date.now() - recentTouch.at < 2000
+      ? recentTouch.pageY
+      : null;
     const show = (rootY = 0, height = null) => {
-      const top = Number.isFinite(anchor?.top) ? anchor.top - rootY : null;
-      const bottom = Number.isFinite(anchor?.bottom) ? anchor.bottom - rootY : null;
-      setPopover({ visible: true, notes, anchorY: bottom, anchorTopY: top, containerHeight: height });
+      const validAnchor = Number.isFinite(anchor?.bottom) && anchor.bottom > 0 ? anchor : null;
+      const pageY = touchY ?? validAnchor?.bottom;
+      const y = Number.isFinite(pageY) && pageY > rootY ? pageY - rootY : null;
+      const top = touchY != null ? y : validAnchor && Number.isFinite(validAnchor.top) && validAnchor.top > rootY
+        ? validAnchor.top - rootY : y;
+      setPopover({ visible: true, notes, anchorY: y, anchorTopY: top, containerHeight: height });
       setChrome(false, { byTap: true });
     };
-    if (readerRootRef.current?.measureInWindow) {
+    if (Platform.OS !== "web" && readerRootRef.current?.measure) {
+      readerRootRef.current.measure((_x, _y, _width, height, _pageX, pageY) => {
+        show(Number.isFinite(pageY) ? pageY : 0, Number.isFinite(height) && height > 0 ? height : null);
+      });
+    } else if (readerRootRef.current?.measureInWindow) {
       readerRootRef.current.measureInWindow((_x, y, _width, height) => {
         show(Number.isFinite(y) ? y : 0, Number.isFinite(height) && height > 0 ? height : null);
       });
@@ -610,37 +630,6 @@ export default function ReaderScreen({
     })
   ).current;
 
-  // React Native Web can treat a trackpad's diagonal scroll as responder
-  // movement. Use touch coordinates for web swipes so wheel scrolling never
-  // advances the chapter.
-  const webTouchStart = useRef(null);
-  const handleWebTouchStart = useCallback((event) => {
-    const touches = event.nativeEvent?.touches;
-    if (touches?.length !== 1) {
-      webTouchStart.current = null;
-      return;
-    }
-    const touch = touches[0];
-    webTouchStart.current = {
-      x: touch.pageX,
-      y: touch.pageY,
-      scrollY: lastOffset.current,
-    };
-  }, []);
-  const handleWebTouchEnd = useCallback((event) => {
-    const start = webTouchStart.current;
-    webTouchStart.current = null;
-    const touch = event.nativeEvent?.changedTouches?.[0];
-    if (!start || !touch) return;
-    const dx = touch.pageX - start.x;
-    const dy = touch.pageY - start.y;
-    if (Math.abs(dx) < SWIPE_THRESHOLD ||
-        Math.abs(dx) < Math.abs(dy) * 1.7 ||
-        Math.abs(lastOffset.current - start.scrollY) > 10) return;
-    if (dx < 0 && hasNextRef.current) onNextRef.current?.();
-    else if (dx > 0 && hasPrevRef.current) onPrevRef.current?.();
-  }, []);
-
   // Memoized so scroll-driven re-renders (chromeVisible toggling) don't create
   // new style objects on every frame. Only recalculates when layout metrics change.
   const contentContainerStyle = useMemo(() => [
@@ -670,13 +659,10 @@ export default function ReaderScreen({
         contentInsetAdjustmentBehavior="never"
         contentContainerStyle={contentContainerStyle}
         onScroll={handleScroll}
+        onTouchStart={Platform.OS === "android" ? captureReaderTouch : undefined}
         scrollEventThrottle={16}
         onContentSizeChange={handleContentSizeChange}
-        {...(isIntro ? {} : Platform.OS === "web" ? {
-          onTouchStart: handleWebTouchStart,
-          onTouchEnd: handleWebTouchEnd,
-          onTouchCancel: () => { webTouchStart.current = null; },
-        } : panResponder.panHandlers)}
+        {...(isIntro || Platform.OS === "web" ? {} : panResponder.panHandlers)}
       >
         {isIntro ? (
           <TouchableOpacity activeOpacity={1} onPress={toggleChrome}>
