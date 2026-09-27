@@ -100,6 +100,20 @@ audio streams online; offline sermon downloads remain native-app-only. To test
 the Pages Function locally after building, run `npx wrangler pages dev dist`
 from the project root (Expo's web development server does not run the Function).
 
+The deployed PWA requires a password before serving its HTML, JavaScript, or
+Bible assets. In the Cloudflare Pages project, set an **encrypted secret** named
+`PWA_PASSWORD` to the private password under **Settings → Variables and Secrets**
+for production (and preview if used), then redeploy. The site fails closed with
+a setup error until that secret is present. A successful login sets a secure,
+HTTP-only cookie on that device; it lasts a year and renews when the PWA is
+reopened near expiration.
+Android builds do not use this password. For local testing, put the secret in
+an untracked `.dev.vars` file and run `npx wrangler pages dev dist` after the
+web build. Expo's web development server does not run the password middleware.
+Previously downloaded PWA files can remain available offline on devices that
+already cached them; remove the site's stored data on any device that should
+lose access.
+
 The service worker caches the app shell for offline launch. Bible books,
 interlinear text, and introductions are cached as you open them; a book must be
 opened online once before it is available offline. Reading progress, stats,

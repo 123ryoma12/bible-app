@@ -21,7 +21,7 @@ function listFiles(dir, prefix = "") {
   });
 }
 
-const files = listFiles(dist).filter((file) => file !== "sw.js" && file !== "_headers");
+const files = listFiles(dist).filter((file) => !["sw.js", "_headers", "_routes.json"].includes(file));
 const shellFiles = files.filter((file) => !file.endsWith(".txt"));
 const hash = crypto.createHash("sha256");
 for (const file of shellFiles.sort()) {
@@ -65,7 +65,9 @@ self.addEventListener("fetch", (event) => {
     event.respondWith((async () => {
       try {
         const response = await fetch(request);
-        if (response.ok) return response;
+        // Authentication responses must reach the visitor. Only a network
+        // failure should fall back to the offline app shell.
+        return response;
       } catch (_) {
         // Use the installed app shell when the network is unavailable.
       }
