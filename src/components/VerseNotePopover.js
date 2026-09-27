@@ -30,9 +30,10 @@ const GAP = 14;               // gap between anchor point and card edge
 const ABOVE_THRESHOLD = 0.55; // show above if tap is in lower 45% of screen
 const ANIM_MS = 180;
 
-export default function VerseNotePopover({ visible, notes, anchorY, anchorTopY, onDismiss }) {
+export default function VerseNotePopover({ visible, notes, anchorY, anchorTopY, containerHeight, onDismiss }) {
   const { colors, mode } = useTheme();
-  const { height: screenH } = useWindowDimensions();
+  const { height: windowHeight } = useWindowDimensions();
+  const screenH = containerHeight || windowHeight;
 
   const anim = useRef(new Animated.Value(0)).current;
   const [mounted, setMounted] = useState(false);

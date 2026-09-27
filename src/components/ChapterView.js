@@ -1,34 +1,26 @@
 import React, { useMemo, memo, useState, useCallback } from "react";
-import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { Platform, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { useTheme } from "../theme/ThemeContext";
 import { readingFont, uiFont } from "../theme/fonts";
 import InterlinearVerseRow from "./InterlinearVerseRow";
 
-// MaterialCommunityIcons glyph rendered as inline <Text> — the only way to
-// place an icon inside a React Native <Text> tree (no View allowed).
-// "information-outline": circled i outline, clean and unobtrusive.
-// The MaterialCommunityIcons font is loaded explicitly in App.js via useFonts()
-// so that fontFamily: "material-community" resolves correctly on all platforms.
-const INFO_ICON_GLYPH = String.fromCodePoint(0xf02fd);
+// A text glyph can sit inside a flowing React Native Text paragraph on Android.
+// Using a Unicode symbol avoids relying on an icon font for inline rendering.
+const INFO_ICON_GLYPH = "ⓘ";
 
 export const BODY_SIZE = 18;
 export const BODY_LINE_HEIGHT = 30;
 const VERSE_NUMBER_SIZE = 10;
 const VERSE_CONTINUATION_INDENT = 20;
-const NOTE_TOUCH_SIZE = 44;
-
-function noteIconAnchor(event, fontScale) {
-  const glyphHeight = 16 * fontScale;
+function noteIconAnchor(event) {
   const bounds = event.currentTarget?.getBoundingClientRect?.();
   if (bounds) {
-    const bottom = bounds.top + (bounds.height + glyphHeight) / 2;
-    return { top: bottom - glyphHeight, bottom };
+    return { top: bounds.top, bottom: bounds.bottom };
   }
-
-  const { pageY, locationY } = event.nativeEvent;
-  const touchTop = Number.isFinite(locationY) ? pageY - locationY : pageY - NOTE_TOUCH_SIZE / 2;
-  const bottom = touchTop + (NOTE_TOUCH_SIZE + glyphHeight) / 2;
-  return { top: bottom - glyphHeight, bottom };
+  // Native Text press coordinates are in the window. The reader converts them
+  // to its own coordinates before placing the popover.
+  const pageY = event.nativeEvent?.pageY;
+  return Number.isFinite(pageY) ? { top: pageY, bottom: pageY } : null;
 }
 
 /**
@@ -300,19 +292,21 @@ const FlowingVerses = memo(function FlowingVerses({
   const mutedColorStyle = useMemo(() => ({ color: colors.mutedText }), [colors.mutedText]);
   const accentColorStyle = useMemo(() => ({ color: colors.accent }), [colors.accent]);
   const noteIconSizeStyle = useMemo(() => {
-    const fontSize = 13 * fontScale;
-    const lineHeight = 16 * fontScale;
-    const horizontalInset = (NOTE_TOUCH_SIZE - fontSize) / 2;
-    const verticalInset = (NOTE_TOUCH_SIZE - lineHeight) / 2;
     return {
-      fontSize,
-      lineHeight,
-      paddingHorizontal: horizontalInset,
-      paddingVertical: verticalInset,
-      marginHorizontal: -horizontalInset,
-      marginVertical: -verticalInset,
+      fontSize: 16 * fontScale,
+      lineHeight: 22 * fontScale,
+      paddingHorizontal: 4 * fontScale,
     };
   }, [fontScale]);
+  const lastSegmentForVerse = useMemo(() => {
+    const result = new Map();
+    segments.forEach((segment, index) => {
+      if (segment.number != null && !segment.editorialNote) {
+        result.set(parseInt(segment.number, 10), index);
+      }
+    });
+    return result;
+  }, [segments]);
 
   // ── Interlinear mode: each verse on its own line with chevron ──────────────
   if (interlinearActive) {
@@ -408,7 +402,8 @@ const FlowingVerses = memo(function FlowingVerses({
     >
       {segments.map((segment, index) => {
         const verseNum = segment.number != null ? parseInt(segment.number, 10) : null;
-        const showNoteIcon = blockNoteVerses && verseNum != null && blockNoteVerses.has(verseNum);
+        const showNoteIcon = blockNoteVerses && verseNum != null &&
+          blockNoteVerses.has(verseNum) && lastSegmentForVerse.get(verseNum) === index;
         const isLast = index === segments.length - 1;
 
         return (
@@ -434,7 +429,10 @@ const FlowingVerses = memo(function FlowingVerses({
                 {"\u00A0"}
                 <Text
                   style={[styles.noteIcon, styles.noteTouchTarget, noteIconSizeStyle, accentColorStyle]}
-                  onPress={(e) => onNotePress?.(verseNum, noteIconAnchor(e, fontScale))}
+                  onPress={(e) => {
+                    e.stopPropagation?.();
+                    onNotePress?.(verseNum, noteIconAnchor(e));
+                  }}
                   accessibilityRole="button"
                   accessibilityLabel={`Study notes for verse ${verseNum}`}
                 >
@@ -649,10 +647,10 @@ const styles = StyleSheet.create({
     letterSpacing: 0.1,
   },
   noteIcon: {
-    fontFamily: "material-community",
+    fontFamily: Platform.OS === "android" ? "sans-serif" : undefined,
+    fontWeight: "600",
   },
   noteTouchTarget: {
-    // The size style adds a square hit area and cancels its layout spacing.
     position: "relative",
     zIndex: 1,
   },

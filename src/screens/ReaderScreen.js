@@ -39,8 +39,8 @@ import InterlinearWordPopover from "../components/InterlinearWordPopover";
 const ChapterView = memo(ChapterViewBase);
 
 
-// Same glyph as the inline verse note icons in ChapterView.
-const INFO_ICON_GLYPH = String.fromCodePoint(0xf02fd);
+// Same visible text symbol as the inline verse note icons in ChapterView.
+const INFO_ICON_GLYPH = "ⓘ";
 
 const SWIPE_THRESHOLD = 50;
 // How far you must scroll down before the chrome hides (avoids twitchy hiding).
@@ -163,6 +163,7 @@ export default function ReaderScreen({
     [book.id, chapterNumber, version, versionKey, chapterReady]
   );
   const scrollRef = useRef(null);
+  const readerRootRef = useRef(null);
 
   // Local mirror of chrome visibility so the Reader's own footer can animate
   // in sync with the app-level tab bar.
@@ -275,6 +276,7 @@ export default function ReaderScreen({
 
   // Verse note popover state — handlers defined after setChrome below.
   const [popover, setPopover] = useState({ visible: false, notes: [], anchorY: 0 });
+  const suppressReaderTap = useRef(false);
   const scrollYAtOpen = useRef(0);
 
   // TOC for book intro tabs
@@ -342,16 +344,34 @@ export default function ReaderScreen({
     [onChromeChange]
   );
 
+  // Text press coordinates are measured in the window; the popover is positioned
+  // inside the reader. Convert them using the reader's actual window position.
+  const openNotePopover = useCallback((notes, anchor) => {
+    // Android can forward a nested Text press to the surrounding reader tap.
+    suppressReaderTap.current = true;
+    setTimeout(() => { suppressReaderTap.current = false; }, 0);
+    scrollYAtOpen.current = lastOffset.current;
+    const show = (rootY = 0, height = null) => {
+      const top = Number.isFinite(anchor?.top) ? anchor.top - rootY : null;
+      const bottom = Number.isFinite(anchor?.bottom) ? anchor.bottom - rootY : null;
+      setPopover({ visible: true, notes, anchorY: bottom, anchorTopY: top, containerHeight: height });
+      setChrome(false, { byTap: true });
+    };
+    if (readerRootRef.current?.measureInWindow) {
+      readerRootRef.current.measureInWindow((_x, y, _width, height) => {
+        show(Number.isFinite(y) ? y : 0, Number.isFinite(height) && height > 0 ? height : null);
+      });
+    } else {
+      show();
+    }
+  }, [setChrome]);
+
   // Verse note popover handlers — defined here because they depend on setChrome.
   const handleNotePress = useCallback((verseNum, anchor) => {
     const notes = verseNotesByVerse?.get(verseNum) ?? [];
     if (notes.length === 0) return;
-    scrollYAtOpen.current = lastOffset.current;
-    setPopover({ visible: true, notes, anchorY: anchor.bottom, anchorTopY: anchor.top });
-    // Hide chrome for an immersive reading experience while the note is open.
-    // Treated as a tap-hide so only a tap can restore it.
-    setChrome(false, { byTap: true });
-  }, [verseNotesByVerse, setChrome]);
+    openNotePopover(notes, anchor);
+  }, [verseNotesByVerse, openNotePopover]);
 
   const handleDismissPopover = useCallback(() => {
     setPopover((p) => ({ ...p, visible: false }));
@@ -539,6 +559,10 @@ export default function ReaderScreen({
   );
 
   const toggleChrome = useCallback(() => {
+    if (suppressReaderTap.current) {
+      suppressReaderTap.current = false;
+      return;
+    }
     // If either popover is open, tap only dismisses the popover — chrome stays
     // as-is. The user must tap again (with no popover open) to toggle chrome.
     let didDismiss = false;
@@ -586,6 +610,37 @@ export default function ReaderScreen({
     })
   ).current;
 
+  // React Native Web can treat a trackpad's diagonal scroll as responder
+  // movement. Use touch coordinates for web swipes so wheel scrolling never
+  // advances the chapter.
+  const webTouchStart = useRef(null);
+  const handleWebTouchStart = useCallback((event) => {
+    const touches = event.nativeEvent?.touches;
+    if (touches?.length !== 1) {
+      webTouchStart.current = null;
+      return;
+    }
+    const touch = touches[0];
+    webTouchStart.current = {
+      x: touch.pageX,
+      y: touch.pageY,
+      scrollY: lastOffset.current,
+    };
+  }, []);
+  const handleWebTouchEnd = useCallback((event) => {
+    const start = webTouchStart.current;
+    webTouchStart.current = null;
+    const touch = event.nativeEvent?.changedTouches?.[0];
+    if (!start || !touch) return;
+    const dx = touch.pageX - start.x;
+    const dy = touch.pageY - start.y;
+    if (Math.abs(dx) < SWIPE_THRESHOLD ||
+        Math.abs(dx) < Math.abs(dy) * 1.7 ||
+        Math.abs(lastOffset.current - start.scrollY) > 10) return;
+    if (dx < 0 && hasNextRef.current) onNextRef.current?.();
+    else if (dx > 0 && hasPrevRef.current) onPrevRef.current?.();
+  }, []);
+
   // Memoized so scroll-driven re-renders (chromeVisible toggling) don't create
   // new style objects on every frame. Only recalculates when layout metrics change.
   const contentContainerStyle = useMemo(() => [
@@ -604,10 +659,11 @@ export default function ReaderScreen({
 
   return (
     <SafeAreaView
+      ref={readerRootRef}
       style={[styles.safe, { backgroundColor: colors.background }]}
       edges={["left", "right"]}
     >
-      <StatusBar hidden={!chromeVisible} animated translucent />
+      <StatusBar hidden={!chromeVisible && !popover.visible && !interlinearPopover.visible} animated translucent />
       <ScrollView
         ref={scrollRef}
         style={scrollReady ? styles.scrollViewReady : styles.scrollViewHidden}
@@ -616,7 +672,11 @@ export default function ReaderScreen({
         onScroll={handleScroll}
         scrollEventThrottle={16}
         onContentSizeChange={handleContentSizeChange}
-        {...(isIntro ? {} : panResponder.panHandlers)}
+        {...(isIntro ? {} : Platform.OS === "web" ? {
+          onTouchStart: handleWebTouchStart,
+          onTouchEnd: handleWebTouchEnd,
+          onTouchCancel: () => { webTouchStart.current = null; },
+        } : panResponder.panHandlers)}
       >
         {isIntro ? (
           <TouchableOpacity activeOpacity={1} onPress={toggleChrome}>
@@ -661,13 +721,8 @@ export default function ReaderScreen({
                   <TouchableOpacity
                     onPress={(e) => {
                       e.stopPropagation?.();
-                      scrollYAtOpen.current = lastOffset.current;
-                      setPopover({
-                        visible: true,
-                        notes: [headingNote],
-                        anchorY: e.nativeEvent.pageY,
-                      });
-                      setChrome(false, { byTap: true });
+                      const y = e.nativeEvent?.pageY;
+                      openNotePopover([headingNote], Number.isFinite(y) ? { top: y, bottom: y } : null);
                     }}
                     hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                     activeOpacity={0.6}
@@ -767,6 +822,7 @@ export default function ReaderScreen({
         notes={popover.notes}
         anchorY={popover.anchorY}
         anchorTopY={popover.anchorTopY}
+        containerHeight={popover.containerHeight}
         onDismiss={handleDismissPopover}
       />
 
@@ -919,7 +975,7 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
   },
   headingNoteIcon: {
-    fontFamily: "material-community",
+    fontFamily: Platform.OS === "android" ? "sans-serif" : undefined,
     fontSize: 15,
     lineHeight: 18,
   },
