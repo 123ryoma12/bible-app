@@ -15,6 +15,21 @@ export const BODY_SIZE = 18;
 export const BODY_LINE_HEIGHT = 30;
 const VERSE_NUMBER_SIZE = 10;
 const VERSE_CONTINUATION_INDENT = 20;
+const NOTE_TOUCH_SIZE = 44;
+
+function noteIconAnchor(event, fontScale) {
+  const glyphHeight = 16 * fontScale;
+  const bounds = event.currentTarget?.getBoundingClientRect?.();
+  if (bounds) {
+    const bottom = bounds.top + (bounds.height + glyphHeight) / 2;
+    return { top: bottom - glyphHeight, bottom };
+  }
+
+  const { pageY, locationY } = event.nativeEvent;
+  const touchTop = Number.isFinite(locationY) ? pageY - locationY : pageY - NOTE_TOUCH_SIZE / 2;
+  const bottom = touchTop + (NOTE_TOUCH_SIZE + glyphHeight) / 2;
+  return { top: bottom - glyphHeight, bottom };
+}
 
 /**
  * A stable, reading-first chapter layout. Each source paragraph or poetry line
@@ -284,8 +299,20 @@ const FlowingVerses = memo(function FlowingVerses({
   const textColorStyle = useMemo(() => ({ color: colors.text }), [colors.text]);
   const mutedColorStyle = useMemo(() => ({ color: colors.mutedText }), [colors.mutedText]);
   const accentColorStyle = useMemo(() => ({ color: colors.accent }), [colors.accent]);
-  const noteIconSizeStyle = useMemo(() => ({ fontSize: 13 * fontScale }), [fontScale]);
-  const noteIconHitSlop = useMemo(() => ({ top: 12, bottom: 12, left: 10, right: 10 }), []);
+  const noteIconSizeStyle = useMemo(() => {
+    const fontSize = 13 * fontScale;
+    const lineHeight = 16 * fontScale;
+    const horizontalInset = (NOTE_TOUCH_SIZE - fontSize) / 2;
+    const verticalInset = (NOTE_TOUCH_SIZE - lineHeight) / 2;
+    return {
+      fontSize,
+      lineHeight,
+      paddingHorizontal: horizontalInset,
+      paddingVertical: verticalInset,
+      marginHorizontal: -horizontalInset,
+      marginVertical: -verticalInset,
+    };
+  }, [fontScale]);
 
   // ── Interlinear mode: each verse on its own line with chevron ──────────────
   if (interlinearActive) {
@@ -406,9 +433,10 @@ const FlowingVerses = memo(function FlowingVerses({
               <>
                 {"\u00A0"}
                 <Text
-                  style={[styles.noteIcon, noteIconSizeStyle, accentColorStyle]}
-                  onPress={(e) => onNotePress?.(verseNum, e.nativeEvent.pageY)}
-                  hitSlop={noteIconHitSlop}
+                  style={[styles.noteIcon, styles.noteTouchTarget, noteIconSizeStyle, accentColorStyle]}
+                  onPress={(e) => onNotePress?.(verseNum, noteIconAnchor(e, fontScale))}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Study notes for verse ${verseNum}`}
                 >
                   {INFO_ICON_GLYPH}
                 </Text>
@@ -622,6 +650,11 @@ const styles = StyleSheet.create({
   },
   noteIcon: {
     fontFamily: "material-community",
+  },
+  noteTouchTarget: {
+    // The size style adds a square hit area and cancels its layout spacing.
+    position: "relative",
+    zIndex: 1,
   },
   centeredText: {
     textAlign: "center",

@@ -326,11 +326,11 @@ export default function ReaderScreen({
   );
 
   // Verse note popover handlers — defined here because they depend on setChrome.
-  const handleNotePress = useCallback((verseNum, pageY) => {
+  const handleNotePress = useCallback((verseNum, anchor) => {
     const notes = verseNotesByVerse?.get(verseNum) ?? [];
     if (notes.length === 0) return;
     scrollYAtOpen.current = lastOffset.current;
-    setPopover({ visible: true, notes, anchorY: pageY });
+    setPopover({ visible: true, notes, anchorY: anchor.bottom, anchorTopY: anchor.top });
     // Hide chrome for an immersive reading experience while the note is open.
     // Treated as a tap-hide so only a tap can restore it.
     setChrome(false, { byTap: true });
@@ -749,6 +749,7 @@ export default function ReaderScreen({
         visible={popover.visible}
         notes={popover.notes}
         anchorY={popover.anchorY}
+        anchorTopY={popover.anchorTopY}
         onDismiss={handleDismissPopover}
       />
 

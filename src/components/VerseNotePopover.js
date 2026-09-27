@@ -30,7 +30,7 @@ const GAP = 14;               // gap between anchor point and card edge
 const ABOVE_THRESHOLD = 0.55; // show above if tap is in lower 45% of screen
 const ANIM_MS = 180;
 
-export default function VerseNotePopover({ visible, notes, anchorY, onDismiss }) {
+export default function VerseNotePopover({ visible, notes, anchorY, anchorTopY, onDismiss }) {
   const { colors, mode } = useTheme();
   const { height: screenH } = useWindowDimensions();
 
@@ -54,7 +54,7 @@ export default function VerseNotePopover({ visible, notes, anchorY, onDismiss })
   const showAbove = anchorY != null && anchorY > screenH * ABOVE_THRESHOLD;
   const maxH = screenH * POPOVER_MAX_HEIGHT_FRAC;
   const cardTop = showAbove ? null : (anchorY ?? screenH * 0.3) + GAP;
-  const cardBottom = showAbove ? (screenH - (anchorY ?? screenH * 0.5) + GAP) : null;
+  const cardBottom = showAbove ? (screenH - (anchorTopY ?? anchorY ?? screenH * 0.5) + GAP) : null;
 
   return (
     // pointerEvents="box-none" passes touches through to the reader behind
