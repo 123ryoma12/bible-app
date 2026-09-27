@@ -652,7 +652,7 @@ export default function ReaderScreen({
       style={[styles.safe, { backgroundColor: colors.background }]}
       edges={["left", "right"]}
     >
-      <StatusBar hidden={!chromeVisible && !popover.visible && !interlinearPopover.visible} animated translucent />
+      <StatusBar hidden={!chromeVisible} animated translucent />
       <ScrollView
         ref={scrollRef}
         style={scrollReady ? styles.scrollViewReady : styles.scrollViewHidden}
