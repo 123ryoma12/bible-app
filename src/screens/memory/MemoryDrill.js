@@ -465,7 +465,11 @@ export default function MemoryDrill({ list, startIndex = 0, onExit }) {
 
   return (
     <SafeAreaView
-      style={[styles.safe, { backgroundColor: colors.background }]}
+      style={[
+        styles.safe,
+        Platform.OS === "web" && styles.webSafe,
+        { backgroundColor: colors.background },
+      ]}
       edges={["top", "left", "right"]}
     >
       <View style={[styles.header, { borderBottomColor: colors.border }]}>
@@ -505,7 +509,7 @@ export default function MemoryDrill({ list, startIndex = 0, onExit }) {
         <>
           <ScrollView
             ref={scrollRef}
-            style={styles.versesScroll}
+            style={[styles.versesScroll, Platform.OS === "web" && styles.webVersesScroll]}
             contentContainerStyle={[
               styles.versesWrap,
               // Pad the bottom by the keyboard height so the final lines can be
@@ -720,6 +724,7 @@ const hit = { top: 10, bottom: 10, left: 10, right: 10 };
 
 const styles = StyleSheet.create({
   safe: { flex: 1 },
+  webSafe: { minHeight: 0, overflow: "hidden" },
   header: {
     flexDirection: "row",
     alignItems: "center",
@@ -740,6 +745,7 @@ const styles = StyleSheet.create({
   // KeyboardAvoidingView (which fought the tiny absolute hidden input and could
   // leave it unfocusable → keyboard not opening on long verses).
   versesScroll: { flex: 1 },
+  webVersesScroll: { minHeight: 0, overscrollBehavior: "none" },
   versesWrap: { padding: 20, flexGrow: 1 },
   verseLine: { fontSize: 20, lineHeight: 32 },
   // Words are laid out as wrapping inline-block "chips" so a hidden word can be
