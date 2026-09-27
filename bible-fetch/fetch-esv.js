@@ -25,6 +25,7 @@
 
 const fs = require("fs");
 const path = require("path");
+const { execFileSync } = require("child_process");
 
 const BOOKS = (() => {
   const src = fs.readFileSync(path.join(__dirname, "../src/data/books.js"), "utf8");
@@ -380,6 +381,7 @@ async function main() {
     console.log(`done -> ${path.relative(process.cwd(), outFile)}`);
   }
   console.log(`\nWrote ${done} ESV book(s) to ${path.relative(process.cwd(), OUT_DIR)}`);
+  execFileSync("python3", [path.join(__dirname, "../scripts/split-bible-chapters.py")], { stdio: "inherit" });
 }
 
 main().catch((e) => {

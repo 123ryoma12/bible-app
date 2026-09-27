@@ -4,9 +4,10 @@
 // `available: true`, so all three are selectable in the Settings picker and the
 // Memory version selector.
 //
-// To add another translation later: drop its files under assets/bible/<id>/,
-// import them in bibleData.js (add the map to BIBLE_DATA_BY_VERSION), and add an
-// entry here with `available: true`. If data isn't ready yet, add the entry with
+// To add another translation later: put its chapter files under
+// assets/bible/<id>/<BOOK>/<CHAPTER>.txt, add the id to the split script and
+// rerun it to refresh the static asset map, then add an entry here with
+// `available: true`. If data isn't ready yet, add the entry with
 // `available: false` and the UI will present it as a disabled "coming soon" row.
 //
 // `id` doubles as the on-disk folder name (assets/bible/<id>/) and the value

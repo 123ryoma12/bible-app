@@ -19,11 +19,14 @@ so the app works completely offline.
 ```
 App.js                     screen state + prev/next-across-books logic
 src/data/books.js          canonical ordered list of the 66 books
-src/data/bibleData.js      on-demand Bible book asset loader
+src/data/bibleData.js      on-demand Bible chapter asset loader
 src/data/bookIntroData.js  on-demand book introduction asset loader
 src/screens/               BookListScreen, ChapterListScreen, ReaderScreen
 src/components/ChapterView.js   renders paragraphs/poetry/headings/verses
-assets/bible/{niv,kjv,esv}/*.txt        bundled text per translation and book
+assets/bible/{niv,kjv,esv,interlinear}/BOOK/CHAPTER.txt  bundled chapter text
+scripts/split-bible-chapters.py         converts whole-book imports and refreshes the Metro asset map
+data/study-notes/BOOK/CHAPTER.txt        bundled study notes per chapter
+scripts/split-study-notes.py            generates chapter notes from data/study_notes.json
 data/book-intros/*.txt                 bundled introductions per book
 ```
 

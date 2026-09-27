@@ -26,7 +26,7 @@ import {
 } from "./memoryStore";
 import { BOOKS, nextChapter } from "./books";
 import { getChapterVerses } from "./verses";
-import { loadBibleBook } from "./bibleData";
+import { loadBibleChapter } from "./bibleData";
 import { getHistoryPage } from "./historyStore";
 import {
   getRangeSetting,
@@ -172,8 +172,8 @@ async function resolveContinueReading() {
 async function buildVerseSnippet(bookId, chapterNumber, maxChars = 400) {
   if (!bookId || !chapterNumber) return "";
   try {
-    const bookData = await loadBibleBook(bookId, "niv");
-    const verses = getChapterVerses(bookId, chapterNumber, "niv", bookData);
+    const chapter = await loadBibleChapter(bookId, chapterNumber, "niv");
+    const verses = getChapterVerses(bookId, chapterNumber, "niv", new Map([[Number(chapterNumber), chapter]]));
     if (!verses || verses.length === 0) return "";
     const SUPERSCRIPTS = "⁰¹²³⁴⁵⁶⁷⁸⁹";
     function toSuperscript(n) {

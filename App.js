@@ -34,9 +34,10 @@ import { loadMemoryPrefs } from "./src/data/memoryPrefsStore";
 import { loadPrayerSettings, getActivePrayers } from "./src/data/prayerStore";
 import { PrayerSessionProvider, usePrayerSession } from "./src/data/prayerSession";
 import { loadReadingVersion, getActiveReadingVersion, subscribeReadingVersion } from "./src/data/bibleVersionStore";
-import { retainBibleBooks } from "./src/data/bibleData";
+import { retainBibleChapters } from "./src/data/bibleData";
 import { loadReaderPrefs } from "./src/data/readerPrefsStore";
-import { retainInterlinearBooks } from "./src/data/interlinearData";
+import { retainInterlinearChapters } from "./src/data/interlinearData";
+import { retainStudyNotesChapters } from "./src/data/studyNotesData";
 import { retainBookIntros } from "./src/data/bookIntroData";
 import { preloadAllProgress } from "./src/data/progressStore";
 import { preloadStatsSettings } from "./src/data/statsSettingsStore";
@@ -207,15 +208,16 @@ const AppContent = memo(function AppContent() {
   const [activeTabId, setActiveTabId] = useState(null);
   const readingVersion = useSyncExternalStore(subscribeReadingVersion, getActiveReadingVersion);
 
-  // Release parsed interlinear books once no open reader tab uses them.
+  // Release parsed chapters once no open reader tab uses them.
   useEffect(() => {
-    const bookIds = readerTabs.map((tab) => tab.bookId);
+    const tabs = [...readerTabs];
     // Navigation updates the active book just before it updates its tab record.
-    if (activeTabId) bookIds.push(BOOKS[bookIndex].id);
-    retainInterlinearBooks(bookIds);
-    retainBibleBooks(bookIds, readingVersion);
+    if (activeTabId) tabs.push({ bookId: BOOKS[bookIndex].id, chapterNumber });
+    retainInterlinearChapters(tabs);
+    retainBibleChapters(tabs, readingVersion);
+    retainStudyNotesChapters(tabs);
     retainBookIntros(readerTabs.filter((tab) => tab.chapterNumber === 0).map((tab) => tab.bookId));
-  }, [readerTabs, activeTabId, bookIndex, readingVersion]);
+  }, [readerTabs, activeTabId, bookIndex, chapterNumber, readingVersion]);
 
   // Per-tab scroll offsets: { [tabId]: number }. Populated as the user scrolls
   // within each tab so switching back to a tab restores the exact position.

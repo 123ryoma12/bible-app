@@ -23,7 +23,7 @@ import { useTheme } from "../../theme/ThemeContext";
 import { readingFont, uiFont } from "../../theme/fonts";
 import { appAlert } from "../../utils/appAlert";
 import { BIBLE_VERSIONS, versionAbbr } from "../../data/bibleVersions";
-import { getCachedBibleBook, loadBibleBook, pinBibleBook } from "../../data/bibleData";
+import { getChapter, loadBibleChapter, pinBibleChapter } from "../../data/bibleData";
 
 const SECTIONS = [
   { title: "Old Testament", data: BOOKS.filter((b) => b.testament === "OT") },
@@ -50,27 +50,38 @@ export default function MemoryAdd({ onDone, onCancel }) {
   // user picks (no default) - the flow is: version -> book -> chapter -> verse.
   // The passage text is snapshotted from this version at save time.
   const [version, setVersion] = useState(null);
-  const [bookLoad, setBookLoad] = useState({ key: null, error: false });
-  const bookLoadKey = book && version ? `${version}:${book.id}` : null;
-  const bookReady = !!bookLoadKey && bookLoad.key === bookLoadKey && !bookLoad.error
-    && !!getCachedBibleBook(book.id, version);
+  const [chapterLoad, setChapterLoad] = useState({ key: null, error: false });
+  const [loadAttempt, setLoadAttempt] = useState(0);
+  const rangeEnd = ce ?? cs;
+  const chapterLoadKey = book && version && cs
+    ? `${version}:${book.id}:${cs}-${rangeEnd}` : null;
+  const bookReady = !chapterLoadKey || (chapterLoad.key === chapterLoadKey
+    && !chapterLoad.error && Array.from({ length: rangeEnd - cs + 1 }, (_, i) => cs + i)
+      .every((number) => !!getChapter(book.id, number, version)));
 
   useEffect(() => {
-    if (!bookLoadKey) return undefined;
-    const release = pinBibleBook(book.id, version);
+    if (!chapterLoadKey) return undefined;
+    const numbers = Array.from({ length: rangeEnd - cs + 1 }, (_, i) => cs + i);
+    const releases = numbers.map((number) => pinBibleChapter(book.id, number, version));
     let cancelled = false;
-    loadBibleBook(book.id, version)
+    Promise.all(numbers.map((number) => loadBibleChapter(book.id, number, version)))
       .then((loaded) => {
-        if (!cancelled) setBookLoad({ key: bookLoadKey, error: !loaded });
+        if (!cancelled) setChapterLoad({ key: chapterLoadKey, error: loaded.some((item) => !item) });
       })
       .catch(() => {
-        if (!cancelled) setBookLoad({ key: bookLoadKey, error: true });
+        if (!cancelled) setChapterLoad({ key: chapterLoadKey, error: true });
       });
     return () => {
       cancelled = true;
-      release();
+      releases.forEach((release) => release());
     };
-  }, [bookLoadKey, book?.id, version]);
+  }, [chapterLoadKey, book?.id, version, cs, rangeEnd, loadAttempt]);
+
+  useEffect(() => {
+    if (ce != null && ve == null && bookReady) {
+      setVe(getVerseCount(book.id, ce, version));
+    }
+  }, [ce, ve, bookReady, book?.id, version]);
 
   // Which picker modal is open: null | "cs" | "vs" | "ce" | "ve".
   const [openPicker, setOpenPicker] = useState(null);
@@ -101,6 +112,7 @@ export default function MemoryAdd({ onDone, onCancel }) {
 
   // ---- Cascade setters: setting an earlier field invalidates the later ones.
   function chooseFromChapter(n) {
+    setLoadAttempt((attempt) => attempt + 1);
     setCs(n);
     setVs(null);
     setCe(null);
@@ -116,14 +128,10 @@ export default function MemoryAdd({ onDone, onCancel }) {
     setOpenPicker(null);
   }
   function chooseToChapter(n) {
+    setLoadAttempt((attempt) => attempt + 1);
     setCe(n);
-    // If the end chapter moved, re-clamp the end verse.
-    const min = n === cs ? vs : 1;
-    const max = getVerseCount(book.id, n, version);
-    setVe((prev) => {
-      if (prev == null) return max; // sensible default: end of chapter
-      return Math.min(Math.max(prev, min), max);
-    });
+    // Choose the end verse after the requested chapter is available.
+    setVe(null); // end verse is chosen once this chapter has loaded
     setOpenPicker(null);
   }
   function chooseToVerse(n) {
@@ -315,9 +323,9 @@ export default function MemoryAdd({ onDone, onCancel }) {
         </Text>
         {!bookReady && (
           <Text style={[styles.help, { color: colors.secondaryText }]}>
-            {bookLoad.key === bookLoadKey && bookLoad.error
-              ? "Couldn't load this book. Go back and select it again."
-              : "Loading book…"}
+            {chapterLoad.key === chapterLoadKey && chapterLoad.error
+              ? "Couldn't load this passage. Select the chapter again to retry."
+              : "Loading passage…"}
           </Text>
         )}
 
@@ -326,14 +334,14 @@ export default function MemoryAdd({ onDone, onCancel }) {
           <SelectField
             label="Chapter"
             value={cs}
-            enabled={bookReady}
+            enabled={true}
             onPress={() => setOpenPicker("cs")}
             colors={colors}
           />
           <SelectField
             label="Verse"
             value={vs}
-            enabled={cs != null}
+            enabled={cs != null && bookReady}
             hint={cs == null ? "Pick chapter" : undefined}
             onPress={() => setOpenPicker("vs")}
             colors={colors}
@@ -353,7 +361,7 @@ export default function MemoryAdd({ onDone, onCancel }) {
           <SelectField
             label="Verse"
             value={ve}
-            enabled={ce != null}
+            enabled={ce != null && bookReady}
             hint={ce == null ? "Pick chapter" : undefined}
             onPress={() => setOpenPicker("ve")}
             colors={colors}

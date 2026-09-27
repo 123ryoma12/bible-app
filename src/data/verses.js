@@ -6,18 +6,15 @@
 // in-order list of { chapter, verse, text } for a book, so this module walks
 // the blocks once and flattens them.
 
-import { getCachedBibleBook } from "./bibleData";
+import { getChapter } from "./bibleData";
 import { BOOKS } from "./books";
 
 // Flat, in-order [{ chapter (number), verse (number), text }] for one chapter.
 // `version` is optional and defaults to NIV; unbundled versions fall back to
-// NIV via bibleData. A caller may supply a temporary book that is not cached.
-export function getChapterVerses(bookId, chapterNumber, version = "niv", bookData = null) {
-  const book = bookData ?? getCachedBibleBook(bookId, version);
-  if (!book) return [];
-  const chapter = book.chapters.find(
-    (c) => Number(c.chapter) === Number(chapterNumber)
-  );
+// NIV via bibleData. A caller may supply a map of loaded chapter records.
+export function getChapterVerses(bookId, chapterNumber, version = "niv", chapterData = null) {
+  const chapter = chapterData?.get(Number(chapterNumber))
+    ?? getChapter(bookId, chapterNumber, version);
   if (!chapter || !Array.isArray(chapter.blocks)) return [];
 
   // Some source data splits a single verse across multiple presentation blocks
@@ -82,7 +79,7 @@ export function getVersesInRange(
   chapterEnd,
   verseEnd,
   version = "niv",
-  bookData = null
+  chapterData = null
 ) {
   const cs = Number(chapterStart);
   const vs = Number(verseStart);
@@ -93,7 +90,7 @@ export function getVersesInRange(
 
   const out = [];
   for (let ch = cs; ch <= ce; ch++) {
-    const verses = getChapterVerses(bookId, ch, version, bookData);
+    const verses = getChapterVerses(bookId, ch, version, chapterData);
     for (const v of verses) {
       if (ch === cs && v.verse < vs) continue;
       if (ch === ce && v.verse > ve) continue;

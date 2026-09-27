@@ -19,6 +19,7 @@
 
 const fs = require("fs");
 const path = require("path");
+const { execFileSync } = require("child_process");
 
 // Pull the canonical book list straight from the app so ids/names/counts match.
 const BOOKS = require("../src/data/books.js").BOOKS ||
@@ -184,6 +185,7 @@ async function main() {
     console.log(`done -> ${path.relative(process.cwd(), outFile)}`);
   }
   console.log(`\nWrote ${done} book(s) to ${path.relative(process.cwd(), OUT_DIR)}`);
+  execFileSync("python3", [path.join(__dirname, "../scripts/split-bible-chapters.py")], { stdio: "inherit" });
 }
 
 main().catch((e) => {

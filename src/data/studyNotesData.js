@@ -1,88 +1,69 @@
 // Study notes from the Reformation Study Bible (ESV, 2015).
-// Each book is a separate bundled JSON module, loaded when first selected.
+// Each chapter is a separate bundled text asset, read when opened.
 // The combined data/study_notes.json remains the source for generating assets.
 //
 // getStudyNotes(bookName, chapterNumber) returns all notes for that chapter,
 // sorted by their starting verse number.
 
+import { Asset } from "expo-asset";
+import { File } from "expo-file-system";
+import { Platform } from "react-native";
 import { BOOKS } from "./books";
+import { STUDY_NOTE_CHAPTER_ASSETS } from "./studyNoteChapterAssets";
 
 const BOOK_ID_BY_NAME = Object.fromEntries(BOOKS.map((book) => [book.name, book.id]));
-const LOADERS = {
-  "GEN": () => require("../../data/study-notes/GEN.json"),
-  "EXO": () => require("../../data/study-notes/EXO.json"),
-  "LEV": () => require("../../data/study-notes/LEV.json"),
-  "NUM": () => require("../../data/study-notes/NUM.json"),
-  "DEU": () => require("../../data/study-notes/DEU.json"),
-  "JOS": () => require("../../data/study-notes/JOS.json"),
-  "JDG": () => require("../../data/study-notes/JDG.json"),
-  "RUT": () => require("../../data/study-notes/RUT.json"),
-  "1SA": () => require("../../data/study-notes/1SA.json"),
-  "2SA": () => require("../../data/study-notes/2SA.json"),
-  "1KI": () => require("../../data/study-notes/1KI.json"),
-  "2KI": () => require("../../data/study-notes/2KI.json"),
-  "1CH": () => require("../../data/study-notes/1CH.json"),
-  "2CH": () => require("../../data/study-notes/2CH.json"),
-  "EZR": () => require("../../data/study-notes/EZR.json"),
-  "NEH": () => require("../../data/study-notes/NEH.json"),
-  "EST": () => require("../../data/study-notes/EST.json"),
-  "JOB": () => require("../../data/study-notes/JOB.json"),
-  "PSA": () => require("../../data/study-notes/PSA.json"),
-  "PRO": () => require("../../data/study-notes/PRO.json"),
-  "ECC": () => require("../../data/study-notes/ECC.json"),
-  "SNG": () => require("../../data/study-notes/SNG.json"),
-  "ISA": () => require("../../data/study-notes/ISA.json"),
-  "JER": () => require("../../data/study-notes/JER.json"),
-  "LAM": () => require("../../data/study-notes/LAM.json"),
-  "EZK": () => require("../../data/study-notes/EZK.json"),
-  "DAN": () => require("../../data/study-notes/DAN.json"),
-  "HOS": () => require("../../data/study-notes/HOS.json"),
-  "JOL": () => require("../../data/study-notes/JOL.json"),
-  "AMO": () => require("../../data/study-notes/AMO.json"),
-  "OBA": () => require("../../data/study-notes/OBA.json"),
-  "JON": () => require("../../data/study-notes/JON.json"),
-  "MIC": () => require("../../data/study-notes/MIC.json"),
-  "NAM": () => require("../../data/study-notes/NAM.json"),
-  "HAB": () => require("../../data/study-notes/HAB.json"),
-  "ZEP": () => require("../../data/study-notes/ZEP.json"),
-  "HAG": () => require("../../data/study-notes/HAG.json"),
-  "ZEC": () => require("../../data/study-notes/ZEC.json"),
-  "MAL": () => require("../../data/study-notes/MAL.json"),
-  "MAT": () => require("../../data/study-notes/MAT.json"),
-  "MRK": () => require("../../data/study-notes/MRK.json"),
-  "LUK": () => require("../../data/study-notes/LUK.json"),
-  "JHN": () => require("../../data/study-notes/JHN.json"),
-  "ACT": () => require("../../data/study-notes/ACT.json"),
-  "ROM": () => require("../../data/study-notes/ROM.json"),
-  "1CO": () => require("../../data/study-notes/1CO.json"),
-  "2CO": () => require("../../data/study-notes/2CO.json"),
-  "GAL": () => require("../../data/study-notes/GAL.json"),
-  "EPH": () => require("../../data/study-notes/EPH.json"),
-  "PHP": () => require("../../data/study-notes/PHP.json"),
-  "COL": () => require("../../data/study-notes/COL.json"),
-  "1TH": () => require("../../data/study-notes/1TH.json"),
-  "2TH": () => require("../../data/study-notes/2TH.json"),
-  "1TI": () => require("../../data/study-notes/1TI.json"),
-  "2TI": () => require("../../data/study-notes/2TI.json"),
-  "TIT": () => require("../../data/study-notes/TIT.json"),
-  "PHM": () => require("../../data/study-notes/PHM.json"),
-  "HEB": () => require("../../data/study-notes/HEB.json"),
-  "JAS": () => require("../../data/study-notes/JAS.json"),
-  "1PE": () => require("../../data/study-notes/1PE.json"),
-  "2PE": () => require("../../data/study-notes/2PE.json"),
-  "1JN": () => require("../../data/study-notes/1JN.json"),
-  "2JN": () => require("../../data/study-notes/2JN.json"),
-  "3JN": () => require("../../data/study-notes/3JN.json"),
-  "JUD": () => require("../../data/study-notes/JUD.json"),
-  "REV": () => require("../../data/study-notes/REV.json"),
-};
-const bookCache = new Map();
+const cache = new Map();
+const inFlight = new Map();
+const pins = new Map();
+let retainedKeys = new Set();
 
-function loadBookNotes(bookName) {
-  const bookId = BOOK_ID_BY_NAME[bookName];
-  if (!bookId || !LOADERS[bookId]) return null;
-  if (!bookCache.has(bookId)) bookCache.set(bookId, LOADERS[bookId]());
-  return bookCache.get(bookId);
+const keyFor = (bookId, chapter) => `${bookId}:${Number(chapter)}`;
+
+function prune() {
+  for (const key of cache.keys()) {
+    if (!retainedKeys.has(key) && !pins.has(key)) cache.delete(key);
+  }
+}
+
+export function retainStudyNotesChapters(tabs) {
+  retainedKeys = new Set(tabs.filter((tab) => Number(tab.chapterNumber) > 0)
+    .map((tab) => keyFor(tab.bookId, tab.chapterNumber)));
+  prune();
+}
+
+export function pinStudyNotesChapter(bookId, chapter) {
+  const key = keyFor(bookId, chapter);
+  pins.set(key, (pins.get(key) ?? 0) + 1);
+  return () => {
+    const next = pins.get(key) - 1;
+    if (next > 0) pins.set(key, next);
+    else pins.delete(key);
+    prune();
+  };
+}
+
+export async function loadStudyNotesChapter(bookId, chapter) {
+  const loader = STUDY_NOTE_CHAPTER_ASSETS[bookId]?.[Number(chapter)];
+  if (!loader) return [];
+  const key = keyFor(bookId, chapter);
+  if (cache.has(key)) return cache.get(key);
+  if (inFlight.has(key)) return inFlight.get(key);
+
+  const task = (async () => {
+    const asset = Asset.fromModule(loader());
+    const text = Platform.OS === "web"
+      ? await (await fetch(asset.uri)).text()
+      : await new File((await asset.downloadAsync()).localUri).text();
+    return JSON.parse(text);
+  })();
+  inFlight.set(key, task);
+  try {
+    const notes = await task;
+    if (retainedKeys.has(key) || pins.has(key)) cache.set(key, notes);
+    return notes;
+  } finally {
+    inFlight.delete(key);
+  }
 }
 
 /**
@@ -93,10 +74,8 @@ function loadBookNotes(bookName) {
  * chapter    – number or string, e.g. 3 or "3"
  */
 export function getStudyNotes(bookName, chapter) {
-  const bookNotes = loadBookNotes(bookName);
-  if (!bookNotes) return [];
-  const ch = String(chapter);
-  return bookNotes.filter((n) => n.chapter === ch);
+  const bookId = BOOK_ID_BY_NAME[bookName];
+  return cache.get(keyFor(bookId, chapter)) ?? [];
 }
 
 /**

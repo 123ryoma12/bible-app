@@ -37,6 +37,7 @@
 
 const fs = require("fs");
 const path = require("path");
+const { execFileSync } = require("child_process");
 
 // ── Paths ────────────────────────────────────────────────────────────────────
 
@@ -277,6 +278,7 @@ async function main() {
   }
 
   console.log(`\nWrote ${done} book(s) to ${path.relative(process.cwd(), OUT_DIR)}`);
+  execFileSync("python3", [path.join(__dirname, "../scripts/split-bible-chapters.py")], { stdio: "inherit" });
 }
 
 main().catch((e) => {

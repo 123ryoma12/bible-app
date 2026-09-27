@@ -2,7 +2,7 @@
 // current chapter. Follows the same pattern as SermonSheet.
 //
 // Notes are from the Reformation Study Bible (ESV, 2015), stored in
-// per-book JSON assets generated from data/study_notes.json and looked up by
+// per-chapter text assets generated from data/study_notes.json and looked up by
 // book + chapter.
 
 import React, { useCallback, useRef } from "react";

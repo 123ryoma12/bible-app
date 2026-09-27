@@ -18,13 +18,13 @@ import ReaderTopBar from "../components/ReaderTopBar";
 import SermonSheet from "../components/SermonSheet";
 import BookIntroView, { TocSheet } from "../components/BookIntroView";
 import { loadBookIntro, pinBookIntro } from "../data/bookIntroData";
-import { getCachedBibleBook, getChapter, loadBibleBook, pinBibleBook } from "../data/bibleData";
+import { getChapter, loadBibleChapter, pinBibleChapter } from "../data/bibleData";
 import { incrementReadCount } from "../data/progressStore";
 import { addToHistory } from "../data/historyStore";
 import { useTheme } from "../theme/ThemeContext";
 import { getActiveReadingVersion } from "../data/bibleVersionStore";
-import { getStudyNotesByVerse, getHeadingNote } from "../data/studyNotesData";
-import { getInterlinearChapter, hasInterlinear, loadInterlinearBook } from "../data/interlinearData";
+import { getStudyNotesByVerse, getHeadingNote, loadStudyNotesChapter, pinStudyNotesChapter } from "../data/studyNotesData";
+import { getInterlinearChapter, hasInterlinear, loadInterlinearChapter } from "../data/interlinearData";
 import { getReaderPrefs, setReaderPref } from "../data/readerPrefsStore";
 import VerseNotePopover from "../components/VerseNotePopover";
 import InterlinearWordPopover from "../components/InterlinearWordPopover";
@@ -108,27 +108,27 @@ export default function ReaderScreen({
   // shows the new translation. Unbundled versions fall back to NIV in getChapter.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const version = getActiveReadingVersion();
-  const bookLoadKey = `${version}:${book.id}`;
-  const [bookLoad, setBookLoad] = useState({ key: null, error: false });
-  const bookReady = bookLoad.key === bookLoadKey && !bookLoad.error
-    && !!getCachedBibleBook(book.id, version);
+  const chapterLoadKey = `${version}:${book.id}:${chapterNumber}`;
+  const [chapterLoad, setChapterLoad] = useState({ key: null, error: false });
+  const chapterReady = chapterLoad.key === chapterLoadKey && !chapterLoad.error
+    && !!getChapter(book.id, chapterNumber, version);
 
   useEffect(() => {
     if (isIntro) return undefined;
-    const release = pinBibleBook(book.id, version);
+    const release = pinBibleChapter(book.id, chapterNumber, version);
     let cancelled = false;
-    loadBibleBook(book.id, version)
+    loadBibleChapter(book.id, chapterNumber, version)
       .then((loaded) => {
-        if (!cancelled) setBookLoad({ key: bookLoadKey, error: !loaded });
+        if (!cancelled) setChapterLoad({ key: chapterLoadKey, error: !loaded });
       })
       .catch(() => {
-        if (!cancelled) setBookLoad({ key: bookLoadKey, error: true });
+        if (!cancelled) setChapterLoad({ key: chapterLoadKey, error: true });
       });
     return () => {
       cancelled = true;
       release();
     };
-  }, [book.id, version, bookLoadKey, isIntro]);
+  }, [book.id, version, chapterNumber, chapterLoadKey, isIntro]);
 
   const [introLoad, setIntroLoad] = useState({ bookId: null, info: null, error: false });
   const introInfo = introLoad.bookId === book.id ? introLoad.info : null;
@@ -154,13 +154,13 @@ export default function ReaderScreen({
 
   // Re-derive chapter whenever book, chapter number, or version changes.
   // versionKey triggers re-evaluation after a top-bar version switch.
-  // getChapter() is now O(1) via a cached chapter index map (see bibleData.js).
+  // getChapter() reads the currently retained chapter.
   // chapterNumber is 0 for intro tabs — skip the lookup in that case.
   const chapter = useMemo(
-    () => chapterNumber > 0 && bookReady
+    () => chapterNumber > 0 && chapterReady
       ? getChapter(book.id, chapterNumber, version) : null,
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [book.id, chapterNumber, version, versionKey, bookReady]
+    [book.id, chapterNumber, version, versionKey, chapterReady]
   );
   const scrollRef = useRef(null);
 
@@ -184,48 +184,65 @@ export default function ReaderScreen({
 
   // Heading note — shown as a ⓘ icon next to the chapter number in the heading.
   // Only present for Psalms and a handful of other books with title notes.
-  const headingNote = useMemo(
-    () => getHeadingNote(book.name, chapterNumber),
-    [book.name, chapterNumber]
-  );
-
-  // Inline verse note icons — toggled by the ⓘ button in the top bar.
-  // Initialised from the persisted store so the setting survives app restarts
-  // and tab switches. Written back to the store on every toggle.
+  // Inline verse notes are enabled from the persisted reader preference.
   const [verseNotesActive, setVerseNotesActive] = useState(
     () => getReaderPrefs().verseNotesActive
   );
+  const notesLoadKey = `${book.id}:${chapterNumber}`;
+  const [loadedNotesKey, setLoadedNotesKey] = useState(null);
+  useEffect(() => {
+    if (isIntro || !verseNotesActive) {
+      setLoadedNotesKey(null);
+      return undefined;
+    }
+    const release = pinStudyNotesChapter(book.id, chapterNumber);
+    let cancelled = false;
+    loadStudyNotesChapter(book.id, chapterNumber)
+      .then(() => { if (!cancelled) setLoadedNotesKey(notesLoadKey); })
+      .catch(() => { if (!cancelled) setLoadedNotesKey(null); });
+    return () => {
+      cancelled = true;
+      release();
+    };
+  }, [book.id, chapterNumber, isIntro, notesLoadKey, verseNotesActive]);
+  const notesReady = loadedNotesKey === notesLoadKey;
+  const headingNote = useMemo(
+    () => notesReady ? getHeadingNote(book.name, chapterNumber) : null,
+    [book.name, chapterNumber, notesReady]
+  );
+
+  // Inline verse note icons — toggled by the ⓘ button in the top bar.
   const verseNotesByVerse = useMemo(
-    () => verseNotesActive ? getStudyNotesByVerse(book.name, chapterNumber) : null,
-    [verseNotesActive, book.name, chapterNumber]
+    () => verseNotesActive && notesReady ? getStudyNotesByVerse(book.name, chapterNumber) : null,
+    [verseNotesActive, book.name, chapterNumber, notesReady]
   );
   // Interlinear Greek toggle — mutually exclusive with verse notes.
   // When interlinear is activated, verse notes are forced off (and vice versa).
   const [interlinearActive, setInterlinearActive] = useState(
     () => getReaderPrefs().interlinearActive
   );
-  const [loadedInterlinearBook, setLoadedInterlinearBook] = useState(null);
+  const [loadedInterlinearChapter, setLoadedInterlinearChapter] = useState(null);
   useEffect(() => {
     if (!interlinearActive || isIntro || !hasInterlinear(book.id)) {
-      setLoadedInterlinearBook(null);
+      setLoadedInterlinearChapter(null);
       return undefined;
     }
     let cancelled = false;
-    setLoadedInterlinearBook(null);
-    loadInterlinearBook(book.id)
-      .then((chapters) => {
-        if (!cancelled) setLoadedInterlinearBook(chapters ? book.id : null);
+    setLoadedInterlinearChapter(null);
+    loadInterlinearChapter(book.id, chapterNumber)
+      .then((verses) => {
+        if (!cancelled) setLoadedInterlinearChapter(verses ? `${book.id}:${chapterNumber}` : null);
       })
       .catch(() => {
-        if (!cancelled) setLoadedInterlinearBook(null);
+        if (!cancelled) setLoadedInterlinearChapter(null);
       });
     return () => { cancelled = true; };
-  }, [interlinearActive, isIntro, book.id]);
+  }, [interlinearActive, isIntro, book.id, chapterNumber]);
   const interlinearChapter = useMemo(
-    () => interlinearActive && loadedInterlinearBook === book.id
+    () => interlinearActive && loadedInterlinearChapter === `${book.id}:${chapterNumber}`
       ? getInterlinearChapter(book.id, chapterNumber)
       : null,
-    [interlinearActive, loadedInterlinearBook, book.id, chapterNumber]
+    [interlinearActive, loadedInterlinearChapter, book.id, chapterNumber]
   );
   const handleToggleInterlinear = useCallback(() => {
     setInterlinearActive((o) => {
@@ -664,11 +681,11 @@ export default function ReaderScreen({
               <View style={[styles.chapterHeadingRule, { backgroundColor: colors.border }]} />
             </View>
 
-            {!bookReady && !(bookLoad.key === bookLoadKey && bookLoad.error) ? (
+            {!chapterReady && !(chapterLoad.key === chapterLoadKey && chapterLoad.error) ? (
               <Text style={{ color: colors.secondaryText, textAlign: "center", padding: 24 }}>
                 Loading chapter…
               </Text>
-            ) : bookLoad.error ? (
+            ) : chapterLoad.key === chapterLoadKey && chapterLoad.error ? (
               <Text style={{ color: colors.secondaryText, textAlign: "center", padding: 24 }}>
                 Couldn't load this chapter.
               </Text>
