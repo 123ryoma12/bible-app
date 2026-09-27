@@ -159,7 +159,7 @@ export default function LanguagesScreen({ onChromeVisible }) {
       <Modal
         visible={showFilter}
         transparent
-        animationType="fade"
+        animationType="none"
         onRequestClose={() => setShowFilter(false)}
       >
         <TouchableOpacity
@@ -235,7 +235,7 @@ export default function LanguagesScreen({ onChromeVisible }) {
       <Modal
         visible={showGoal}
         transparent
-        animationType="fade"
+        animationType="none"
         onRequestClose={() => setShowGoal(false)}
       >
         <TouchableOpacity

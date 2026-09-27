@@ -516,7 +516,7 @@ function NumberPickerModal({ visible, title, options, selected, onSelect, onClos
     <Modal
       visible={visible}
       transparent
-      animationType="fade"
+      animationType="none"
       onRequestClose={onClose}
       statusBarTranslucent
       navigationBarTranslucent

@@ -51,7 +51,7 @@ export default function ChoiceModal({ visible, title, message, actions = [], onD
     <Modal
       visible={visible}
       transparent
-      animationType="fade"
+      animationType="none"
       onRequestClose={onDismiss}
     >
       <TouchableOpacity style={styles.backdrop} activeOpacity={1} onPress={onDismiss}>

@@ -707,7 +707,7 @@ function GoalModal({ visible, goalDate, readChapterCount, onClose, onApply }) {
   }, [draft, readChapterCount]);
 
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+    <Modal visible={visible} transparent animationType="none" onRequestClose={onClose}>
       <Pressable style={styles.modalBackdrop} onPress={onClose}>
         <Pressable style={[styles.modalCard, { backgroundColor: colors.surface }]} onPress={(e) => e.stopPropagation()}>
           <Text style={[styles.modalTitle, { color: colors.text }]}>Reading Goal</Text>
@@ -886,7 +886,7 @@ function DateRangeModal({ visible, setting, onClose, onApply }) {
       draft.start <= draft.end);
 
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+    <Modal visible={visible} transparent animationType="none" onRequestClose={onClose}>
       <View style={styles.modalBackdrop}>
         <View style={[styles.modalCard, { backgroundColor: colors.surface }]}>
           <Text style={[styles.modalTitle, { color: colors.text }]}>Date Range</Text>

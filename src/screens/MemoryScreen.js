@@ -257,6 +257,7 @@ export default function MemoryScreen({ drillRequest = null }) {
       <MemoryAdd
         onCancel={() => setView("list")}
         onDone={() => {
+          setTab("not_memorised");
           setView("list");
           refresh();
         }}
@@ -337,7 +338,7 @@ export default function MemoryScreen({ drillRequest = null }) {
       <Modal
         visible={showGoal}
         transparent
-        animationType="fade"
+        animationType="none"
         onRequestClose={() => setShowGoal(false)}
       >
         <TouchableOpacity
@@ -385,7 +386,7 @@ export default function MemoryScreen({ drillRequest = null }) {
       <Modal
         visible={showPriority}
         transparent
-        animationType="fade"
+        animationType="none"
         onRequestClose={() => { setShowPriority(false); setShowAdvanced(false); }}
       >
         <TouchableOpacity

@@ -389,7 +389,7 @@ export default function PrayerScreen() {
       <Modal
         visible={showGoal}
         transparent
-        animationType="fade"
+        animationType="none"
         onRequestClose={() => setShowGoal(false)}
       >
         <TouchableOpacity
