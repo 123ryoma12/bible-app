@@ -71,6 +71,7 @@ export default function MemoryDrill({ list, startIndex = 0, onExit }) {
   // Live keyboard height (0 when hidden). Drives bottom padding on the scroll
   // content so the last lines can be scrolled clear of the keyboard by the user.
   const [keyboardHeight, setKeyboardHeight] = useState(0);
+  const [webInputFocused, setWebInputFocused] = useState(false);
 
   // Position within the ordered list. The active `entry` is derived from it.
   const [position, setPosition] = useState(startIndex);
@@ -149,10 +150,38 @@ export default function MemoryDrill({ list, startIndex = 0, onExit }) {
     return () => clearTimeout(t);
   }, [orderPos, phase]);
 
-  // Track the on-screen keyboard height so we can pad the scroll content and
-  // scroll the active word above the keyboard. Uses the "Will"/"Did" events
-  // appropriate to each platform (iOS emits Will*, Android only Did*).
+  // Track the space covered by the on-screen keyboard. React Native Web's
+  // Keyboard listener is a no-op, so web uses the visible viewport instead.
   useEffect(() => {
+    if (Platform.OS === "web") {
+      const viewport = window.visualViewport;
+      if (!viewport) return;
+      let fullHeight = Math.max(window.innerHeight, viewport.height + viewport.offsetTop);
+      let fullWidth = window.innerWidth;
+      const update = () => {
+        const visibleBottom = viewport.height + viewport.offsetTop;
+        if (window.innerWidth !== fullWidth) {
+          fullWidth = window.innerWidth;
+          fullHeight = Math.max(window.innerHeight, visibleBottom);
+        } else if (document.activeElement !== inputRef.current) {
+          fullHeight = Math.max(fullHeight, window.innerHeight, visibleBottom);
+        }
+        const covered = fullHeight - visibleBottom;
+        setKeyboardHeight(document.activeElement === inputRef.current && covered > 100
+          ? Math.ceil(covered) : 0);
+      };
+      const input = inputRef.current;
+      input?.addEventListener("focus", update);
+      viewport.addEventListener("resize", update);
+      viewport.addEventListener("scroll", update);
+      window.addEventListener("resize", update);
+      return () => {
+        input?.removeEventListener("focus", update);
+        viewport.removeEventListener("resize", update);
+        viewport.removeEventListener("scroll", update);
+        window.removeEventListener("resize", update);
+      };
+    }
     const showEvt = Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
     const hideEvt = Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide";
     const onShow = (e) => setKeyboardHeight(e?.endCoordinates?.height ?? 0);
@@ -514,7 +543,8 @@ export default function MemoryDrill({ list, startIndex = 0, onExit }) {
               styles.versesWrap,
               // Pad the bottom by the keyboard height so the final lines can be
               // scrolled clear of the keyboard (by the user).
-              { paddingBottom: 20 + keyboardHeight },
+              { paddingBottom: 20 + (Platform.OS === "web" && webInputFocused
+                ? Math.max(180, keyboardHeight) : keyboardHeight) },
             ]}
             keyboardShouldPersistTaps="handled"
           >
@@ -611,6 +641,13 @@ export default function MemoryDrill({ list, startIndex = 0, onExit }) {
             ref={inputRef}
             defaultValue=""
             onChangeText={handleType}
+            onFocus={() => { if (Platform.OS === "web") setWebInputFocused(true); }}
+            onBlur={() => {
+              if (Platform.OS === "web") {
+                setWebInputFocused(false);
+                setKeyboardHeight(0);
+              }
+            }}
             autoCapitalize="none"
             autoCorrect={false}
             autoComplete="off"
