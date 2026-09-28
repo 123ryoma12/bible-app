@@ -682,6 +682,7 @@ function GoalModal({ visible, goalDate, readChapterCount, onClose, onApply }) {
     d.setHours(12, 0, 0, 0);
     return d;
   }, [visible]);
+  const canSave = !!draft && draft >= toDateString(minimumDate);
 
   const onPickerChange = (event, selectedDate) => {
     if (Platform.OS !== "ios") setPicking(false);
@@ -786,13 +787,13 @@ function GoalModal({ visible, goalDate, readChapterCount, onClose, onApply }) {
               <Text style={[styles.modalCancel, { color: colors.mutedText }]}>Cancel</Text>
             </TouchableOpacity>
             <TouchableOpacity
-              onPress={() => draft && onApply(draft)}
-              disabled={!draft}
+              onPress={() => canSave && onApply(draft)}
+              disabled={!canSave}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
               style={[styles.modalActionBtn, styles.modalApplyBtn]}
             >
               <Text
-                style={[styles.modalApply, { color: draft ? colors.accent : colors.mutedText }]}
+                style={[styles.modalApply, { color: canSave ? colors.accent : colors.mutedText }]}
               >
                 Save
               </Text>
