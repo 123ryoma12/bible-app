@@ -714,25 +714,37 @@ function GoalModal({ visible, goalDate, readChapterCount, onClose, onApply }) {
 
           <View style={styles.fieldRow}>
             <Text style={[styles.fieldLabel, { color: colors.mutedText }]}>Finish by</Text>
-            <TouchableOpacity
-              style={[
-                styles.fieldBtn,
-                { borderColor: colors.border, backgroundColor: colors.background },
-              ]}
-              onPress={() => setPicking(true)}
-            >
-              <Text style={[styles.fieldValue, { color: draft ? colors.text : colors.mutedText }]}>
-                {draft ? formatDisplayDate(draft) : "Select date"}
-              </Text>
-            </TouchableOpacity>
-            {picking && (
-              <DateTimePicker
-                mode="date"
-                value={parseDate(draft, minimumDate)}
-                onChange={onPickerChange}
-                minimumDate={minimumDate}
-                display={Platform.OS === "ios" ? "inline" : "default"}
+            {Platform.OS === "web" ? (
+              <WebDateInput
+                label="Finish by"
+                value={draft}
+                min={toDateString(minimumDate)}
+                onChange={setDraft}
+                colors={colors}
               />
+            ) : (
+              <>
+                <TouchableOpacity
+                  style={[
+                    styles.fieldBtn,
+                    { borderColor: colors.border, backgroundColor: colors.background },
+                  ]}
+                  onPress={() => setPicking(true)}
+                >
+                  <Text style={[styles.fieldValue, { color: draft ? colors.text : colors.mutedText }]}>
+                    {draft ? formatDisplayDate(draft) : "Select date"}
+                  </Text>
+                </TouchableOpacity>
+                {picking && (
+                  <DateTimePicker
+                    mode="date"
+                    value={parseDate(draft, minimumDate)}
+                    onChange={onPickerChange}
+                    minimumDate={minimumDate}
+                    display={Platform.OS === "ios" ? "inline" : "default"}
+                  />
+                )}
+              </>
             )}
           </View>
 
@@ -808,6 +820,33 @@ function toDateString(d) {
   return `${y}-${m}-${day}`;
 }
 
+// The native date picker has no web implementation. Use the browser's date
+// control so PWA dates stay in the same local YYYY-MM-DD format as native.
+function WebDateInput({ label, value, min, max, onChange, colors }) {
+  return (
+    <input
+      aria-label={label}
+      type="date"
+      value={value || ""}
+      min={min}
+      max={max}
+      onChange={(event) => onChange(event.target.value || null)}
+      style={{
+        width: "100%",
+        boxSizing: "border-box",
+        padding: "10px 12px",
+        borderRadius: 8,
+        border: `1px solid ${colors.border}`,
+        backgroundColor: colors.background,
+        color: colors.text,
+        colorScheme: colors.background === "#ffffff" ? "light" : "dark",
+        fontFamily: uiFont(400),
+        fontSize: 15,
+      }}
+    />
+  );
+}
+
 const MODE_OPTIONS = [
   { key: RANGE_MODES.YEAR, label: "This year (since Jan 1)" },
   { key: RANGE_MODES.SINCE, label: "Since a date" },
@@ -856,22 +895,34 @@ function DateRangeModal({ visible, setting, onClose, onApply }) {
   const DateField = ({ label, field, value }) => (
     <View style={styles.fieldRow}>
       <Text style={[styles.fieldLabel, { color: colors.mutedText }]}>{label}</Text>
-      <TouchableOpacity
-        style={[styles.fieldBtn, { borderColor: colors.border, backgroundColor: colors.background }]}
-        onPress={() => setPicking(field)}
-      >
-        <Text style={[styles.fieldValue, { color: value ? colors.text : colors.mutedText }]}>
-          {value ? formatDisplayDate(value) : "Select date"}
-        </Text>
-      </TouchableOpacity>
-      {picking === field && (
-        <DateTimePicker
-          mode="date"
-          value={parseDate(value)}
-          onChange={onPickerChange(field)}
-          maximumDate={maximumDate}
-          display={Platform.OS === "ios" ? "inline" : "default"}
+      {Platform.OS === "web" ? (
+        <WebDateInput
+          label={label}
+          value={value}
+          max={toDateString(maximumDate)}
+          onChange={(date) => setDraft((d) => ({ ...d, [field]: date }))}
+          colors={colors}
         />
+      ) : (
+        <>
+          <TouchableOpacity
+            style={[styles.fieldBtn, { borderColor: colors.border, backgroundColor: colors.background }]}
+            onPress={() => setPicking(field)}
+          >
+            <Text style={[styles.fieldValue, { color: value ? colors.text : colors.mutedText }]}>
+              {value ? formatDisplayDate(value) : "Select date"}
+            </Text>
+          </TouchableOpacity>
+          {picking === field && (
+            <DateTimePicker
+              mode="date"
+              value={parseDate(value)}
+              onChange={onPickerChange(field)}
+              maximumDate={maximumDate}
+              display={Platform.OS === "ios" ? "inline" : "default"}
+            />
+          )}
+        </>
       )}
     </View>
   );
