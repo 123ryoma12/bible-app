@@ -45,7 +45,6 @@ import {
 import {
   useSermonDownloads,
   downloadSermon,
-  cancelDownload,
   removeDownload,
   formatDownloadSize,
   totalDownloadedBytes,
@@ -214,7 +213,6 @@ export default function SermonSheet({
         return;
       }
       if (state === "downloading") {
-        cancelDownload(sermon.id);
         return;
       }
       // Idle or previously failed — either way, try.
@@ -757,7 +755,7 @@ function SheetTab({ label, count, colors, active, onPress }) {
 // other retries — so the row never needs a second gesture to learn.
 //
 // `remove` is the Downloads tab's version of `downloaded` for completed rows.
-// In-progress and failed rows keep their cancel/retry controls in both views.
+// In-progress rows show status; failed rows keep their retry control.
 const DOWNLOAD_CONTROL = {
   idle: { icon: "tray-arrow-down", label: "Download for offline listening" },
   downloaded: { icon: "check-circle", label: "Downloaded. Tap to remove." },
@@ -780,21 +778,22 @@ function DownloadButton({ state, progress, colors, onPress }) {
 
   return (
     <TouchableOpacity
-      onPress={onPress}
+      onPress={isDownloading ? () => {} : onPress}
+      activeOpacity={isDownloading ? 1 : 0.7}
       style={styles.rowAction}
       hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-      accessibilityRole="button"
+      accessibilityRole={isDownloading ? "text" : "button"}
       accessibilityLabel={
         isDownloading
           ? progress != null
-            ? `Downloading, ${Math.round(progress * 100)} percent. Tap to cancel.`
-            : "Downloading. Tap to cancel."
+            ? `Downloading, ${Math.round(progress * 100)} percent.`
+            : "Downloading."
           : control.label
       }
     >
       {isDownloading ? (
         // A percentage where the server told us the size, a spinner where it
-        // didn't. Either way the same tap cancels.
+        // didn't. Tapping the status leaves the transfer running.
         progress != null ? (
           <Text style={[styles.rowProgress, { color: colors.accent }]}>
             {Math.round(progress * 100)}%
