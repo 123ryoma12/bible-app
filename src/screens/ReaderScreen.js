@@ -359,6 +359,9 @@ export default function ReaderScreen({
   // down). When true, scroll-based reveals (reaching top, reaching end, fast
   // upward fling) are suppressed — only another tap can restore the chrome.
   const hiddenByTap = useRef(false);
+  // Marking a chapter read advances to the next one. Keep an immersive reader
+  // hidden through that transition, including its scroll-to-top event.
+  const keepChromeHiddenOnNextChapter = useRef(false);
 
   const setChrome = useCallback(
     (next, { byTap = false } = {}) => {
@@ -453,8 +456,13 @@ export default function ReaderScreen({
   // the screen persists across chapter changes we reset them explicitly.
   useEffect(() => {
     lastOffset.current = 0;
-    hiddenByTap.current = false;
-    setChrome(true);
+    if (keepChromeHiddenOnNextChapter.current) {
+      keepChromeHiddenOnNextChapter.current = false;
+      hiddenByTap.current = true;
+    } else {
+      hiddenByTap.current = false;
+      setChrome(true);
+    }
     setSermonsOpen(false);
     setPopover({ visible: false, notes: [], anchorY: 0 });
     setInterlinearPopover({ visible: false, word: null, anchorY: 0 });
@@ -633,8 +641,14 @@ export default function ReaderScreen({
     await incrementReadCount(book.id, chapterNumber);
     addToHistory(book.id, chapterNumber);
     // Advance to the next chapter after marking read, when there is one.
-    if (hasNext) onNext();
-  }, [book.id, chapterNumber, hasNext, onNext]);
+    if (hasNext) {
+      if (!chromeVisible) {
+        keepChromeHiddenOnNextChapter.current = true;
+        hiddenByTap.current = true;
+      }
+      onNext();
+    }
+  }, [book.id, chapterNumber, chromeVisible, hasNext, onNext]);
 
   // PanResponder is created once (useRef) so its callbacks would close over
   // stale hasPrev/hasNext/onPrev/onNext values. Previously this was masked by

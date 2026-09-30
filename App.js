@@ -260,11 +260,12 @@ const AppContent = memo(function AppContent() {
     setInitialScrollY(tabScrollPositions.current[tab.id] ?? 0);
   }
 
-  // ── Whenever we leave the reader, switch tabs, or move to another chapter,
-  //    force the chrome back on so it can never get "stuck" hidden.
+  // ── Restore chrome when switching screens or bottom tabs. ReaderScreen
+  //    handles chapter changes, including preserving hidden chrome after
+  //    "Mark as Read" advances to the next chapter.
   useEffect(() => {
     updateChromeVisible(true);
-  }, [activeTab, screen, bookIndex, chapterNumber]);
+  }, [activeTab, screen, updateChromeVisible]);
 
   const [isRestoring, setIsRestoring] = useState(true);
 
