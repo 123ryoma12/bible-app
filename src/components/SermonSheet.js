@@ -97,6 +97,12 @@ export default function SermonSheet({
   const insets = useSafeAreaInsets();
   const downloads = useSermonDownloads();
   const sources = useSermonSources();
+  const pendingDownloads = Object.values(downloads.active)
+    .filter(({ sermon }) => sermon && !downloads.byId[String(sermon.id)]);
+  const downloadItems = [
+    ...pendingDownloads.map(({ sermon }) => sermon).reverse(),
+    ...downloads.entries,
+  ];
 
   // browse | downloads | sources. Browsing is the default because the sheet
   // was opened from a chapter, and that chapter's sermons are the reason for
@@ -318,7 +324,7 @@ export default function SermonSheet({
       );
     }
 
-    if (!downloads.entries.length) {
+    if (!downloadItems.length) {
       return (
         <View style={styles.centred}>
           <MaterialCommunityIcons
@@ -339,8 +345,8 @@ export default function SermonSheet({
 
     return (
       <FlatList
-        data={downloads.entries}
-        keyExtractor={(item) => item.id}
+        data={downloadItems}
+        keyExtractor={(item) => String(item.id)}
         extraData={downloads}
         contentContainerStyle={{ paddingTop: 8, paddingBottom: 12 }}
         renderItem={({ item }) => renderSermonRow(item, { inDownloads: true })}
@@ -479,13 +485,15 @@ export default function SermonSheet({
 
   // The subtitle answers "what am I looking at" for whichever view is showing.
   const downloadedSize = formatDownloadSize(totalDownloadedBytes(downloads.entries));
+  const downloadingCount = pendingDownloads.filter(({ failed }) => !failed).length;
+  const failedCount = pendingDownloads.length - downloadingCount;
   const headerSub =
     view === "downloads"
-      ? downloads.entries.length
+      ? downloadItems.length
         ? [
-            `${downloads.entries.length} ${
-              downloads.entries.length === 1 ? "sermon" : "sermons"
-            }`,
+            downloads.entries.length ? `${downloads.entries.length} downloaded` : null,
+            downloadingCount ? `${downloadingCount} downloading` : null,
+            failedCount ? `${failedCount} failed` : null,
             downloadedSize,
           ]
             .filter(Boolean)
@@ -548,8 +556,8 @@ export default function SermonSheet({
             {/* Hidden where downloading isn't possible (web build). */}
             {DOWNLOADS_SUPPORTED && (
               <SheetTab
-                label="Downloaded"
-                count={downloads.entries.length}
+                label="Downloads"
+                count={downloadItems.length}
                 colors={colors}
                 active={view === "downloads"}
                 onPress={() => setView("downloads")}
@@ -748,9 +756,8 @@ function SheetTab({ label, count, colors, active, onPress }) {
 // has got. Downloaded and failed are both tappable in place — one removes, the
 // other retries — so the row never needs a second gesture to learn.
 //
-// `remove` is the Downloads tab's version of `downloaded`: everything in that
-// list is downloaded, so a check against every row states the obvious. The slot
-// is worth more as the action you actually came there for.
+// `remove` is the Downloads tab's version of `downloaded` for completed rows.
+// In-progress and failed rows keep their cancel/retry controls in both views.
 const DOWNLOAD_CONTROL = {
   idle: { icon: "tray-arrow-down", label: "Download for offline listening" },
   downloaded: { icon: "check-circle", label: "Downloaded. Tap to remove." },

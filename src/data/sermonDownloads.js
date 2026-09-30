@@ -88,7 +88,7 @@ let snapshot = {
   entries: [],
   /** id -> entry, for O(1) lookups from a list row. */
   byId: {},
-  /** id -> { progress: 0..1 | null, failed: boolean } for anything in flight. */
+  /** id -> { sermon, progress: 0..1 | null, failed: boolean } for pending attempts. */
   active: {},
 };
 
@@ -246,7 +246,7 @@ export async function downloadSermon(sermon) {
 
   const controller = new AbortController();
   controllers.set(id, controller);
-  publishActive(id, { progress: null, failed: false });
+  publishActive(id, { sermon, progress: null, failed: false });
 
   try {
     const url = await fetchAudioUrl(sermon, { signal: controller.signal });
