@@ -1,0 +1,696 @@
+import React, { useEffect, useState } from "react";
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  StyleSheet,
+  SectionList,
+  FlatList,
+  ScrollView,
+  Modal,
+} from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
+import { MaterialCommunityIcons } from "@expo/vector-icons";
+import { BOOKS } from "../../data/books";
+import {
+  getVersesInRange,
+  formatReference,
+  getChapterCount,
+  getVerseCount,
+} from "../../data/verses";
+import { addMemory } from "../../data/memoryStore";
+import { useTheme } from "../../theme/ThemeContext";
+import { readingFont, uiFont } from "../../theme/fonts";
+import { appAlert } from "../../utils/appAlert";
+import { BIBLE_VERSIONS, versionAbbr } from "../../data/bibleVersions";
+import { getChapter, loadBibleChapter, pinBibleChapter } from "../../data/bibleData";
+
+const SECTIONS = [
+  { title: "Old Testament", data: BOOKS.filter((b) => b.testament === "OT") },
+  { title: "New Testament", data: BOOKS.filter((b) => b.testament === "NT") },
+];
+
+// Two-step add flow: pick a book, then enter a consecutive verse range within
+// that book (may cross chapters, never books). Validates against the bundled
+// text before saving via memoryStore.addMemory.
+export default function MemoryAdd({ onDone, onCancel }) {
+  const { colors, readingFontKey } = useTheme();
+  const [book, setBook] = useState(null);
+
+  // Cascading selection. Each is null until chosen; a later field cannot be set
+  // until the ones it depends on are, and choosing an earlier field resets the
+  // later ones so an invalid combination can never exist.
+  const [cs, setCs] = useState(null); // from chapter
+  const [vs, setVs] = useState(null); // from verse
+  const [ce, setCe] = useState(null); // to chapter
+  const [ve, setVe] = useState(null); // to verse
+  const [saving, setSaving] = useState(false);
+
+  // Translation this memory set will be stored in. This is the FIRST thing the
+  // user picks (no default) - the flow is: version -> book -> chapter -> verse.
+  // The passage text is snapshotted from this version at save time.
+  const [version, setVersion] = useState(null);
+  const [chapterLoad, setChapterLoad] = useState({ key: null, error: false });
+  const [loadAttempt, setLoadAttempt] = useState(0);
+  const rangeEnd = ce ?? cs;
+  const chapterLoadKey = book && version && cs
+    ? `${version}:${book.id}:${cs}-${rangeEnd}` : null;
+  const bookReady = !chapterLoadKey || (chapterLoad.key === chapterLoadKey
+    && !chapterLoad.error && Array.from({ length: rangeEnd - cs + 1 }, (_, i) => cs + i)
+      .every((number) => !!getChapter(book.id, number, version)));
+
+  useEffect(() => {
+    if (!chapterLoadKey) return undefined;
+    const numbers = Array.from({ length: rangeEnd - cs + 1 }, (_, i) => cs + i);
+    const releases = numbers.map((number) => pinBibleChapter(book.id, number, version));
+    let cancelled = false;
+    Promise.all(numbers.map((number) => loadBibleChapter(book.id, number, version)))
+      .then((loaded) => {
+        if (!cancelled) setChapterLoad({ key: chapterLoadKey, error: loaded.some((item) => !item) });
+      })
+      .catch(() => {
+        if (!cancelled) setChapterLoad({ key: chapterLoadKey, error: true });
+      });
+    return () => {
+      cancelled = true;
+      releases.forEach((release) => release());
+    };
+  }, [chapterLoadKey, book?.id, version, cs, rangeEnd, loadAttempt]);
+
+  useEffect(() => {
+    if (ce != null && ve == null && bookReady) {
+      setVe(getVerseCount(book.id, ce, version));
+    }
+  }, [ce, ve, bookReady, book?.id, version]);
+
+  // Which picker modal is open: null | "cs" | "vs" | "ce" | "ve".
+  const [openPicker, setOpenPicker] = useState(null);
+
+  const chapterCount = book ? getChapterCount(book.id) : 0;
+
+  // ---- Options for each field, derived so only valid numbers are ever shown.
+  const fromChapterOptions = range(1, chapterCount);
+  const fromVerseOptions = cs && bookReady ? range(1, getVerseCount(book.id, cs, version)) : [];
+  // "To chapter" can only be >= the from chapter.
+  const toChapterOptions = cs ? range(cs, chapterCount) : [];
+  // "To verse": within the chosen end chapter, but if the end chapter equals the
+  // start chapter it must not precede the start verse.
+  const toVerseMax = ce && bookReady ? getVerseCount(book.id, ce, version) : 0;
+  const toVerseMin = ce && cs && ce === cs && vs ? vs : 1;
+  const toVerseOptions = ce ? range(toVerseMin, toVerseMax) : [];
+
+  const rangeComplete = book && cs != null && vs != null && ce != null && ve != null;
+  const rangeValid =
+    bookReady && rangeComplete && getVersesInRange(book.id, cs, vs, ce, ve, version).length > 0;
+
+  const previewLabel = rangeValid ? formatReference(book.id, cs, vs, ce, ve) : null;
+  // The actual verse text for the chosen range (in the selected translation),
+  // so the user can confirm the passage before adding it.
+  const previewVerses = rangeValid
+    ? getVersesInRange(book.id, cs, vs, ce, ve, version)
+    : [];
+
+  // ---- Cascade setters: setting an earlier field invalidates the later ones.
+  function chooseFromChapter(n) {
+    setLoadAttempt((attempt) => attempt + 1);
+    setCs(n);
+    setVs(null);
+    setCe(null);
+    setVe(null);
+    setOpenPicker(null);
+  }
+  function chooseFromVerse(n) {
+    setVs(n);
+    // Default the "To" to the same single verse so one-verse adds are instant,
+    // while still letting the user widen the range.
+    setCe(cs);
+    setVe(n);
+    setOpenPicker(null);
+  }
+  function chooseToChapter(n) {
+    setLoadAttempt((attempt) => attempt + 1);
+    setCe(n);
+    // Choose the end verse after the requested chapter is available.
+    setVe(null); // end verse is chosen once this chapter has loaded
+    setOpenPicker(null);
+  }
+  function chooseToVerse(n) {
+    setVe(n);
+    setOpenPicker(null);
+  }
+
+  function pickBook(b) {
+    setBook(b);
+    setCs(null);
+    setVs(null);
+    setCe(null);
+    setVe(null);
+  }
+
+  // Choosing (or changing) the version resets the whole passage selection so a
+  // set can never mix a version with a range picked under a different one.
+  function pickVersion(id) {
+    setVersion(id);
+    setBook(null);
+    setCs(null);
+    setVs(null);
+    setCe(null);
+    setVe(null);
+  }
+
+  async function handleSave() {
+    if (!rangeValid || saving) return;
+    setSaving(true);
+    try {
+      await addMemory({
+        bookId: book.id,
+        chapterStart: cs,
+        verseStart: vs,
+        chapterEnd: ce,
+        verseEnd: ve,
+        version,
+      });
+      onDone();
+    } catch (e) {
+      appAlert("Couldn't add", e.message || "Invalid verse range.");
+      setSaving(false);
+    }
+  }
+
+  // Step 1: choose a version. No default - the user must pick one before the
+  // book/chapter/verse steps become available.
+  if (!version) {
+    const available = BIBLE_VERSIONS.filter((v) => v.available);
+    return (
+      <SafeAreaView
+        style={[styles.safe, { backgroundColor: colors.background }]}
+        edges={["top", "left", "right"]}
+      >
+        <View style={[styles.header, { borderBottomColor: colors.border }]}>
+          <TouchableOpacity
+            style={styles.backBtn}
+            onPress={onCancel}
+            hitSlop={hit}
+            accessibilityRole="button"
+            accessibilityLabel="Cancel"
+          >
+            <MaterialCommunityIcons name="chevron-left" size={26} color={colors.accent} />
+          </TouchableOpacity>
+          <Text style={[styles.title, { color: colors.text }]}>Pick a version</Text>
+          <View style={styles.headerSpacer} />
+        </View>
+        <View style={styles.form}>
+          <Text style={[styles.help, { color: colors.secondaryText }]}>
+            Choose the translation to memorise this passage in. You can pick a
+            different version each time you add a verse.
+          </Text>
+          {available.map((v) => (
+            <TouchableOpacity
+              key={v.id}
+              style={[styles.versionListRow, { borderColor: colors.border }]}
+              onPress={() => pickVersion(v.id)}
+              accessibilityRole="button"
+              accessibilityLabel={v.name}
+            >
+              <Text style={[styles.versionListAbbr, { color: colors.accent }]}>
+                {v.abbr}
+              </Text>
+              <Text
+                style={[styles.versionListName, { color: colors.text }]}
+                numberOfLines={1}
+              >
+                {v.name}
+              </Text>
+              <Text style={[styles.versionListChevron, { color: colors.mutedText }]}>
+                {"\u203A"}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  // Step 2: pick a book (version already chosen).
+  if (!book) {
+    return (
+      <SafeAreaView
+        style={[styles.safe, { backgroundColor: colors.background }]}
+        edges={["top", "left", "right"]}
+      >
+        <View style={[styles.header, { borderBottomColor: colors.border }]}>
+          <TouchableOpacity
+            style={styles.backBtn}
+            onPress={() => pickVersion(null)}
+            hitSlop={hit}
+            accessibilityRole="button"
+            accessibilityLabel="Back to version picker"
+          >
+            <MaterialCommunityIcons name="chevron-left" size={26} color={colors.accent} />
+          </TouchableOpacity>
+          <Text style={[styles.title, { color: colors.text }]}>
+            Pick a book · {versionAbbr(version)}
+          </Text>
+          <View style={styles.headerSpacer} />
+        </View>
+        <SectionList
+          sections={SECTIONS}
+          keyExtractor={(item) => item.id}
+          renderSectionHeader={({ section }) => (
+            <Text
+              style={[
+                styles.sectionHeader,
+                { color: colors.accent, backgroundColor: colors.background },
+              ]}
+            >
+              {section.title}
+            </Text>
+          )}
+          renderItem={({ item }) => (
+            <TouchableOpacity
+              style={[styles.row, { borderBottomColor: colors.border }]}
+              onPress={() => pickBook(item)}
+            >
+              <Text
+                style={[styles.rowText, { color: colors.text }]}
+                numberOfLines={1}
+                ellipsizeMode="tail"
+              >
+                {item.name}
+              </Text>
+              <Text style={[styles.rowMeta, { color: colors.mutedText }]}>
+                {item.chapterCount} ch
+              </Text>
+            </TouchableOpacity>
+          )}
+          stickySectionHeadersEnabled={false}
+          contentContainerStyle={{ paddingBottom: 24 }}
+        />
+      </SafeAreaView>
+    );
+  }
+
+  return (
+    <SafeAreaView
+      style={[styles.safe, { backgroundColor: colors.background }]}
+      edges={["top", "left", "right"]}
+    >
+      <View style={[styles.header, { borderBottomColor: colors.border }]}>
+        <TouchableOpacity
+          style={styles.backBtn}
+          onPress={() => pickBook(null)}
+          hitSlop={hit}
+          accessibilityRole="button"
+          accessibilityLabel="Back to books"
+        >
+          <MaterialCommunityIcons name="chevron-left" size={26} color={colors.accent} />
+        </TouchableOpacity>
+        <Text
+          style={[styles.title, { color: colors.text }]}
+          numberOfLines={1}
+          adjustsFontSizeToFit
+          minimumFontScale={0.7}
+        >
+          {book.name}
+        </Text>
+        <View style={styles.headerSpacer} />
+      </View>
+
+      <View style={styles.form}>
+        <Text style={[styles.help, { color: colors.secondaryText }]}>
+          Choose where the passage starts, then where it ends. Only valid chapters
+          and verses for {book.name} are offered.
+        </Text>
+        {!bookReady && (
+          <Text style={[styles.help, { color: colors.secondaryText }]}>
+            {chapterLoad.key === chapterLoadKey && chapterLoad.error
+              ? "Couldn't load this passage. Select the chapter again to retry."
+              : "Loading passage…"}
+          </Text>
+        )}
+
+        <Text style={[styles.fieldLabel, { color: colors.text }]}>From</Text>
+        <View style={styles.rangeRow}>
+          <SelectField
+            label="Chapter"
+            value={cs}
+            enabled={true}
+            onPress={() => setOpenPicker("cs")}
+            colors={colors}
+          />
+          <SelectField
+            label="Verse"
+            value={vs}
+            enabled={cs != null && bookReady}
+            hint={cs == null ? "Pick chapter" : undefined}
+            onPress={() => setOpenPicker("vs")}
+            colors={colors}
+          />
+        </View>
+
+        <Text style={[styles.fieldLabel, { color: colors.text }]}>To</Text>
+        <View style={styles.rangeRow}>
+          <SelectField
+            label="Chapter"
+            value={ce}
+            enabled={vs != null}
+            hint={vs == null ? "Pick start verse" : undefined}
+            onPress={() => setOpenPicker("ce")}
+            colors={colors}
+          />
+          <SelectField
+            label="Verse"
+            value={ve}
+            enabled={ce != null && bookReady}
+            hint={ce == null ? "Pick chapter" : undefined}
+            onPress={() => setOpenPicker("ve")}
+            colors={colors}
+          />
+        </View>
+
+        <Text style={[styles.preview, { color: colors.mutedText }]}>
+          {previewLabel
+            ? `Adding: ${previewLabel} · ${versionAbbr(version)}`
+            : "Select a start and end verse"}
+        </Text>
+
+        {previewVerses.length > 0 && (
+          <ScrollView
+            style={[styles.previewCard, { backgroundColor: colors.surface }]}
+            contentContainerStyle={styles.previewCardContent}
+          >
+            {previewVerses.map((v, i) => (
+              <Text
+                key={`${v.chapter}:${v.verse}:${i}`}
+                style={[
+                  styles.previewVerse,
+                  { color: colors.surfaceText, fontFamily: readingFont(readingFontKey) },
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.previewVerseNum,
+                    { color: colors.accent, fontFamily: readingFont(readingFontKey, "semiBold") },
+                  ]}
+                >
+                  {v.chapter}:{v.verse}{" "}
+                </Text>
+                {v.text}
+              </Text>
+            ))}
+          </ScrollView>
+        )}
+
+        <TouchableOpacity
+          disabled={!rangeValid || saving}
+          onPress={handleSave}
+          style={[
+            styles.saveBtn,
+            {
+              backgroundColor: rangeValid ? colors.accent : colors.disabledBg,
+              borderColor: rangeValid ? colors.accentBorder : colors.border,
+            },
+          ]}
+        >
+          <Text
+            style={[
+              styles.saveText,
+              { color: rangeValid ? colors.accentContrast : colors.disabledText },
+            ]}
+          >
+            {saving ? "Adding…" : "Add to Memory"}
+          </Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* Cascading number pickers - each only offers valid values. */}
+      <NumberPickerModal
+        visible={openPicker === "cs"}
+        title="From chapter"
+        options={fromChapterOptions}
+        selected={cs}
+        onSelect={chooseFromChapter}
+        onClose={() => setOpenPicker(null)}
+        colors={colors}
+      />
+      <NumberPickerModal
+        visible={openPicker === "vs"}
+        title={`Chapter ${cs} · from verse`}
+        options={fromVerseOptions}
+        selected={vs}
+        onSelect={chooseFromVerse}
+        onClose={() => setOpenPicker(null)}
+        colors={colors}
+      />
+      <NumberPickerModal
+        visible={openPicker === "ce"}
+        title="To chapter"
+        options={toChapterOptions}
+        selected={ce}
+        onSelect={chooseToChapter}
+        onClose={() => setOpenPicker(null)}
+        colors={colors}
+      />
+      <NumberPickerModal
+        visible={openPicker === "ve"}
+        title={`Chapter ${ce} · to verse`}
+        options={toVerseOptions}
+        selected={ve}
+        onSelect={chooseToVerse}
+        onClose={() => setOpenPicker(null)}
+        colors={colors}
+      />
+    </SafeAreaView>
+  );
+}
+
+// Inclusive integer range [lo..hi]; empty when hi < lo or inputs invalid.
+function range(lo, hi) {
+  if (!Number.isFinite(lo) || !Number.isFinite(hi) || hi < lo) return [];
+  const out = [];
+  for (let i = lo; i <= hi; i++) out.push(i);
+  return out;
+}
+
+// A tappable field that shows the chosen number (or a placeholder/hint) and
+// visually communicates when it's disabled because a prerequisite isn't set.
+function SelectField({ label, value, enabled, hint, onPress, colors }) {
+  return (
+    <View style={styles.selectField}>
+      <Text style={[styles.numLabel, { color: colors.secondaryText }]}>{label}</Text>
+      <TouchableOpacity
+        onPress={enabled ? onPress : undefined}
+        disabled={!enabled}
+        activeOpacity={0.7}
+        style={[
+          styles.selectBox,
+          {
+            borderColor: value != null ? colors.accent : colors.border,
+            backgroundColor: enabled ? colors.surface : colors.disabledBg,
+          },
+        ]}
+      >
+        <Text
+          style={[
+            styles.selectValue,
+            {
+              color: !enabled
+                ? colors.disabledText
+                : value != null
+                ? colors.text
+                : colors.mutedText,
+            },
+          ]}
+          numberOfLines={1}
+        >
+          {value != null ? String(value) : enabled ? "Select" : hint || "—"}
+        </Text>
+      </TouchableOpacity>
+    </View>
+  );
+}
+
+// Modal grid of valid numbers. Large chapters/verses (e.g. Psalm 119) scroll.
+function NumberPickerModal({ visible, title, options, selected, onSelect, onClose, colors }) {
+  return (
+    <Modal
+      visible={visible}
+      transparent
+      animationType="none"
+      onRequestClose={onClose}
+      statusBarTranslucent
+      navigationBarTranslucent
+    >
+      <TouchableOpacity style={styles.backdrop} activeOpacity={1} onPress={onClose}>
+        <TouchableOpacity
+          activeOpacity={1}
+          style={[styles.sheet, { backgroundColor: colors.background }]}
+        >
+          <View style={[styles.sheetHeader, { borderBottomColor: colors.border }]}>
+            <Text style={[styles.sheetTitle, { color: colors.text }]} numberOfLines={1}>
+              {title}
+            </Text>
+            <TouchableOpacity onPress={onClose} hitSlop={hit}>
+              <Text style={[styles.sheetClose, { color: colors.accent }]}>Close</Text>
+            </TouchableOpacity>
+          </View>
+          <FlatList
+            data={options}
+            keyExtractor={(n) => String(n)}
+            numColumns={5}
+            key="grid-5"
+            contentContainerStyle={styles.pickerGrid}
+            renderItem={({ item }) => {
+              const isSelected = item === selected;
+              return (
+                <TouchableOpacity
+                  style={[
+                    styles.pickerCell,
+                    {
+                      backgroundColor: isSelected ? colors.accent : colors.surface,
+                      borderColor: isSelected ? colors.accentBorder : colors.border,
+                    },
+                  ]}
+                  onPress={() => onSelect(item)}
+                >
+                  <Text
+                    style={[
+                      styles.pickerCellText,
+                      { color: isSelected ? colors.accentContrast : colors.text },
+                    ]}
+                  >
+                    {item}
+                  </Text>
+                </TouchableOpacity>
+              );
+            }}
+          />
+        </TouchableOpacity>
+      </TouchableOpacity>
+    </Modal>
+  );
+}
+
+const hit = { top: 10, bottom: 10, left: 10, right: 10 };
+
+const styles = StyleSheet.create({
+  safe: { flex: 1 },
+  header: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 8,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  backBtn: { width: 40 },
+  headerSpacer: { width: 40 },
+  title: { flex: 1, fontSize: 20, fontFamily: uiFont(700), textAlign: "center" },
+  sectionHeader: {
+    fontSize: 13,
+    fontFamily: uiFont(700),
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+    paddingHorizontal: 20,
+    paddingTop: 16,
+    paddingBottom: 6,
+  },
+  row: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingHorizontal: 20,
+    paddingVertical: 14,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  rowText: { flex: 1, fontSize: 17, marginRight: 12, fontFamily: uiFont(400) },
+  rowMeta: { fontSize: 13, flexShrink: 0, fontFamily: uiFont(400) },
+  form: { paddingHorizontal: 20, paddingTop: 16 },
+  help: { fontSize: 14, lineHeight: 20, marginBottom: 20, fontFamily: uiFont(400) },
+  fieldLabel: { fontSize: 15, fontFamily: uiFont(700), marginBottom: 8, marginTop: 8 },
+  rangeRow: { flexDirection: "row", gap: 12 },
+  // Full-width version rows for the first step of the add flow.
+  versionListRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    borderWidth: 1.5,
+    borderRadius: 12,
+    paddingVertical: 16,
+    paddingHorizontal: 16,
+    marginBottom: 12,
+  },
+  versionListAbbr: { fontSize: 16, fontFamily: uiFont(700), width: 44 },
+  versionListName: { flex: 1, fontSize: 16, fontFamily: uiFont(400) },
+  versionListChevron: { fontSize: 20, fontFamily: uiFont(400) },
+  numLabel: { fontSize: 12, marginBottom: 4, fontFamily: uiFont(500) },
+  selectField: { flex: 1 },
+  selectBox: {
+    borderWidth: 1.5,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    minHeight: 46,
+    justifyContent: "center",
+  },
+  selectValue: { fontSize: 18, fontFamily: uiFont(600) },
+  preview: { fontSize: 14, marginTop: 20, marginBottom: 8, fontFamily: uiFont(400) },
+  previewCard: {
+    borderRadius: 10,
+    maxHeight: 220,
+    marginBottom: 12,
+  },
+  previewCardContent: {
+    padding: 14,
+  },
+  previewVerse: {
+    fontSize: 15,
+    lineHeight: 23,
+    marginBottom: 6,
+  },
+  previewVerseNum: { fontSize: 11 },
+  saveBtn: {
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingVertical: 14,
+    alignItems: "center",
+    marginTop: 4,
+  },
+  saveText: { fontSize: 16, fontFamily: uiFont(700) },
+
+  // ---- Number picker modal
+  backdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    justifyContent: "flex-end",
+  },
+  sheet: {
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+    maxHeight: "70%",
+    paddingBottom: 12,
+  },
+  sheetHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 20,
+    paddingVertical: 14,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  sheetTitle: { flex: 1, fontSize: 17, fontFamily: uiFont(700), marginRight: 12 },
+  sheetClose: { fontSize: 16, fontFamily: uiFont(600) },
+  pickerGrid: { padding: 12 },
+  pickerCell: {
+    flex: 1,
+    margin: 5,
+    maxWidth: "18%",
+    aspectRatio: 1,
+    borderWidth: 1,
+    borderRadius: 10,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  pickerCellText: { fontSize: 16, fontFamily: uiFont(600) },
+});

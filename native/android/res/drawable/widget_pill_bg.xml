@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Subtle rounded "pill" used behind small status labels
+     (e.g. "3 today", "5 min left"). -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="#2A2015" />
+    <corners android:radius="10dp" />
+</shape>

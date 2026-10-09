@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Preview shown in the system widget picker, and the initial layout the host
+  displays before Glance has composed the real content.
+
+  Glance builds the actual UI at runtime, so this only needs to establish the
+  right shape and colour — matching the dark card the widgets render so the
+  picker entry doesn't flash a bare light rectangle.
+-->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/widget_card_bg"
+    android:padding="14dp">
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center_vertical|start"
+        android:text="@string/app_name"
+        android:textColor="#D9A441"
+        android:textSize="13sp"
+        android:textStyle="bold" />
+
+</FrameLayout>

@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="%LANG_ISO_CODE%">
+  <head>
+    <meta charset="utf-8" />
+    <meta httpEquiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no, viewport-fit=cover" />
+    <meta name="theme-color" content="#121212" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <script>
+      if (/iPad|iPhone|iPod/.test(navigator.userAgent) ||
+          (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1)) {
+        document.documentElement.classList.add("is-ios");
+      }
+      // Match the status area to the saved theme before the app starts painting.
+      try {
+        if (JSON.parse(localStorage.getItem("themeMode")) === "light") {
+          document.querySelector('meta[name="theme-color"]').content = "#ffffff";
+          document.documentElement.style.setProperty("--app-background", "#ffffff");
+        }
+      } catch (_) {
+        // Storage can be unavailable; the app's default theme is dark.
+      }
+    </script>
+    <title>%WEB_TITLE%</title>
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/icon-192.png" />
+    <!-- The `react-native-web` recommended style reset: https://necolas.github.io/react-native-web/docs/setup/#root-element -->
+    <style id="expo-reset">
+      /* These styles make the body full-height */
+      html,
+      body {
+        height: 100%;
+        background-color: var(--app-background, #121212);
+      }
+      /* These styles disable body scrolling if you are using <ScrollView> */
+      body {
+        overflow: hidden;
+      }
+      /* Keep a real, persistent tint at the top of every iOS PWA screen. */
+      #status-bar-tint {
+        display: none;
+      }
+      @media (display-mode: standalone) and (orientation: portrait) {
+        .is-ios #status-bar-tint {
+          display: block;
+          position: fixed;
+          top: 0;
+          left: 0;
+          right: 0;
+          height: var(--status-tint-h, 16px);
+          background-color: var(--app-background, #121212);
+          transition: background-color 200ms ease-in-out;
+          pointer-events: none;
+          z-index: 2000;
+        }
+        .is-ios #root {
+          height: calc(100% - var(--status-tint-h, 16px));
+          margin-top: var(--status-tint-h, 16px);
+        }
+      }
+      /* These styles make the root element full-height */
+      #root {
+        display: flex;
+        height: 100%;
+        flex: 1;
+      }
+    </style>
+    <script>
+      window.addEventListener("load", function () {
+        // Expo's development server has no generated sw.js. The exported site
+        // has a hashed bundle under /_expo/static/js/web/.
+        if (!('serviceWorker' in navigator) ||
+            !document.querySelector('script[src*="/_expo/static/js/web/"]')) return;
+        navigator.serviceWorker.register('/sw.js').catch(function (error) {
+          console.warn('Offline support could not start:', error);
+        });
+      });
+    </script>
+  </head>
+
+  <body>
+    <div id="status-bar-tint" aria-hidden="true"></div>
+    <!-- Use static rendering with Expo Router to support running without JavaScript. -->
+    <noscript>
+      You need to enable JavaScript to run this app.
+    </noscript>
+    <!-- The root element for your Expo app. -->
+    <div id="root"></div>
+  </body>
+</html>
