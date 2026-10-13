@@ -56,7 +56,7 @@ export default function InterlinearWordPopover({ visible, word, anchorY, onDismi
   const hebrewStyle = isHebrew ? {
     fontFamily: Platform.select({ ios: "Times New Roman", default: "serif" }),
     writingDirection: "rtl",
-    textAlign: "right",
+    textAlign: "left",
   } : null;
 
   const showAbove = anchorY != null && anchorY > screenH * ABOVE_THRESHOLD;
