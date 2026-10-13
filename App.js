@@ -171,6 +171,9 @@ const AppContent = memo(function AppContent() {
   // resumed on launch; any in-app navigation to a chapter starts at the top and
   // resets this to 0.
   const [initialScrollY, setInitialScrollY] = useState(0);
+  // One-shot verse destinations; consumed after layout, never reapplied when
+  // returning to a tab whose scroll position the user has since changed.
+  const [referenceTarget, setReferenceTarget] = useState(null);
 
   // chromeVisible and bottomChromeHeight change constantly during scrolling.
   // Keeping them as state causes the entire AppContent tree (all 4 screens)
@@ -463,6 +466,27 @@ const AppContent = memo(function AppContent() {
     const activeIdx = readerTabs.findIndex((t) => t.id === id);
     setReaderTabs(readerTabs, activeIdx);
   }, [readerTabs, activeTabId]);
+
+  const handleOpenReference = useCallback(({ bookId, chapterNumber, verseNumber }) => {
+    const idx = BOOKS.findIndex((entry) => entry.id === bookId);
+    if (idx < 0 || chapterNumber < 1 || chapterNumber > BOOKS[idx].chapterCount) return;
+    const tab = { id: newTabId(), bookId, chapterNumber };
+    tabScrollPositions.current[tab.id] = 0;
+    setReferenceTarget(verseNumber ? { tabId: tab.id, bookId, chapterNumber, verseNumber } : null);
+    setBookIndex(idx);
+    setChapterNumber(chapterNumber);
+    setInitialScrollY(0);
+    tabBarScrollToActive.current = true;
+    updateChromeVisible(true);
+    applyTabs([...readerTabs, tab], tab.id);
+    setScreen("reader");
+    setActiveTab("bible");
+    setLastPosition(bookId, chapterNumber);
+  }, [readerTabs, updateChromeVisible]);
+
+  const handleReferenceReached = useCallback((tabId) => {
+    setReferenceTarget((target) => target?.tabId === tabId ? null : target);
+  }, []);
 
   const handleScrollPositionChange = useCallback((scrollY) => {
     if (activeTabId) {
@@ -872,6 +896,9 @@ const AppContent = memo(function AppContent() {
               book={book}
               chapterNumber={chapterNumber}
               initialScrollY={initialScrollY}
+              targetVerse={referenceTarget?.tabId === activeTabId && referenceTarget?.bookId === book.id && referenceTarget?.chapterNumber === chapterNumber ? referenceTarget.verseNumber : null}
+              onReferenceReached={handleReferenceReached}
+              onOpenReference={handleOpenReference}
               onScrollPositionChange={handleScrollPositionChange}
               onPrev={goPrev}
               onNext={goNext}

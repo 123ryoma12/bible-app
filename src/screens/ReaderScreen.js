@@ -56,6 +56,9 @@ export default function ReaderScreen({
   book,
   chapterNumber,
   initialScrollY = 0,
+  targetVerse,
+  onReferenceReached,
+  onOpenReference,
   onScrollPositionChange,
   onPrev,
   onNext,
@@ -187,6 +190,39 @@ export default function ReaderScreen({
   // the chapter (the footer sits waiting below it, never overlapping).
   const [footerHeight, setFooterHeight] = useState(0);
   const [topBarHeight, setTopBarHeight] = useState(0);
+  const verseAnchor = useRef(null);
+  const jumpingToVerse = useRef(false);
+  // Programmatic reference jumps can emit scroll events after layout settles.
+  // Keep both chrome bars visible until the reader deliberately interacts.
+  const referenceChromePinned = useRef(!!targetVerse);
+  const handleUserScroll = useCallback(() => { referenceChromePinned.current = false; }, []);
+  const jumpToVerse = useCallback(() => {
+    const anchor = verseAnchor.current;
+    if (!targetVerse || !anchor || !scrollRef.current || !topBarHeight || jumpingToVerse.current) return;
+    jumpingToVerse.current = true;
+    requestAnimationFrame(() => {
+      anchor.node.measureInWindow((_x, verseY) => {
+        scrollRef.current?.measureInWindow((_sx, scrollY) => {
+          const y = Math.max(0, lastOffset.current + verseY + anchor.lineY - scrollY - topBarHeight - 12);
+          scrollRef.current?.scrollTo({ y, animated: false });
+          requestAnimationFrame(() => {
+            setScrollReady(true);
+            onReferenceReached?.(activeTabId);
+            jumpingToVerse.current = false;
+          });
+        });
+      });
+    });
+  }, [targetVerse, topBarHeight, onReferenceReached, activeTabId]);
+  const handleVerseAnchor = useCallback((node, lineY = 0) => {
+    verseAnchor.current = { node, lineY };
+    jumpToVerse();
+  }, [jumpToVerse]);
+  useEffect(() => { jumpToVerse(); }, [jumpToVerse]);
+  const handleOpenReference = useCallback((reference) => {
+    onScrollPositionChange?.(lastOffset.current);
+    onOpenReference?.(reference);
+  }, [onOpenReference, onScrollPositionChange]);
 
   // Sermon sheet visibility. Closes when the chapter changes (see reset effect).
   // Playback deliberately does NOT live here — the player is hosted in App.js
@@ -491,11 +527,22 @@ export default function ReaderScreen({
       pendingScrollY.current = null;
       scrollRef.current?.scrollTo({ y: 0, animated: false });
       lastOffset.current = 0;
-      setScrollReady(true);
+      setScrollReady(!targetVerse);
     }
 
     restoreResolved.current = true;
   }, [book.id, chapterNumber, initialScrollY]);
+
+  // A missing/omitted verse or failed asset must still leave a usable reader.
+  useEffect(() => {
+    if (!targetVerse) return;
+    const failed = chapterLoad.key === chapterLoadKey && chapterLoad.error;
+    const hasVerse = chapter?.blocks?.some((block) => block.verses?.some((verse) => parseInt(verse.verse, 10) === targetVerse && verse.text?.trim() && !/^\[.*\]$/.test(verse.text.trim())));
+    if (failed || (chapter && !hasVerse)) {
+      setScrollReady(true);
+      onReferenceReached?.(activeTabId);
+    }
+  }, [targetVerse, chapter, chapterLoad, chapterLoadKey, onReferenceReached, activeTabId]);
 
   // Flush any pending debounced save when unmounting.
   useEffect(() => {
@@ -509,6 +556,10 @@ export default function ReaderScreen({
   // target on the first successful jump so we never fight the user afterwards.
   const handleContentSizeChange = useCallback(
     (_w, contentHeight) => {
+      if (targetVerse) {
+        jumpToVerse();
+        return;
+      }
       const target = pendingScrollY.current;
       if (target == null || target <= 0) return;
       // Content grows across several layout passes; onContentSizeChange fires
@@ -529,7 +580,7 @@ export default function ReaderScreen({
         setScrollReady(true);
       });
     },
-    []
+    [targetVerse, jumpToVerse]
   );
 
   useEffect(() => {
@@ -586,6 +637,11 @@ export default function ReaderScreen({
         }, 300);
       }
 
+      if (referenceChromePinned.current) {
+        setChrome(true);
+        return;
+      }
+
       // Always show at the very top.
       if (y <= 0) {
         if (!hiddenByTap.current) setChrome(true);
@@ -617,6 +673,7 @@ export default function ReaderScreen({
   );
 
   const toggleChrome = useCallback(() => {
+    referenceChromePinned.current = false;
     if (suppressReaderTap.current) {
       suppressReaderTap.current = false;
       return;
@@ -703,6 +760,14 @@ export default function ReaderScreen({
         contentInsetAdjustmentBehavior="never"
         contentContainerStyle={contentContainerStyle}
         onScroll={handleScroll}
+        onScrollBeginDrag={handleUserScroll}
+        onTouchMove={handleUserScroll}
+        {...(Platform.OS === 'web' ? {
+          onWheel: handleUserScroll,
+          onKeyDown: (event) => {
+            if (['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End', ' '].includes(event.key)) handleUserScroll();
+          },
+        } : {})}
         onTouchStart={Platform.OS === "android" ? captureReaderTouch : undefined}
         scrollEventThrottle={16}
         onContentSizeChange={handleContentSizeChange}
@@ -774,6 +839,8 @@ export default function ReaderScreen({
               </Text>
             ) : <ChapterView
               chapter={chapter}
+              targetVerse={targetVerse}
+              onVerseAnchor={handleVerseAnchor}
               noteVerses={verseNotesByVerse}
               onNotePress={handleNotePress}
               interlinearChapter={interlinearChapter}
@@ -847,6 +914,9 @@ export default function ReaderScreen({
       {/* Verse note popover — contextual card anchored near a tapped ⓘ icon.
           Dismisses on tap-outside or when the user scrolls away. */}
       <VerseNotePopover
+        book={book}
+        chapterNumber={chapterNumber}
+        onReferencePress={handleOpenReference}
         visible={popover.visible}
         notes={popover.notes}
         anchorY={popover.anchorY}

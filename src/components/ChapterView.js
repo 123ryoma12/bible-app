@@ -1,4 +1,4 @@
-import React, { useMemo, memo, useState, useCallback } from "react";
+import React, { useMemo, memo, useState, useCallback, useRef } from "react";
 import { Platform, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { useTheme } from "../theme/ThemeContext";
 import { readingFont, uiFont } from "../theme/fonts";
@@ -27,13 +27,14 @@ function noteIconAnchor(event) {
  * A stable, reading-first chapter layout. Each source paragraph or poetry line
  * owns one native Text layout, preserving continuous Bible paragraph flow.
  */
-export default function ChapterView({ chapter, noteVerses, onNotePress, interlinearChapter, onWordPress, onToggleVerseInterlinear }) {
+export default function ChapterView({ chapter, noteVerses, onNotePress, interlinearChapter, onWordPress, onToggleVerseInterlinear, targetVerse, onVerseAnchor }) {
   const { colors, fontScale, readingFontKey } = useTheme();
   const typography = useMemo(
     () => createTypography(fontScale, readingFontKey),
     [fontScale, readingFontKey]
   );
   const blocks = useMemo(() => prepareBlocks(chapter?.blocks), [chapter]);
+  const targetBlock = targetVerse ? blocks.findIndex((entry) => entry.verses.some((verse) => !verse.isEditorialNote && parseInt(verse.number, 10) === targetVerse)) : -1;
 
   // Track which verse rows are expanded for interlinear — keyed by verse number.
   const [expandedVerses, setExpandedVerses] = useState({});
@@ -129,6 +130,8 @@ export default function ChapterView({ chapter, noteVerses, onNotePress, interlin
         <ChapterBlock
           key={`${index}-${entry.block?.style || "p"}`}
           {...entry}
+          targetVerse={index === targetBlock ? targetVerse : null}
+          onVerseAnchor={onVerseAnchor}
           colors={colors}
           fontScale={fontScale}
           typography={typography}
@@ -147,6 +150,8 @@ export default function ChapterView({ chapter, noteVerses, onNotePress, interlin
 }
 
 const ChapterBlock = memo(function ChapterBlock({
+  targetVerse,
+  onVerseAnchor,
   block,
   verses,
   continuesPreviousVerse,
@@ -232,6 +237,8 @@ const ChapterBlock = memo(function ChapterBlock({
 
       {verses.length ? (
         <FlowingVerses
+          targetVerse={targetVerse}
+          onVerseAnchor={onVerseAnchor}
           verses={verses}
           beginsWithContinuation={continuesPreviousVerse}
           appearance={appearance}
@@ -254,6 +261,8 @@ const ChapterBlock = memo(function ChapterBlock({
 });
 
 const FlowingVerses = memo(function FlowingVerses({
+  targetVerse,
+  onVerseAnchor,
   verses,
   beginsWithContinuation,
   appearance,
@@ -270,6 +279,26 @@ const FlowingVerses = memo(function FlowingVerses({
   onToggleVerse,
   onWordPress,
 }) {
+  const paragraphRef = useRef(null);
+  const targetRef = useRef(null);
+  const targetIndex = verses.findIndex((verse) => !verse.isEditorialNote && parseInt(verse.number, 10) === targetVerse);
+  // Native nested Text has no independent layout box. Its parent reports the
+  // actual shaped lines, including verse numbers, so locate the target line.
+  const handleTextLayout = useCallback((event) => {
+    if (!targetVerse || !paragraphRef.current) return;
+    const lines = event.nativeEvent.lines;
+    const marker = new RegExp(`(?:^|\\s)${targetVerse}\\s`);
+    let offset = 0;
+    const joined = lines.map((line) => line.text).join('');
+    const match = marker.exec(joined);
+    if (!match) return;
+    const targetOffset = match.index + (match[0].length - match[0].trimStart().length);
+    const line = lines.find((entry) => {
+      offset += entry.text.length;
+      return offset > targetOffset;
+    });
+    if (line) onVerseAnchor?.(paragraphRef.current, line.y);
+  }, [targetVerse, onVerseAnchor]);
   const interlinearActive = !!(interlinearChapter && interlinearChapter.size > 0);
 
   const segments = useMemo(() => verses.map((verse, index) => {
@@ -326,7 +355,11 @@ const FlowingVerses = memo(function FlowingVerses({
           const language = interlinearChapter.get(verseNum)?.some((word) => word.hebrew) ? "Hebrew" : "Greek";
 
           return (
-            <View key={`${segment.number ?? "text"}-${index}`}>
+            <View
+              key={`${segment.number ?? "text"}-${index}`}
+              ref={index === targetIndex ? targetRef : undefined}
+              onLayout={index === targetIndex ? () => onVerseAnchor?.(targetRef.current) : undefined}
+            >
               {/* Verse row: text on left, chevron on right */}
               <View style={styles.interlinearVerseRow}>
                 <Text
@@ -394,6 +427,8 @@ const FlowingVerses = memo(function FlowingVerses({
   // The zero-width space forces RN to measure the full text width correctly.
   return (
     <Text
+      ref={paragraphRef}
+      onTextLayout={targetVerse && Platform.OS !== 'web' ? handleTextLayout : undefined}
       style={[
         styles.flowingText,
         typography[appearance.textType],
@@ -412,6 +447,8 @@ const FlowingVerses = memo(function FlowingVerses({
         return (
           <Text
             key={`${segment.number ?? "text"}-${index}`}
+            ref={index === targetIndex && Platform.OS === 'web' ? targetRef : undefined}
+            onLayout={index === targetIndex && Platform.OS === 'web' ? () => onVerseAnchor?.(targetRef.current) : undefined}
             style={segment.editorialNote ? typography.editorialText : null}
           >
             {index > 0 ? " " : null}

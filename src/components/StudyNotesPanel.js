@@ -28,7 +28,7 @@ const PANEL_HEIGHT = 300;
 const NOTE_FONT_SIZE = 12.5;
 const REF_FONT_SIZE = 11;
 
-export default function StudyNotesPanel({ notes, visible, onClose, bottomOffset = 0 }) {
+export default function StudyNotesPanel({ notes, visible, onClose, book, chapterNumber, onReferencePress, bottomOffset = 0 }) {
   const { colors, readingFontKey } = useTheme();
   const slideAnim = useRef(new Animated.Value(PANEL_HEIGHT)).current;
 
@@ -73,6 +73,9 @@ export default function StudyNotesPanel({ notes, visible, onClose, bottomOffset 
         )}
         <NoteText
           text={note}
+          bookId={book?.id}
+          chapterNumber={parseInt(verse_ref, 10) || chapterNumber}
+          onReferencePress={onReferencePress}
           style={[
             styles.noteText,
             {
@@ -89,7 +92,7 @@ export default function StudyNotesPanel({ notes, visible, onClose, bottomOffset 
         />
       </View>
     ),
-    [colors, readingFontKey]
+    [colors, readingFontKey, book, chapterNumber, onReferencePress]
   );
 
   if (!visible && slideAnim.__getValue() >= PANEL_HEIGHT) return null;

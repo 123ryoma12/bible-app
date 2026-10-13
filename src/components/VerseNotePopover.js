@@ -30,7 +30,7 @@ const GAP = 14;               // gap between anchor point and card edge
 const ABOVE_THRESHOLD = 0.55; // show above if tap is in lower 45% of screen
 const ANIM_MS = 180;
 
-export default function VerseNotePopover({ visible, notes, anchorY, anchorTopY, containerHeight, onDismiss }) {
+export default function VerseNotePopover({ visible, notes, anchorY, anchorTopY, containerHeight, onDismiss, book, chapterNumber, onReferencePress }) {
   const { colors, mode } = useTheme();
   const { height: windowHeight } = useWindowDimensions();
   const screenH = containerHeight || windowHeight;
@@ -108,6 +108,9 @@ export default function VerseNotePopover({ visible, notes, anchorY, anchorTopY, 
               ) : null}
               <NoteText
                 text={note.note}
+                bookId={book?.id}
+                chapterNumber={parseInt(note.verse_ref, 10) || chapterNumber}
+                onReferencePress={onReferencePress}
                 style={[styles.noteText, FONT_STYLES.noteText, { color: colors.text }]}
                 boldStyle={FONT_STYLES.noteTextBold}
                 italicStyle={FONT_STYLES.noteTextItalic}

@@ -23,7 +23,7 @@ import NoteText from "./NoteText";
 const NOTE_FONT_SIZE = 12.5;
 const REF_FONT_SIZE = 11;
 
-export default function StudyNotesModal({ visible, onClose, book, chapterNumber, notes }) {
+export default function StudyNotesModal({ visible, onClose, book, chapterNumber, notes, onReferencePress }) {
   const { colors, readingFontKey } = useTheme();
   const insets = useSafeAreaInsets();
 
@@ -64,6 +64,9 @@ export default function StudyNotesModal({ visible, onClose, book, chapterNumber,
         )}
         <NoteText
           text={item.note}
+          bookId={book?.id}
+          chapterNumber={parseInt(item.verse_ref, 10) || chapterNumber}
+          onReferencePress={onReferencePress}
           style={[
             styles.noteText,
             {
@@ -77,7 +80,7 @@ export default function StudyNotesModal({ visible, onClose, book, chapterNumber,
         />
       </View>
     ),
-    [colors, readingFontKey, book]
+    [colors, readingFontKey, book, chapterNumber, onReferencePress]
   );
 
   return (
