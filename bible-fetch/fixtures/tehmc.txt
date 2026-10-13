@@ -1,0 +1,82 @@
+AC	Function=Conjunction
+	Conjunction
+HC	Function=Conjunction
+	Conjunction
+Hc	Function=Conjunction; Form=Consecutive;
+	Consecutive Conjunction
+AR	Function=Preposition
+	Preposition
+HR	Function=Preposition
+	Preposition
+HRd	Function=Preposition ; Form=Definite
+	Preposition (Definite)
+HSd	Function=Suffix ; Form=Directional
+	Directional Suffix
+ATa	Function=Particle ; Form=Definite article (Aramaic)
+	Definite article (Aramaic)
+HTc	Function=Particle ; Form=Conditional
+	Conditional Particle
+HTd	Function=Particle ; Form=Definite article (Hebrew)
+	Definite article (Hebrew)
+HTn	Function=Particle ; Form=Negative
+	Negative Particle
+HTr	Function=Particle ; Form=Relative
+	Relative Particle
+HAafsc	Function=Adjective ; Form=Common ; Gender=Feminine; Number=Singular; State=Construct
+	"Adjective (Singular Feminine, Construct)"
+HAamsa	Function=Adjective ; Form=Common ; Gender=Masculine; Number=Singular; State=Absolute
+	"Adjective (Singular Masculine, Absolute)"
+HAomsa	Function=Adjective ; Form=Numerical position ; Gender=Masculine; Number=Singular; State=Absolute
+	"Numerical position Adjective (Singular Masculine, Absolute)"
+HNcbsa	Function=Noun ; Form=Common ; Gender=Either gender; Number=Singular; State=Absolute
+	"Noun (Singular Either gender, Absolute)"
+ANcbsc	Function=Noun ; Form=Common ; Gender=Either gender; Number=Singular; State=Construct
+	"Noun (Singular Either gender, Construct)"
+HNcbsc	Function=Noun ; Form=Common ; Gender=Either gender; Number=Singular; State=Construct
+	"Noun (Singular Either gender, Construct)"
+ANcbsd	Function=Noun ; Form=Common ; Gender=Either gender; Number=Singular; State=Definite
+	"Noun (Singular Either gender, Definite)"
+HNcfsa	Function=Noun ; Form=Common ; Gender=Feminine; Number=Singular; State=Absolute
+	"Noun (Singular Feminine, Absolute)"
+HNcfsc	Function=Noun ; Form=Common ; Gender=Feminine; Number=Singular; State=Construct
+	"Noun (Singular Feminine, Construct)"
+ANcmpa	Function=Noun ; Form=Common ; Gender=Masculine; Number=Plural; State=Absolute
+	"Noun (Plural Masculine, Absolute)"
+HNcmpa	Function=Noun ; Form=Common ; Gender=Masculine; Number=Plural; State=Absolute
+	"Noun (Plural Masculine, Absolute)"
+HNcmpc	Function=Noun ; Form=Common ; Gender=Masculine; Number=Plural; State=Construct
+	"Noun (Plural Masculine, Construct)"
+HNcmsa	Function=Noun ; Form=Common ; Gender=Masculine; Number=Singular; State=Absolute
+	"Noun (Singular Masculine, Absolute)"
+HNcmsc	Function=Noun ; Form=Common ; Gender=Masculine; Number=Singular; State=Construct
+	"Noun (Singular Masculine, Construct)"
+HNgmpa	Function=Noun ; Form=Gentilic ; Gender=Masculine; Number=Plural; State=Absolute
+	"Noun (Gentilic, Plural Masculine, Absolute)"
+HNpl	Function=Noun ; Form=Proper ; Gender=Location
+	Proper Noun (Location)
+HNpm	Function=Noun ; Form=Proper ; Gender=Masculine
+	Proper Noun (Masculine individual)
+ASp2ms	Function=Suffix ; Form=Personal ; Person=Second; Gender=Masculine; Number=Singular
+	Suffix (Second Singular Masculine)
+HSp3fs	Function=Suffix ; Form=Personal ; Person=Third; Gender=Feminine; Number=Singular
+	Suffix (Third Singular Feminine)
+HSp3mp	Function=Suffix ; Form=Personal ; Person=Third; Gender=Masculine; Number=Plural
+	Suffix (Third Plural Masculine)
+HSp3ms	Function=Suffix ; Form=Personal ; Person=Third; Gender=Masculine; Number=Singular
+	Suffix (Third Singular Masculine)
+HVhp3ms	Function=Verb ; Stem=Hiphil (hence Action=Causative/declarative; Voice=Active); Form=Perfect (hence Tense=Past/present; Mood=Indicative); Person=Third; Gender=Masculine; Number=Singular
+	"Verb : Hiphil (Causative/declarative, Active) Perfect (Past/present Indicative) Third Singular Masculine"
+AVpi1cp	Function=Verb ; Stem=Pael (hence Action=Intensive/resultive/transtive; Voice=Active); Form=Imperfect (hence Tense=Future/present; Mood=Indicative/cohortative); Person=First; Gender=Either gender; Number=Plural
+	"Verb : Pael (Intensive/resultive/transtive, Active) Imperfect (Future/present Indicative/cohortative) First Plural Either gender"
+HVpw3mp	Function=Verb ; Stem=Piel (hence Action=Intensive/resultive/transtive; Voice=Active); Form=Consecutive Imperfect (hence Tense=Past/present; Mood=Indicative); Person=Third; Gender=Masculine; Number=Plural
+	"Verb : Piel (Intensive/resultive/transtive, Active) Consecutive Imperfect (Past/present Indicative) Third Plural Masculine"
+HVqcc	Function=Verb ; Stem=Qal (hence Action=Simple; Voice=Active); Form=Infinitive ; State=Construct
+	"Verb : Qal (Simple, Active) Infinitive Construct"
+HVqi1cp	Function=Verb ; Stem=Qal (hence Action=Simple; Voice=Active); Form=Imperfect (hence Tense=Future/present; Mood=Indicative/cohortative); Person=First; Gender=Either gender; Number=Plural
+	"Verb : Qal (Simple, Active) Imperfect (Future/present Indicative/cohortative) First Plural Either gender"
+HVqp3ms	Function=Verb ; Stem=Qal (hence Action=Simple; Voice=Active); Form=Perfect (hence Tense=Past/present; Mood=Indicative); Person=Third; Gender=Masculine; Number=Singular
+	"Verb : Qal (Simple, Active) Perfect (Past/present Indicative) Third Singular Masculine"
+AVqv2ms	Function=Verb ; Stem=Peal (hence Action=Simple; Voice=Active); Form=Imperative (hence Tense=Present/future; Mood=Imperative); Person=Second; Gender=Masculine; Number=Singular
+	"Verb : Peal (Simple, Active) Imperative Second Singular Masculine"
+HVqw3ms	Function=Verb ; Stem=Qal (hence Action=Simple; Voice=Active); Form=Consecutive Imperfect (hence Tense=Past/present; Mood=Indicative); Person=Third; Gender=Masculine; Number=Singular
+	"Verb : Qal (Simple, Active) Consecutive Imperfect (Past/present Indicative) Third Singular Masculine"

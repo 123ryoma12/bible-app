@@ -238,7 +238,7 @@ export default function ReaderScreen({
     () => verseNotesActive && notesReady ? getStudyNotesByVerse(book.name, chapterNumber) : null,
     [verseNotesActive, book.name, chapterNumber, notesReady]
   );
-  // Interlinear Greek toggle — mutually exclusive with verse notes.
+  // Original-language interlinear — mutually exclusive with verse notes.
   // When interlinear is activated, verse notes are forced off (and vice versa).
   const [interlinearActive, setInterlinearActive] = useState(
     () => getReaderPrefs().interlinearActive
@@ -431,7 +431,7 @@ export default function ReaderScreen({
     setChrome(true);
   }, [setChrome]);
 
-  // Hide chrome when a Greek verse row is expanded.
+  // Hide chrome when an interlinear verse row is expanded.
   // Collapsing does NOT restore chrome — only a tap on the reader does.
   const handleToggleVerseInterlinear = useCallback((verseNum, expanded) => {
     if (expanded) {
@@ -814,6 +814,7 @@ export default function ReaderScreen({
         verseNotesActive={verseNotesActive}
         onToggleVerseNotes={isIntro ? undefined : handleToggleVerseNotes}
         interlinearActive={interlinearActive}
+        interlinearLanguage={book.testament === "OT" ? "Hebrew" : "Greek"}
         onToggleInterlinear={isIntro || !hasInterlinear(book.id) ? undefined : handleToggleInterlinear}
         tocOpen={tocOpen}
         onToggleToc={isIntro && introInfo ? () => setTocOpen((o) => !o) : undefined}
@@ -854,7 +855,7 @@ export default function ReaderScreen({
         onDismiss={handleDismissPopover}
       />
 
-      {/* Interlinear word popover — shows full Greek word detail on tap.
+      {/* Interlinear word popover — shows full original-language detail on tap.
           Same dismiss behaviour as VerseNotePopover. */}
       <InterlinearWordPopover
         visible={interlinearPopover.visible}

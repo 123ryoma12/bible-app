@@ -1,4 +1,4 @@
-// InterlinearVerseRow — horizontal scrollable Greek word row rendered inline
+// InterlinearVerseRow — wrapping original-language word row rendered inline
 // below a verse when expanded. Chevron logic lives in FlowingVerses; this
 // component is purely the word display strip.
 //
@@ -9,7 +9,7 @@
 //   fontScale   – from useTheme()
 
 import React from "react";
-import { View, Text, TouchableOpacity, StyleSheet } from "react-native";
+import { View, Text, TouchableOpacity, StyleSheet, Platform } from "react-native";
 import { uiFont } from "../theme/fonts";
 
 const WORD_GAP = 10;
@@ -17,7 +17,8 @@ const ROW_PADDING_H = 16;
 
 // Individual tappable word cell — no card background, just stacked text
 const WordCell = React.memo(function WordCell({ word, colors, fontScale, onPress }) {
-  const greekSize = Math.round(15 * fontScale);
+  const isHebrew = !!word.hebrew;
+  const wordSize = Math.round((isHebrew ? 20 : 15) * fontScale);
   const subSize   = Math.round(11 * fontScale);
 
   return (
@@ -25,10 +26,17 @@ const WordCell = React.memo(function WordCell({ word, colors, fontScale, onPress
       onPress={onPress}
       activeOpacity={0.6}
       style={styles.wordCell}
+      accessibilityRole="button"
+      accessibilityLabel={`${word.hebrew || word.greek}: ${word.gloss}`}
       hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
     >
-      <Text style={[styles.greekText, { color: colors.text, fontSize: greekSize, fontFamily: "Lora_400Regular" }]}>
-        {word.greek}
+      <Text style={[styles.originalText, {
+        color: colors.text,
+        fontSize: wordSize,
+        fontFamily: isHebrew ? Platform.select({ ios: "Times New Roman", default: "serif" }) : "Lora_400Regular",
+        writingDirection: isHebrew ? "rtl" : "ltr",
+      }]}>
+        {word.hebrew || word.greek}
       </Text>
       <Text style={[styles.translitText, { color: colors.mutedText, fontSize: subSize }]}>
         {word.translit}
@@ -46,7 +54,7 @@ export default function InterlinearVerseRow({ words, onWordPress, colors, fontSc
   return (
     <View style={styles.container}>
       <View style={[styles.separator, { borderColor: colors.border }]} />
-      <View style={styles.wordRow}>
+      <View style={[styles.wordRow, words.some((word) => word.hebrew) && styles.hebrewRow]}>
         {words.map((word, i) => (
           <WordCell
             key={i}
@@ -81,7 +89,10 @@ const styles = StyleSheet.create({
     alignItems: "flex-start",
     minWidth: 44,
   },
-  greekText: {
+  hebrewRow: {
+    flexDirection: "row-reverse",
+  },
+  originalText: {
     textAlign: "left",
     marginBottom: 2,
   },

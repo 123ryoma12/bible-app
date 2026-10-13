@@ -42,3 +42,6 @@ yarn-error.*
 # python (legacy fetch tooling)
 __pycache__/
 *.pyc
+
+# Downloaded Hebrew source files; regenerate chapter assets with the importer.
+bible-fetch/.cache/hebrew-interlinear/

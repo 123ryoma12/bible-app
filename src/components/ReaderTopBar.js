@@ -19,6 +19,7 @@ import {
   Animated,
   StyleSheet,
   Modal,
+  Platform,
 } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { uiFont, readingFont, READING_FONT_OPTIONS } from "../theme/fonts";
@@ -235,8 +236,9 @@ export default function ReaderTopBar({
   // Inline verse note icons toggle
   verseNotesActive,
   onToggleVerseNotes,
-  // Interlinear Greek toggle — mutually exclusive with verse notes
+  // Original-language interlinear — mutually exclusive with verse notes
   interlinearActive,
+  interlinearLanguage = "Greek",
   onToggleInterlinear,
   // Book intro tab: TOC button replaces the notes button
   tocOpen,
@@ -360,21 +362,22 @@ export default function ReaderTopBar({
               </TouchableOpacity>
             ) : null}
 
-            {/* Interlinear Greek toggle — α button, mutually exclusive with verse notes */}
+            {/* Original-language toggle, mutually exclusive with verse notes */}
             {onToggleInterlinear ? (
               <TouchableOpacity
                 style={styles.notesBtn}
                 onPress={handleToggleInterlinearCb}
                 hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                 accessibilityRole="button"
-                accessibilityLabel={interlinearActive ? "Hide Greek interlinear" : "Show Greek interlinear"}
+                accessibilityLabel={`${interlinearActive ? "Hide" : "Show"} ${interlinearLanguage} interlinear`}
                 accessibilityState={{ checked: interlinearActive }}
               >
                 <Text style={[
-                  styles.greekToggleGlyph,
+                  styles.interlinearToggleGlyph,
+                  interlinearLanguage === "Hebrew" && { fontFamily: Platform.select({ ios: "Times New Roman", default: "serif" }) },
                   { color: interlinearActive ? colors.accent : colors.text },
                 ]}>
-                  α
+                  {interlinearLanguage === "Hebrew" ? "א" : "α"}
                 </Text>
               </TouchableOpacity>
             ) : null}
@@ -494,8 +497,8 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
 
-  // α glyph for the interlinear toggle
-  greekToggleGlyph: {
+  // α / א glyph for the interlinear toggle
+  interlinearToggleGlyph: {
     fontSize: 22,
     fontFamily: "Lora_400Regular",
     lineHeight: 26,

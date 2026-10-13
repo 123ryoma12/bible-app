@@ -1,4 +1,4 @@
-// Interlinear Greek data from STEPBible TAGNT (CC BY 4.0), split by chapter.
+// STEPBible TAGNT Greek and TAHOT Hebrew/Aramaic (CC BY 4.0), split by chapter.
 import { Asset } from "expo-asset";
 import { File } from "expo-file-system";
 import { Platform } from "react-native";

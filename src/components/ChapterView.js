@@ -278,6 +278,7 @@ const FlowingVerses = memo(function FlowingVerses({
     return {
       number: verse.number,
       text: verse.text,
+      parts: verse.parts,
       editorialNote: verse.isEditorialNote,
       showNumber:
         !verse.isEditorialNote &&
@@ -322,6 +323,7 @@ const FlowingVerses = memo(function FlowingVerses({
             interlinearChapter.has(verseNum) &&
             (!blockExpandedVerses || blockExpandedVerses.has(verseNum));
           const expanded = showExpanded && !!expandedVerses?.[verseNum];
+          const language = interlinearChapter.get(verseNum)?.some((word) => word.hebrew) ? "Hebrew" : "Greek";
 
           return (
             <View key={`${segment.number ?? "text"}-${index}`}>
@@ -343,7 +345,7 @@ const FlowingVerses = memo(function FlowingVerses({
                   ) : null}
                   {segment.editorialNote ? (
                     <Text style={typography.editorialText}>{segment.text}</Text>
-                  ) : segment.text}
+                  ) : <VerseText parts={segment.parts} typography={typography} />}
                 </Text>
 
                 {/* Chevron — only on first block of verse */}
@@ -353,7 +355,8 @@ const FlowingVerses = memo(function FlowingVerses({
                     style={styles.interlinearChevronBtn}
                     hitSlop={{ top: 10, bottom: 10, left: 12, right: 4 }}
                     accessibilityRole="button"
-                    accessibilityLabel={expandedVerses?.[verseNum] ? "Collapse Greek" : "Expand Greek"}
+                    accessibilityLabel={`${expandedVerses?.[verseNum] ? "Collapse" : "Expand"} ${language}`}
+                    accessibilityState={{ expanded: !!expandedVerses?.[verseNum] }}
                   >
                     <Text style={[
                       styles.interlinearChevron,
@@ -417,7 +420,7 @@ const FlowingVerses = memo(function FlowingVerses({
                 {segment.number}{"\u00A0\u00A0"}
               </Text>
             ) : null}
-            {segment.text}
+            <VerseText parts={segment.parts} typography={typography} />
             {/* On the last segment, append a zero-width space directly inside this
                 nested <Text> so RN measures the full span width correctly. The outer
                 \u200B only helps when the clipping is at the outer Text level; when
@@ -448,11 +451,52 @@ const FlowingVerses = memo(function FlowingVerses({
   );
 });
 
+function VerseText({ parts, typography }) {
+  return parts.map((part, index) => (
+    <React.Fragment key={index}>
+      {index > 0 ? " " : null}
+      {part.inscription ? (
+        <Text style={typography.inscription}>{part.text.toUpperCase()}</Text>
+      ) : part.text}
+    </React.Fragment>
+  ));
+}
+
 function prepareBlocks(source) {
+  const grouped = [];
+  let previousWasInscription = false;
+  for (const block of Array.isArray(source) ? source : []) {
+    const inscription = block?.style === "pc";
+    const verses = getVerses(block?.verses, inscription);
+    const previous = grouped[grouped.length - 1];
+    const lastVerse = previous?.verses[previous.verses.length - 1];
+    // Join inscriptions (and prose immediately following them in the same
+    // verse) before assigning note icons and interlinear expansion controls.
+    // Styled text spans preserve emphasis without introducing a paragraph break.
+    const joinsPrevious = (inscription || previousWasInscription)
+      && lastVerse?.number != null && lastVerse.number === verses[0]?.number
+      && !lastVerse.isEditorialNote && !verses[0].isEditorialNote
+      && getBlockKind(block?.style) === "paragraph"
+      && getBlockKind(previous.block?.style) === "paragraph";
+    if (joinsPrevious) {
+      for (const verse of verses) {
+        const tail = previous.verses[previous.verses.length - 1];
+        if (tail.number === verse.number && !verse.isEditorialNote) {
+          tail.text += " " + verse.text;
+          tail.parts.push(...verse.parts);
+        } else {
+          previous.verses.push(verse);
+        }
+      }
+    } else {
+      grouped.push({ block, verses });
+    }
+    previousWasInscription = inscription;
+  }
+
   let previousVerseNumber = null;
 
-  return (Array.isArray(source) ? source : []).map((block) => {
-    const verses = getVerses(block?.verses);
+  return grouped.map(({ block, verses }) => {
     const scriptureVerses = verses.filter((verse) => !verse.isEditorialNote);
     const firstVerseNumber = scriptureVerses[0]?.number ?? null;
     const lastVerseNumber = scriptureVerses[scriptureVerses.length - 1]?.number ?? null;
@@ -470,7 +514,7 @@ function prepareBlocks(source) {
   });
 }
 
-function getVerses(source) {
+function getVerses(source, inscription = false) {
   if (!Array.isArray(source)) return [];
 
   return source
@@ -480,6 +524,7 @@ function getVerses(source) {
       return {
         number: verse.verse == null ? null : String(verse.verse),
         text,
+        parts: [{ text, inscription }],
         isEditorialNote: /^\[.*\]$/.test(text),
       };
     });
@@ -490,8 +535,7 @@ function getBlockKind(style) {
   if (style === "d" || style === "sp" || style === "qa") return "descriptive";
   if (/^q/.test(style) || /^qm/.test(style) || style === "qr" || style === "qc") return "poetry";
   if (/^li\d*$/.test(style)) return "list";
-  // Opening/salutation and centered-paragraph markers are source semantics,
-  // but the reader intentionally keeps all biblical content left-aligned.
+  // Opening/salutation markers retain the reader's normal paragraph layout.
   if (style === "po" || style === "pr" || style === "pc" || style === "pmo") return "paragraph";
   if (/^pi\d*$/.test(style) || style === "pm" || style === "pmc" || style === "mi" || style === "nb") {
     return "indented";
@@ -583,6 +627,13 @@ function createTypography(fontScale, fontKey) {
       fontFamily: readingFont(fontKey, "italic"),
       fontSize: 15 * fontScale,
       lineHeight: 24 * fontScale,
+      includeFontPadding: false,
+    },
+    inscription: {
+      fontFamily: readingFont(fontKey, "semiBold"),
+      fontSize: 16 * fontScale,
+      lineHeight: BODY_LINE_HEIGHT * fontScale,
+      letterSpacing: 1.1 * fontScale,
       includeFontPadding: false,
     },
     heading: {

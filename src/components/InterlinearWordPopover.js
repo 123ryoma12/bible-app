@@ -1,4 +1,4 @@
-// Contextual popover showing full detail for a tapped Greek word.
+// Contextual popover showing full detail for a tapped original-language word.
 // Mirrors VerseNotePopover: anchors near the tapped word's Y position,
 // positions above or below depending on screen location, dismisses on
 // scroll or tap-outside (handled by ReaderScreen).
@@ -11,6 +11,8 @@ import {
   StyleSheet,
   Animated,
   useWindowDimensions,
+  Platform,
+  Linking,
 } from "react-native";
 import { useTheme } from "../theme/ThemeContext";
 import { uiFont } from "../theme/fonts";
@@ -49,6 +51,13 @@ export default function InterlinearWordPopover({ visible, word, anchorY, onDismi
   }, [visible]);
 
   if (!mounted || !word) return null;
+
+  const isHebrew = !!word.hebrew;
+  const hebrewStyle = isHebrew ? {
+    fontFamily: Platform.select({ ios: "Times New Roman", default: "serif" }),
+    writingDirection: "rtl",
+    textAlign: "right",
+  } : null;
 
   const showAbove = anchorY != null && anchorY > screenH * ABOVE_THRESHOLD;
   const maxH = screenH * POPOVER_MAX_HEIGHT_FRAC;
@@ -90,9 +99,10 @@ export default function InterlinearWordPopover({ visible, word, anchorY, onDismi
           indicatorStyle={mode === "dark" ? "white" : "black"}
           bounces={false}
         >
-          {/* Greek word + transliteration header */}
-          <Text style={[styles.greekWord, { color: colors.text }]}>
-            {word.greek}
+          {/* Original word + transliteration header */}
+          {isHebrew ? <SectionLabel label={word.language === "arc" ? "ARAMAIC" : "HEBREW"} colors={colors} /> : null}
+          <Text style={[styles.originalWord, { color: colors.text }, hebrewStyle]}>
+            {word.hebrew || word.greek}
           </Text>
           <Text style={[styles.translit, { color: colors.mutedText }]}>
             {word.translit}
@@ -110,12 +120,17 @@ export default function InterlinearWordPopover({ visible, word, anchorY, onDismi
           {word.lemma ? (
             <>
               <SectionLabel label="LEXICAL FORM" colors={colors} />
-              <Text style={[styles.value, { color: colors.text }]}>
+              {isHebrew ? (
+                <>
+                  <Text style={[styles.value, hebrewStyle, { color: colors.accent, fontSize: 20, lineHeight: 30 }]}>{word.lemma}</Text>
+                  {word.lemmaGloss ? <Text style={[styles.value, { color: colors.mutedText }]}>{word.lemmaGloss}</Text> : null}
+                </>
+              ) : <Text style={[styles.value, { color: colors.text }]}>
                 <Text style={{ color: colors.accent }}>{word.lemma}</Text>
                 {word.lemmaGloss ? (
                   <Text style={{ color: colors.mutedText }}>{"  ·  " + word.lemmaGloss}</Text>
                 ) : null}
-              </Text>
+              </Text>}
             </>
           ) : null}
 
@@ -133,7 +148,9 @@ export default function InterlinearWordPopover({ visible, word, anchorY, onDismi
           {morphParts.length > 0 ? (
             <>
               <SectionLabel label="PARSING" colors={colors} />
-              {posLabel ? (
+              {isHebrew ? (
+                <Text style={[styles.value, { color: colors.text }]}>{word.morph}</Text>
+              ) : posLabel ? (
                 <Text style={[styles.value, { color: colors.text }]}>
                   {posLabel}
                   {morphDetails ? (
@@ -143,6 +160,19 @@ export default function InterlinearWordPopover({ visible, word, anchorY, onDismi
               ) : null}
             </>
           ) : null}
+          {word.textualNote ? (
+            <>
+              <SectionLabel label="TEXTUAL NOTE" colors={colors} />
+              <Text style={[styles.value, { color: colors.mutedText }]}>{word.textualNote}</Text>
+            </>
+          ) : null}
+          <Text
+            style={[styles.source, { color: colors.mutedText }]}
+            accessibilityRole="link"
+            onPress={() => Linking.openURL("https://github.com/STEPBible/STEPBible-Data")}
+          >
+            STEP Bible · {isHebrew ? "TAHOT" : "TAGNT"} · CC BY 4.0
+          </Text>
         </ScrollView>
       </Animated.View>
     </View>
@@ -164,7 +194,7 @@ const styles = StyleSheet.create({
   scrollContent: {
     paddingBottom: 2,
   },
-  greekWord: {
+  originalWord: {
     fontSize: 24,
     fontFamily: "Lora_400Regular",
     marginBottom: 2,
@@ -190,5 +220,10 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontFamily: uiFont(400),
     lineHeight: 22,
+  },
+  source: {
+    fontSize: 11,
+    fontFamily: uiFont(400),
+    marginTop: 16,
   },
 });
