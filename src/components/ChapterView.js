@@ -322,9 +322,10 @@ const FlowingVerses = memo(function FlowingVerses({
   const mutedColorStyle = useMemo(() => ({ color: colors.mutedText }), [colors.mutedText]);
   const accentColorStyle = useMemo(() => ({ color: colors.accent }), [colors.accent]);
   const noteIconSizeStyle = useMemo(() => {
+    // Inherit the paragraph's line height. A smaller inline lineHeight makes
+    // Android measure long paragraphs too short and clip their final verses.
     return {
       fontSize: 16 * fontScale,
-      lineHeight: 22 * fontScale,
       paddingHorizontal: 4 * fontScale,
     };
   }, [fontScale]);
