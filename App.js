@@ -774,6 +774,14 @@ const AppContent = memo(function AppContent() {
         const targetBook = parsed.searchParams.get("book");
         const targetChapter = Number(parsed.searchParams.get("chapter"));
         if (targetBook && Number.isInteger(targetChapter) && targetChapter > 0) {
+          const activeReaderTab = readerTabs.find((t) => t.id === activeTabId);
+          if (activeReaderTab?.bookId === targetBook &&
+              activeReaderTab.chapterNumber === targetChapter &&
+              activeReaderTab.type !== "intro") {
+            // Resume this reader as-is, including its live scroll position.
+            setScreen("reader");
+            return;
+          }
           // If a tab for this exact chapter is already open, switch to it.
           // Otherwise open it in a new tab so existing work is preserved.
           const existingTab = readerTabs.find(
@@ -822,7 +830,7 @@ const AppContent = memo(function AppContent() {
     } catch {
       // Malformed URL — ignore.
     }
-  }, [readerTabs, prayerSession]);
+  }, [readerTabs, activeTabId, prayerSession]);
 
   const handleDeepLink = useCallback(({ url }) => {
     if (!url) return;
