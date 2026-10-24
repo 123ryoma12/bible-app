@@ -203,6 +203,14 @@ const AppContent = memo(function AppContent() {
   const [restoredAudioUrl, setRestoredAudioUrl] = useState(null);
   const [restoredSeekTo, setRestoredSeekTo] = useState(0);
 
+  const handlePlaySermon = useCallback((sermon) => {
+    // A saved URL and position belong only to the restored sermon, never a
+    // fresh selection (even when it comes from a different source).
+    setRestoredAudioUrl(null);
+    setRestoredSeekTo(0);
+    setActiveSermon(sermon);
+  }, []);
+
   // ── Reader tabs ────────────────────────────────────────────────────────────
   // Each tab: { id: string, bookId: string, chapterNumber: number }
   // The active tab drives bookIndex/chapterNumber in the reader. Opening a new
@@ -924,7 +932,7 @@ const AppContent = memo(function AppContent() {
               onTabBarScrollX={onTabBarScrollX}
               tabBarScrollToActive={tabBarScrollToActive.current}
               onTabBarScrollToActiveConsumed={onTabBarScrollToActiveConsumed}
-              onPlaySermon={setActiveSermon}
+              onPlaySermon={handlePlaySermon}
               activeSermonId={activeSermon?.id}
               bottomChromeHeight={chromeState.height}
               isIntro={isIntroTab}
@@ -985,6 +993,7 @@ const AppContent = memo(function AppContent() {
             on the chapter and would tear the player down on every page turn. */}
         {activeSermon && (
           <SermonPlayer
+            key={`${activeSermon.source}:${activeSermon.id}`}
             sermon={activeSermon}
             onClose={() => {
               setActiveSermon(null);
