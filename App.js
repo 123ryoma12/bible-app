@@ -381,10 +381,22 @@ const AppContent = memo(function AppContent() {
     setScreen("history");
   }, []);
 
-  const openBibleHeatmap = useCallback(() => {
-    setStatsScreenReady(true);
+  const openBibleTab = useCallback((bookId, chapterNumber) => {
+    setStatsScreenReady(false);
+    setBibleInitialChapter({ bookId, chapterNumber });
     setScreen("bible");
+    setActiveTab("bible");
   }, []);
+
+  const openBibleHeatmap = useCallback(() => {
+    if (readerTabs.length > 0) {
+      openBibleTab(book.id, chapterNumber);
+    } else {
+      setBibleInitialChapter(null);
+      setStatsScreenReady(true);
+      setScreen("bible");
+    }
+  }, [readerTabs.length, book.id, chapterNumber, openBibleTab]);
 
   const closeHistory = useCallback(() => {
     if (historyReturnScreen.current === "reader") {
@@ -396,13 +408,6 @@ const AppContent = memo(function AppContent() {
       openBibleHeatmap();
     }
   }, [activeTabId, openBibleHeatmap]);
-
-  const openBibleTab = useCallback((bookId, chapterNumber) => {
-    setStatsScreenReady(false);
-    setBibleInitialChapter({ bookId, chapterNumber });
-    setScreen("bible");
-    setActiveTab("bible");
-  }, []);
 
   // Open a book intro tab for the given book. If there's already an intro tab
   // for this book, switch to it. Otherwise open the intro in the active tab
@@ -687,7 +692,7 @@ const AppContent = memo(function AppContent() {
 
     const subscription = BackHandler.addEventListener("hardwareBackPress", onBackPress);
     return () => subscription.remove();
-  }, [activeTab, screen, backRegistry, readerTabs.length, activeTabId]);
+  }, [activeTab, screen, backRegistry, readerTabs.length, activeTabId, openBibleHeatmap, closeHistory]);
 
   // Flush scroll position to storage whenever the user leaves the reader —
   // navigating to any other screen (stats, history, memory, bible
@@ -957,6 +962,7 @@ const AppContent = memo(function AppContent() {
             onOpenHistory={onOpenHistoryForBible}
             onReady={onStatsReady}
             gridVisible={statsScreenReady}
+            visible={activeTab === "bible" && screen === "bible"}
             containerWidth={windowWidth}
           />
         </View>

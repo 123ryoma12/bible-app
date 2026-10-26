@@ -270,7 +270,7 @@ const HeatRow = memo(function HeatRow({
 });
 
 
-export default function StatsScreen({ onOpenChapter, initialChapter, currentChapter, onBack, onOpenHistory, onReady, gridVisible = true, containerWidth = 0 }) {
+export default function StatsScreen({ onOpenChapter, initialChapter, currentChapter, onBack, onOpenHistory, onReady, gridVisible = true, visible = true, containerWidth = 0 }) {
   const { colors, mode } = useTheme();
   const isDark = mode === "dark";
 
@@ -296,8 +296,7 @@ export default function StatsScreen({ onOpenChapter, initialChapter, currentChap
 
   // Ref to the heat-map FlatList for imperative scrolling.
   const flatListRef = useRef(null);
-  // Track which initialChapter we've already scrolled to so we don't repeat it.
-  const scrolledToChapter = useRef(null);
+  const [listHeight, setListHeight] = useState(0);
 
   // Subscribe to cache updates (chapter marked read in reader) and fall back
   // to async loads if the cache wasn't warm yet on first render.
@@ -455,21 +454,16 @@ export default function StatsScreen({ onOpenChapter, initialChapter, currentChap
     return { chapterRows: rows, itemOffsets: offsets };
   }, [numCols, boxSize]);
 
-  // When initialChapter changes, scroll to it and signal ready.
+  // Each picker opening supplies a fresh target, even for the same chapter.
+  // Wait for the visible list to lay out before restoring its position.
   // Must come after the chapterRows/itemOffsets useMemo above since it uses both.
   useLayoutEffect(() => {
+    if (!visible) return;
     if (!initialChapter) {
       onReady?.();
       return;
     }
-    const key = `${initialChapter.bookId}:${initialChapter.chapterNumber}`;
-    if (scrolledToChapter.current === key) {
-      onReady?.();
-      return;
-    }
-    scrolledToChapter.current = key;
-
-    if (boxSize <= 0 || numCols <= 0 || chapterRows.length === 0) {
+    if (!progressByBook || !rangeSetting || listHeight <= 0 || boxSize <= 0 || numCols <= 0 || chapterRows.length === 0) {
       return;
     }
 
@@ -478,17 +472,18 @@ export default function StatsScreen({ onOpenChapter, initialChapter, currentChap
       (row) =>
         !row.isHeader &&
         row.cells.some(
-          (c) => !c.isIntroCell && c.bookId === initialChapter.bookId && c.chapterNumber === initialChapter.chapterNumber
+          (c) => c.bookId === initialChapter.bookId && c.chapterNumber === initialChapter.chapterNumber
         )
     );
     if (rowIndex === -1) { onReady?.(); return; }
 
     const y = itemOffsets[rowIndex] ?? 0;
-    requestAnimationFrame(() => {
+    const frame = requestAnimationFrame(() => {
       flatListRef.current?.scrollToOffset({ offset: Math.max(0, y - 16), animated: false });
       onReady?.();
     });
-  }, [initialChapter, boxSize, numCols, chapterRows, itemOffsets]);
+    return () => cancelAnimationFrame(frame);
+  }, [visible, initialChapter, listHeight, !!progressByBook, !!rangeSetting, boxSize, numCols, chapterRows, itemOffsets, onReady]);
 
   const rowHeight = boxSize + BOX_GAP;
 
@@ -620,11 +615,15 @@ export default function StatsScreen({ onOpenChapter, initialChapter, currentChap
           FlatList skip measurement entirely for instant scroll-to-offset. */}
       <View
         style={gridVisible ? styles.gridContainer : styles.gridContainerHidden}
-        onLayout={(e) => setGridWidth(e.nativeEvent.layout.width)}
+        onLayout={(e) => {
+          const width = e.nativeEvent.layout.width;
+          if (width > 0) setGridWidth(width);
+        }}
       >
         {gridWidth > 0 && chapterRows.length > 0 && (
           <FlatList
             ref={flatListRef}
+            onLayout={(e) => setListHeight(e.nativeEvent.layout.height)}
             data={chapterRows}
             keyExtractor={(_row, index) => String(index)}
             renderItem={renderRow}
